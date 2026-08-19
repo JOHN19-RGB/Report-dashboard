@@ -304,8 +304,9 @@ export default function Home() {
     <div className="app-shell">
       <aside className={`sidebar ${mobileMenu ? "mobile-open" : ""}`} aria-label="Үндсэн цэс">
         <div className="brand">
-          <span className="brand-mark"><span /></span>
-          <span className="brand-copy"><strong>АЖЛЫН</strong><small>ТАЙЛАН</small></span>
+          <span className="brand-logo-wrap">
+            <img className="brand-logo" src="/cody-logo.svg" alt="Cody" width="151" height="59" />
+          </span>
         </div>
         <nav className="nav-list">
           <a className="nav-item active" href="#overview" onClick={() => setMobileMenu(false)}>
