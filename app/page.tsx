@@ -10,15 +10,20 @@ import {
   ChevronDown,
   Clock3,
   Download,
+  ExternalLink,
+  Flag,
   LayoutDashboard,
+  Layers3,
   ListChecks,
   LoaderCircle,
   Menu,
   MessageSquareText,
   RefreshCw,
+  Search,
   Sparkles,
   Target,
   TrendingUp,
+  UserRound,
   Users,
   X,
   Zap,
@@ -45,6 +50,44 @@ type Category = {
   icon: typeof ListChecks;
   description: string;
   examples: string[];
+};
+
+type ClickUpTask = {
+  id: string;
+  customId: string | null;
+  name: string;
+  description: string;
+  status: { name: string; color: string; type: string };
+  archived: boolean;
+  creator: { id: number | null; name: string; color: string } | null;
+  assignees: Array<{ id: number | null; name: string; color: string; avatar: string | null }>;
+  watchers: string[];
+  priority: { name: string; color: string } | null;
+  dates: {
+    created: string | null;
+    updated: string | null;
+    start: string | null;
+    due: string | null;
+    done: string | null;
+    closed: string | null;
+  };
+  time: { estimate: number | null; spent: number | null };
+  points: number | null;
+  parent: string | null;
+  tags: Array<{ name: string; foreground: string; background: string }>;
+  customFields: Array<{ id: string; name: string; type: string; value: unknown }>;
+  relationships: { dependencies: number; linkedTasks: number };
+  location: { space: string; folder: string; list: string };
+  url: string;
+};
+
+type ClickUpPayload = {
+  workspace: { id: string; name: string; color: string; memberCount: number };
+  tasks: ClickUpTask[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+  syncedAt: string;
 };
 
 const months: Month[] = [
@@ -166,6 +209,31 @@ function formatMinutes(value: number, compact = false) {
   return compact ? `${formatNumber(hours)}ц ${minutes}м` : `${formatNumber(hours)} цаг ${minutes} мин`;
 }
 
+function formatDate(value: string | null, includeTime = false) {
+  if (!value) return "—";
+  const date = new Date(Number(value));
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("mn-MN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}),
+  }).format(date);
+}
+
+function formatApiDuration(value: number | null) {
+  if (!value) return "—";
+  const totalMinutes = Math.round(value / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (!hours) return `${minutes} мин`;
+  return `${hours}ц ${minutes}м`;
+}
+
+function isTaskOverdue(task: ClickUpTask) {
+  return Boolean(task.dates.due && !task.dates.done && Number(task.dates.due) < Date.now());
+}
+
 function percentChange(current: number, previous: number) {
   return ((current - previous) / previous) * 100;
 }
@@ -216,6 +284,12 @@ export default function Home() {
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summarySource, setSummarySource] = useState<"prepared" | "groq" | "local">("prepared");
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [clickUpData, setClickUpData] = useState<ClickUpPayload | null>(null);
+  const [clickUpLoading, setClickUpLoading] = useState(true);
+  const [clickUpError, setClickUpError] = useState("");
+  const [clickUpSearch, setClickUpSearch] = useState("");
+  const [clickUpStatus, setClickUpStatus] = useState("all");
+  const [selectedClickUpTask, setSelectedClickUpTask] = useState<ClickUpTask | null>(null);
 
   const monthIndex = months.findIndex((month) => month.key === selectedMonthKey);
   const month = months[monthIndex];
@@ -230,17 +304,62 @@ export default function Home() {
   const maxTasks = Math.max(...months.map((item) => item.tasks));
   const maxCategoryTasks = Math.max(...categories.map((item) => item.tasks));
   const summaryIsCurrent = summaryMonth === selectedMonthKey;
+  const clickUpStatuses = useMemo(
+    () => Array.from(new Set((clickUpData?.tasks || []).map((task) => task.status.name))).sort(),
+    [clickUpData],
+  );
+  const filteredClickUpTasks = useMemo(() => {
+    const query = clickUpSearch.trim().toLocaleLowerCase("mn-MN");
+    return (clickUpData?.tasks || []).filter((task) => {
+      const matchesStatus = clickUpStatus === "all" || task.status.name === clickUpStatus;
+      const haystack = [task.id, task.customId, task.name, task.location.space, task.location.folder, task.location.list, ...task.assignees.map((item) => item.name)]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("mn-MN");
+      return matchesStatus && (!query || haystack.includes(query));
+    });
+  }, [clickUpData, clickUpSearch, clickUpStatus]);
+  const clickUpStats = useMemo(() => {
+    const tasks = clickUpData?.tasks || [];
+    const done = tasks.filter((task) => task.status.type === "closed" || Boolean(task.dates.done)).length;
+    const overdue = tasks.filter(isTaskOverdue).length;
+    const unassigned = tasks.filter((task) => task.assignees.length === 0).length;
+    const trackedMs = tasks.reduce((sum, task) => sum + (task.time.spent || 0), 0);
+    return { done, overdue, unassigned, trackedMs };
+  }, [clickUpData]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setSelectedCategoryId(null);
+        setSelectedClickUpTask(null);
         setMobileMenu(false);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    void loadClickUp();
+  }, []);
+
+  async function loadClickUp() {
+    setClickUpLoading(true);
+    setClickUpError("");
+    try {
+      const response = await fetch("/api/clickup", { cache: "no-store" });
+      const result = (await response.json()) as ClickUpPayload & { error?: string };
+      if (!response.ok || !result.workspace || !Array.isArray(result.tasks)) {
+        throw new Error(result.error || "ClickUp өгөгдөл татаж чадсангүй.");
+      }
+      setClickUpData(result);
+    } catch (error) {
+      setClickUpError(error instanceof Error ? error.message : "ClickUp өгөгдөл татаж чадсангүй.");
+    } finally {
+      setClickUpLoading(false);
+    }
+  }
 
   async function generateSummary() {
     setIsSummarizing(true);
@@ -314,6 +433,9 @@ export default function Home() {
           </a>
           <a className="nav-item" href="#workload" onClick={() => setMobileMenu(false)}>
             <ListChecks size={19} /> <span>Ажлын төрөл</span>
+          </a>
+          <a className="nav-item" href="#clickup" onClick={() => setMobileMenu(false)}>
+            <Layers3 size={19} /> <span>ClickUp таск</span>
           </a>
           <a className="nav-item" href="#comparison" onClick={() => setMobileMenu(false)}>
             <TrendingUp size={19} /> <span>Харьцуулалт</span>
@@ -437,6 +559,91 @@ export default function Home() {
             </article>
           </section>
 
+          <section className="clickup-panel" id="clickup">
+            <div className="clickup-head">
+              <div className="clickup-title-row">
+                <div className="clickup-logo" aria-hidden="true"><span /><span /><span /></div>
+                <div>
+                  <div className="clickup-source"><span className="live-pulse" />CLICKUP LIVE API</div>
+                  <h2>{clickUpData?.workspace.name || "ClickUp дэлгэрэнгүй"}</h2>
+                  <p>API-с хамгийн сүүлд шинэчлэгдсэн 100 хүртэлх таскыг шууд харуулж байна.</p>
+                </div>
+              </div>
+              <button className="clickup-refresh" onClick={loadClickUp} disabled={clickUpLoading}>
+                <RefreshCw className={clickUpLoading ? "spin" : ""} size={15} />
+                {clickUpLoading ? "Татаж байна" : "Шинэчлэх"}
+              </button>
+            </div>
+
+            {clickUpError ? (
+              <div className="clickup-error">
+                <span><X size={18} /></span>
+                <div><strong>Өгөгдөл татагдсангүй</strong><p>{clickUpError}</p></div>
+                <button onClick={loadClickUp}>Дахин оролдох</button>
+              </div>
+            ) : (
+              <>
+                <div className="clickup-stats">
+                  <div><span className="clickup-stat-icon purple"><ListChecks size={17} /></span><span><small>ТАТСАН ТАСК</small><strong>{clickUpLoading ? "—" : formatNumber(clickUpData?.tasks.length || 0)}</strong></span></div>
+                  <div><span className="clickup-stat-icon green"><CheckCircle2 size={17} /></span><span><small>ДУУССАН</small><strong>{clickUpLoading ? "—" : formatNumber(clickUpStats.done)}</strong></span></div>
+                  <div><span className="clickup-stat-icon orange"><Flag size={17} /></span><span><small>ХУГАЦАА ХЭТЭРСЭН</small><strong>{clickUpLoading ? "—" : formatNumber(clickUpStats.overdue)}</strong></span></div>
+                  <div><span className="clickup-stat-icon blue"><Clock3 size={17} /></span><span><small>БҮРТГЭСЭН ЦАГ</small><strong>{clickUpLoading ? "—" : formatApiDuration(clickUpStats.trackedMs)}</strong></span></div>
+                </div>
+
+                <div className="clickup-toolbar">
+                  <label className="task-search">
+                    <Search size={15} />
+                    <input value={clickUpSearch} onChange={(event) => setClickUpSearch(event.target.value)} placeholder="Task, ID, list эсвэл ажилтнаар хайх" />
+                    {clickUpSearch && <button onClick={() => setClickUpSearch("")} aria-label="Хайлт цэвэрлэх"><X size={14} /></button>}
+                  </label>
+                  <label className="status-filter">
+                    <span>Төлөв</span>
+                    <select value={clickUpStatus} onChange={(event) => setClickUpStatus(event.target.value)}>
+                      <option value="all">Бүх төлөв</option>
+                      {clickUpStatuses.map((status) => <option value={status} key={status}>{status}</option>)}
+                    </select>
+                    <ChevronDown size={14} />
+                  </label>
+                  <span className="filter-result">{formatNumber(filteredClickUpTasks.length)} үр дүн</span>
+                </div>
+
+                <div className="clickup-table-wrap">
+                  <table className="clickup-table">
+                    <thead>
+                      <tr><th>Task</th><th>Төлөв</th><th>Хариуцагч</th><th>List / Folder</th><th>Хугацаа</th><th>Шинэчилсэн</th><th aria-label="Үйлдэл" /></tr>
+                    </thead>
+                    <tbody>
+                      {clickUpLoading
+                        ? Array.from({ length: 6 }).map((_, index) => (
+                            <tr className="task-loading-row" key={index}><td colSpan={7}><span style={{ animationDelay: `${index * 80}ms` }} /></td></tr>
+                          ))
+                        : filteredClickUpTasks.slice(0, 50).map((task) => (
+                            <tr key={task.id} onClick={() => setSelectedClickUpTask(task)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && setSelectedClickUpTask(task)}>
+                              <td><div className="task-main-cell"><span className="task-id">#{task.customId || task.id}</span><strong>{task.name}</strong>{task.tags.length > 0 && <span className="mini-tag">{task.tags[0].name}</span>}</div></td>
+                              <td><span className="api-status" style={{ color: task.status.color, background: `${task.status.color}16` }}><i style={{ background: task.status.color }} />{task.status.name}</span></td>
+                              <td>
+                                <div className="assignee-stack">
+                                  {task.assignees.length > 0 ? task.assignees.slice(0, 3).map((assignee) => <span key={`${task.id}-${assignee.id}`} title={assignee.name} style={{ background: assignee.color }}>{assignee.name.slice(0, 1).toUpperCase()}</span>) : <em>Оноогоогүй</em>}
+                                </div>
+                              </td>
+                              <td><div className="location-cell"><strong>{task.location.list || "—"}</strong><small>{task.location.folder || task.location.space || "Workspace"}</small></div></td>
+                              <td><span className={isTaskOverdue(task) ? "due-date overdue" : "due-date"}>{formatDate(task.dates.due)}</span></td>
+                              <td><span className="updated-date">{formatDate(task.dates.updated, true)}</span></td>
+                              <td><button className="row-open" onClick={(event) => { event.stopPropagation(); setSelectedClickUpTask(task); }} aria-label={`${task.name} дэлгэрэнгүй`}><ArrowRight size={15} /></button></td>
+                            </tr>
+                          ))}
+                    </tbody>
+                  </table>
+                  {!clickUpLoading && filteredClickUpTasks.length === 0 && <div className="empty-tasks"><Search size={21} /><strong>Тохирох task олдсонгүй</strong><span>Хайлт эсвэл төлвийн шүүлтүүрээ өөрчилнө үү.</span></div>}
+                </div>
+                <div className="clickup-footnote">
+                  <span><span className="online-dot" />{clickUpData ? `${formatDate(String(new Date(clickUpData.syncedAt).getTime()), true)}-д синк хийсэн` : "API холболт"}</span>
+                  <span>{clickUpData?.workspace.memberCount || 0} workspace гишүүн · {clickUpStats.unassigned} оноогоогүй task{clickUpData?.hasMore ? " · Дараагийн хуудсанд нэмэлт task байна" : ""}</span>
+                </div>
+              </>
+            )}
+          </section>
+
           <section className="ai-panel" id="ai-summary">
             <div className="ai-orb"><Sparkles size={25} /><span /></div>
             <div className="ai-content">
@@ -478,9 +685,51 @@ export default function Home() {
         </div>
       </main>
 
-      <div className={`drawer-backdrop ${selectedCategory ? "visible" : ""}`} onClick={() => setSelectedCategoryId(null)} />
-      <aside className={`detail-drawer ${selectedCategory ? "open" : ""}`} aria-hidden={!selectedCategory} aria-label="Ажлын ангиллын дэлгэрэнгүй">
-        {selectedCategory && (
+      <div className={`drawer-backdrop ${selectedCategory || selectedClickUpTask ? "visible" : ""}`} onClick={() => { setSelectedCategoryId(null); setSelectedClickUpTask(null); }} />
+      <aside className={`detail-drawer ${selectedCategory || selectedClickUpTask ? "open" : ""}`} aria-hidden={!selectedCategory && !selectedClickUpTask} aria-label="Task дэлгэрэнгүй">
+        {selectedClickUpTask && (
+          <>
+            <div className="drawer-head">
+              <span className="drawer-category-icon clickup-drawer-icon"><Layers3 size={22} /></span>
+              <button className="icon-button" onClick={() => setSelectedClickUpTask(null)} aria-label="Дэлгэрэнгүй хаах"><X size={20} /></button>
+            </div>
+            <div className="task-drawer-topline"><span className="panel-kicker">CLICKUP TASK</span><span className="task-id">#{selectedClickUpTask.customId || selectedClickUpTask.id}</span></div>
+            <h2>{selectedClickUpTask.name}</h2>
+            <div className="task-drawer-badges">
+              <span className="api-status" style={{ color: selectedClickUpTask.status.color, background: `${selectedClickUpTask.status.color}16` }}><i style={{ background: selectedClickUpTask.status.color }} />{selectedClickUpTask.status.name}</span>
+              {selectedClickUpTask.priority && <span className="priority-badge" style={{ color: selectedClickUpTask.priority.color }}><Flag size={12} />{selectedClickUpTask.priority.name}</span>}
+              {isTaskOverdue(selectedClickUpTask) && <span className="overdue-badge">Хугацаа хэтэрсэн</span>}
+            </div>
+            <p className={`drawer-description ${selectedClickUpTask.description ? "" : "muted-description"}`}>{selectedClickUpTask.description || "Энэ task-д тайлбар оруулаагүй байна."}</p>
+
+            <div className="api-detail-grid">
+              <div><small>ХАРИУЦАГЧ</small><strong>{selectedClickUpTask.assignees.map((item) => item.name).join(", ") || "Оноогоогүй"}</strong><UserRound size={15} /></div>
+              <div><small>LIST</small><strong>{selectedClickUpTask.location.list || "—"}</strong><ListChecks size={15} /></div>
+              <div><small>FOLDER / SPACE</small><strong>{selectedClickUpTask.location.folder || selectedClickUpTask.location.space || "—"}</strong><Layers3 size={15} /></div>
+              <div><small>ХУГАЦАА</small><strong>{formatDate(selectedClickUpTask.dates.due)}</strong><CalendarDays size={15} /></div>
+              <div><small>ЦАГИЙН ТООЦОО</small><strong>{formatApiDuration(selectedClickUpTask.time.estimate)}</strong><Clock3 size={15} /></div>
+              <div><small>БҮРТГЭСЭН ЦАГ</small><strong>{formatApiDuration(selectedClickUpTask.time.spent)}</strong><Zap size={15} /></div>
+            </div>
+
+            <div className="api-timeline">
+              <div className="drawer-section-title"><span>API огнооны мэдээлэл</span><small>Unix ms → local</small></div>
+              <div><span>Үүсгэсэн</span><strong>{formatDate(selectedClickUpTask.dates.created, true)}</strong></div>
+              <div><span>Шинэчилсэн</span><strong>{formatDate(selectedClickUpTask.dates.updated, true)}</strong></div>
+              <div><span>Эхлэх</span><strong>{formatDate(selectedClickUpTask.dates.start, true)}</strong></div>
+              <div><span>Дууссан</span><strong>{formatDate(selectedClickUpTask.dates.done, true)}</strong></div>
+            </div>
+
+            {selectedClickUpTask.tags.length > 0 && <div className="drawer-tags">{selectedClickUpTask.tags.map((tag) => <span key={tag.name} style={{ color: tag.foreground, background: tag.background }}>{tag.name}</span>)}</div>}
+            {selectedClickUpTask.customFields.length > 0 && (
+              <div className="custom-fields">
+                <div className="drawer-section-title"><span>Custom fields</span><small>{selectedClickUpTask.customFields.length} талбар</small></div>
+                {selectedClickUpTask.customFields.map((field) => <div key={field.id}><span>{field.name}</span><strong>{typeof field.value === "string" || typeof field.value === "number" ? String(field.value) : JSON.stringify(field.value)}</strong></div>)}
+              </div>
+            )}
+            <a className="clickup-open-link" href={selectedClickUpTask.url} target="_blank" rel="noreferrer">ClickUp дээр нээх <ExternalLink size={15} /></a>
+          </>
+        )}
+        {!selectedClickUpTask && selectedCategory && (
           <>
             <div className="drawer-head">
               <span className="drawer-category-icon" style={{ color: selectedCategory.color, background: `${selectedCategory.color}16` }}><selectedCategory.icon size={22} /></span>

@@ -29,18 +29,21 @@ test("server-renders the work report dashboard", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Building your site/i);
 });
 
-test("removes starter preview and keeps Groq credentials server-side", async () => {
-  const [page, route, layout, packageJson] = await Promise.all([
+test("removes starter preview and keeps API credentials server-side", async () => {
+  const [page, route, clickUpRoute, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/summarize/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/clickup/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
   await assert.rejects(access(new URL("../app/_sites-preview", import.meta.url)));
   assert.match(page, /fetch\("\/api\/summarize"/);
-  assert.doesNotMatch(page, /GROQ_API_KEY|api\.groq\.com/);
+  assert.doesNotMatch(page, /GROQ_API_KEY|CLICKUP_API_TOKEN|api\.groq\.com|pk_[A-Za-z0-9_]+/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);
+  assert.match(clickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
+  assert.match(clickUpRoute, /api\.clickup\.com\/api\/v2/);
   assert.match(route, /reasoning_effort: "none"/);
   assert.match(layout, /openGraph/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
