@@ -65,6 +65,18 @@ type ClickUpParent = {
   fetched: boolean;
 };
 
+type ClickUpPerson = {
+  id: string;
+  name: string;
+  color: string;
+  avatar: string | null;
+  parentIds: string[];
+  completeSubtasks: number;
+  withType: number;
+  withEstimate: number;
+  estimateMs: number;
+};
+
 type ClickUpSubtask = {
   id: string;
   parentId: string;
@@ -79,6 +91,8 @@ type ClickUpSubtask = {
 type ClickUpPayload = {
   workspace: { id: string; name: string; color: string; memberCount: number };
   list: { id: string; name: string };
+  reportYear: number;
+  people: ClickUpPerson[];
   parents: ClickUpParent[];
   subtasks: ClickUpSubtask[];
   summary: {
@@ -288,7 +302,7 @@ export default function Home() {
   const [clickUpLoading, setClickUpLoading] = useState(true);
   const [clickUpError, setClickUpError] = useState("");
   const [clickUpSearch, setClickUpSearch] = useState("");
-  const [clickUpParent, setClickUpParent] = useState("all");
+  const [clickUpPerson, setClickUpPerson] = useState("");
   const [clickUpType, setClickUpType] = useState("all");
   const [clickUpPage, setClickUpPage] = useState(1);
 
@@ -305,22 +319,29 @@ export default function Home() {
   const maxTasks = Math.max(...months.map((item) => item.tasks));
   const maxCategoryTasks = Math.max(...categories.map((item) => item.tasks));
   const summaryIsCurrent = summaryMonth === selectedMonthKey;
-  const clickUpTypes = useMemo(
-    () => Array.from(new Set((clickUpData?.subtasks || []).map((task) => task.type?.name).filter((name): name is string => Boolean(name)))).sort(),
-    [clickUpData],
-  );
+  const selectedClickUpPerson = clickUpData?.people.find((person) => person.id === clickUpPerson) || clickUpData?.people[0] || null;
+  const clickUpTypes = useMemo(() => {
+    const parentIds = new Set(selectedClickUpPerson?.parentIds || []);
+    return Array.from(new Set(
+      (clickUpData?.subtasks || [])
+        .filter((task) => parentIds.has(task.parentId))
+        .map((task) => task.type?.name)
+        .filter((name): name is string => Boolean(name)),
+    )).sort();
+  }, [clickUpData, selectedClickUpPerson]);
   const filteredClickUpTasks = useMemo(() => {
     const query = clickUpSearch.trim().toLocaleLowerCase("mn-MN");
+    const parentIds = new Set(selectedClickUpPerson?.parentIds || []);
     return (clickUpData?.subtasks || []).filter((task) => {
-      const matchesParent = clickUpParent === "all" || task.parentId === clickUpParent;
+      const matchesPerson = parentIds.has(task.parentId);
       const matchesType = clickUpType === "all" || task.type?.name === clickUpType;
       const haystack = [task.parentName, task.type?.name, ...task.assignment.map((item) => item.name)]
         .filter(Boolean)
         .join(" ")
         .toLocaleLowerCase("mn-MN");
-      return matchesParent && matchesType && (!query || haystack.includes(query));
+      return matchesPerson && matchesType && (!query || haystack.includes(query));
     });
-  }, [clickUpData, clickUpParent, clickUpSearch, clickUpType]);
+  }, [clickUpData, clickUpSearch, clickUpType, selectedClickUpPerson]);
   const clickUpPageCount = Math.max(1, Math.ceil(filteredClickUpTasks.length / CLICKUP_PAGE_SIZE));
   const visibleClickUpTasks = filteredClickUpTasks.slice(
     (clickUpPage - 1) * CLICKUP_PAGE_SIZE,
@@ -344,18 +365,19 @@ export default function Home() {
 
   useEffect(() => {
     setClickUpPage(1);
-  }, [clickUpParent, clickUpSearch, clickUpType]);
+  }, [clickUpPerson, clickUpSearch, clickUpType]);
 
   async function loadClickUp() {
     setClickUpLoading(true);
     setClickUpError("");
     try {
-      const response = await fetch("/api/clickup", { cache: "no-store" });
+      const response = await fetch(`/api/clickup?sync=${Date.now()}`, { cache: "no-store" });
       const result = (await response.json()) as ClickUpPayload & { error?: string };
-      if (!response.ok || !result.workspace || !Array.isArray(result.parents) || !Array.isArray(result.subtasks)) {
+      if (!response.ok || !result.workspace || !Array.isArray(result.people) || !Array.isArray(result.parents) || !Array.isArray(result.subtasks)) {
         throw new Error(result.error || "ClickUp өгөгдөл татаж чадсангүй.");
       }
       setClickUpData(result);
+      setClickUpPerson((current) => result.people.some((person) => person.id === current) ? current : result.people[0]?.id || "");
       setClickUpPage(1);
     } catch (error) {
       setClickUpError(error instanceof Error ? error.message : "ClickUp өгөгдөл татаж чадсангүй.");
@@ -568,8 +590,8 @@ export default function Home() {
                 <div className="clickup-logo" aria-hidden="true"><span /><span /><span /></div>
                 <div>
                   <div className="clickup-source"><span className="live-pulse" />CLICKUP LIVE API</div>
-                  <h2>{clickUpData?.list.name || "CX Dev.Team"} · Daily Task subtasks</h2>
-                  <p>Daily Task төлөвтэй parent task-уудын зөвхөн complete төлөвтэй subtask мэдээлэл.</p>
+                  <h2>{clickUpData?.list.name || "CX Dev.Team"} · 2026 Daily Task</h2>
+                  <p>4 ажилтны Daily Task parent-аас 2026 оны complete subtask-уудыг live харуулж байна.</p>
                 </div>
               </div>
               <button className="clickup-refresh" onClick={loadClickUp} disabled={clickUpLoading}>
@@ -587,10 +609,34 @@ export default function Home() {
             ) : (
               <>
                 <div className="clickup-stats">
-                  <div><span className="clickup-stat-icon purple"><Layers3 size={17} /></span><span><small>DAILY TASK PARENT</small><strong>{clickUpLoading ? "—" : formatNumber(clickUpData?.summary.dailyTaskParents || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon green"><CheckCircle2 size={17} /></span><span><small>COMPLETE SUBTASK</small><strong>{clickUpLoading ? "—" : formatNumber(clickUpData?.summary.completeSubtasks || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon orange"><ListChecks size={17} /></span><span><small>TYPE БҮРТГЭЛТЭЙ</small><strong>{clickUpLoading ? "—" : formatNumber(clickUpData?.summary.withType || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon blue"><Clock3 size={17} /></span><span><small>TIME ESTIMATE</small><strong>{clickUpLoading ? "—" : formatApiDuration(clickUpData?.summary.estimateMs || 0)}</strong></span></div>
+                  <div><span className="clickup-stat-icon purple"><Layers3 size={17} /></span><span><small>2026 DAILY TASK PARENT</small><strong>{clickUpLoading ? "—" : formatNumber(selectedClickUpPerson?.parentIds.length || 0)}</strong></span></div>
+                  <div><span className="clickup-stat-icon green"><CheckCircle2 size={17} /></span><span><small>COMPLETE SUBTASK</small><strong>{clickUpLoading ? "—" : formatNumber(selectedClickUpPerson?.completeSubtasks || 0)}</strong></span></div>
+                  <div><span className="clickup-stat-icon orange"><ListChecks size={17} /></span><span><small>TYPE БҮРТГЭЛТЭЙ</small><strong>{clickUpLoading ? "—" : formatNumber(selectedClickUpPerson?.withType || 0)}</strong></span></div>
+                  <div><span className="clickup-stat-icon blue"><Clock3 size={17} /></span><span><small>TIME ESTIMATE</small><strong>{clickUpLoading ? "—" : formatApiDuration(selectedClickUpPerson?.estimateMs || 0)}</strong></span></div>
+                </div>
+
+                <div className="person-selector" role="tablist" aria-label="CX Dev.Team ажилтан сонгох">
+                  {clickUpLoading
+                    ? Array.from({ length: 4 }).map((_, index) => <span className="person-card person-card-loading" key={index} />)
+                    : (clickUpData?.people || []).map((person) => (
+                        <button
+                          className={`person-card ${selectedClickUpPerson?.id === person.id ? "active" : ""}`}
+                          key={person.id}
+                          onClick={() => {
+                            setClickUpPerson(person.id);
+                            setClickUpSearch("");
+                            setClickUpType("all");
+                          }}
+                          role="tab"
+                          aria-selected={selectedClickUpPerson?.id === person.id}
+                        >
+                          <span className="person-avatar" style={{ background: person.color }}>
+                            {person.avatar ? <img src={person.avatar} alt="" /> : person.name.slice(0, 1).toUpperCase()}
+                          </span>
+                          <span className="person-card-copy"><small>2026 · COMPLETE</small><strong>{person.name}</strong></span>
+                          <span className="person-task-count"><strong>{formatNumber(person.completeSubtasks)}</strong><small>subtask</small></span>
+                        </button>
+                      ))}
                 </div>
 
                 <div className="clickup-toolbar">
@@ -598,16 +644,6 @@ export default function Home() {
                     <Search size={15} />
                     <input value={clickUpSearch} onChange={(event) => setClickUpSearch(event.target.value)} placeholder="Assignment эсвэл Type-аар хайх" />
                     {clickUpSearch && <button onClick={() => setClickUpSearch("")} aria-label="Хайлт цэвэрлэх"><X size={14} /></button>}
-                  </label>
-                  <label className="status-filter">
-                    <span>Parent</span>
-                    <select value={clickUpParent} onChange={(event) => setClickUpParent(event.target.value)}>
-                      <option value="all">Бүх Daily Task</option>
-                      {(clickUpData?.parents || []).map((parent) => (
-                        <option value={parent.id} key={parent.id}>{parent.assignees.map((item) => item.name).join(", ") || parent.name} · {parent.completedCount}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={14} />
                   </label>
                   <label className="status-filter">
                     <span>Type</span>
@@ -662,7 +698,7 @@ export default function Home() {
                 )}
                 <div className="clickup-footnote">
                   <span><span className="online-dot" />{clickUpData ? `${formatDate(String(new Date(clickUpData.syncedAt).getTime()), true)}-д синк хийсэн` : "API холболт"}</span>
-                  <span>{clickUpData?.workspace.name || "Cody Workspace"} · {clickUpData?.list.name || "CX Dev.Team"}{clickUpData?.partial ? " · Зарим parent task түр татагдсангүй" : " · Бүх Daily Task parent синк хийгдсэн"}</span>
+                  <span>{selectedClickUpPerson?.name || "4 ажилтан"} · {clickUpData?.reportYear || 2026} оны data{clickUpData?.partial ? " · Зарим parent task түр татагдсангүй" : " · Live ClickUp sync"}</span>
                 </div>
               </>
             )}
