@@ -22,12 +22,12 @@ type ClickUpCustomField = {
 type ClickUpTask = {
   id?: string;
   name?: string;
+  parent?: string | null;
   status?: { status?: string; color?: string; type?: string };
   assignees?: ClickUpUser[];
   due_date?: string | null;
   time_estimate?: number | null;
   custom_fields?: ClickUpCustomField[];
-  subtasks?: ClickUpTask[];
 };
 
 const CX_DEV_TEAM_LIST_ID = "901804865220";
@@ -70,17 +70,42 @@ function resolveType(task: ClickUpTask) {
   };
 }
 
-function isInReportYear(value: string | null | undefined) {
-  if (!value) return false;
-  const date = new Date(Number(value));
-  return !Number.isNaN(date.getTime()) && date.getUTCFullYear() === REPORT_YEAR;
-}
-
 async function clickUpFetch(path: string, token: string) {
   return fetch(`https://api.clickup.com/api/v2${path}`, {
     headers: { Authorization: token, Accept: "application/json" },
     cache: "no-store",
   });
+}
+
+async function getCompletedSubtasks(parentId: string, workspaceId: string, token: string) {
+  const tasks: ClickUpTask[] = [];
+  const reportStart = Date.UTC(REPORT_YEAR, 0, 1);
+  const reportEnd = Date.UTC(REPORT_YEAR + 1, 0, 1);
+
+  for (let page = 0; page < 25; page += 1) {
+    const query = new URLSearchParams({
+      page: String(page),
+      order_by: "due_date",
+      reverse: "true",
+      subtasks: "true",
+      include_closed: "true",
+      parent: parentId,
+      due_date_gt: String(reportStart - 1),
+      due_date_lt: String(reportEnd),
+    });
+    query.append("statuses[]", "complete");
+    query.append("list_ids[]", CX_DEV_TEAM_LIST_ID);
+
+    const response = await clickUpFetch(`/team/${encodeURIComponent(workspaceId)}/task?${query}`, token);
+    if (!response.ok) throw new Error(`ClickUp subtask page failed: ${response.status}`);
+
+    const data = (await response.json()) as { tasks?: ClickUpTask[]; last_page?: boolean };
+    const pageTasks = data.tasks || [];
+    tasks.push(...pageTasks);
+    if (data.last_page === true || pageTasks.length < 100) break;
+  }
+
+  return tasks;
 }
 
 export async function GET() {
@@ -121,39 +146,30 @@ export async function GET() {
     const parentsData = (await parentsResponse.json()) as { tasks?: ClickUpTask[] };
     const dailyTaskParents = parentsData.tasks || [];
     const parentResults = await Promise.all(
-      dailyTaskParents.map(async (parent) => {
-        if (!parent.id) return { parent, subtasks: [] as ClickUpTask[], complete: false };
-        const response = await clickUpFetch(`/task/${encodeURIComponent(parent.id)}?include_subtasks=true`, token);
-        if (!response.ok) return { parent, subtasks: [] as ClickUpTask[], complete: false };
-        const task = (await response.json()) as ClickUpTask;
-        return { parent, subtasks: task.subtasks || [], complete: true };
-      }),
+      dailyTaskParents.map(async (parent) => ({
+        parent,
+        subtasks: parent.id ? await getCompletedSubtasks(parent.id, workspace.id, token) : [],
+      })),
     );
 
-    const parents = parentResults.map(({ parent, subtasks, complete }) => {
-      const completedCount = subtasks.filter(
-        (task) => safeText(task.status?.status).toLocaleLowerCase() === "complete" && isInReportYear(task.due_date),
-      ).length;
-      return {
-        id: safeText(parent.id),
-        name: safeText(parent.name, "Daily Task"),
-        assignees: mapAssignees(parent.assignees),
-        completedCount,
-        fetchedCount: subtasks.length,
-        fetched: complete,
-      };
-    });
+    const parents = parentResults.map(({ parent, subtasks }) => ({
+      id: safeText(parent.id),
+      name: safeText(parent.name, "Daily Task"),
+      assignees: mapAssignees(parent.assignees),
+      completedCount: subtasks.length,
+      fetchedCount: subtasks.length,
+      fetched: true,
+    }));
 
     const subtasks = parentResults
       .flatMap(({ parent, subtasks: children }) =>
-        children
-          .filter((task) => safeText(task.status?.status).toLocaleLowerCase() === "complete")
-          .filter((task) => isInReportYear(task.due_date))
-          .map((task) => ({
+        children.map((task) => {
+          const taskAssignees = mapAssignees(task.assignees);
+          return {
             id: safeText(task.id),
             parentId: safeText(parent.id),
             parentName: safeText(parent.name, "Daily Task"),
-            assignment: mapAssignees(task.assignees),
+            assignment: taskAssignees.length > 0 ? taskAssignees : mapAssignees(parent.assignees),
             status: {
               name: safeText(task.status?.status, "complete"),
               color: safeColor(task.status?.color, "#168c80"),
@@ -162,7 +178,8 @@ export async function GET() {
             type: resolveType(task),
             dueDate: task.due_date || null,
             timeEstimate: task.time_estimate || null,
-          })),
+          };
+        }),
       )
       .sort((a, b) => Number(b.dueDate || 0) - Number(a.dueDate || 0));
 
@@ -219,6 +236,13 @@ export async function GET() {
     const estimateMs = subtasks.reduce((sum, task) => sum + (task.timeEstimate || 0), 0);
     const withType = subtasks.filter((task) => task.type).length;
     const withEstimate = subtasks.filter((task) => task.timeEstimate).length;
+    const dataQuality = {
+      missingAssignment: subtasks.filter((task) => task.assignment.length === 0).length,
+      missingStatus: subtasks.filter((task) => !task.status.name).length,
+      missingType: subtasks.filter((task) => !task.type).length,
+      missingDueDate: subtasks.filter((task) => !task.dueDate).length,
+      missingTimeEstimate: subtasks.filter((task) => !task.timeEstimate).length,
+    };
 
     return Response.json({
       workspace: {
@@ -239,7 +263,8 @@ export async function GET() {
         withEstimate,
         estimateMs,
       },
-      partial: parents.some((parent) => !parent.fetched),
+      dataQuality,
+      partial: false,
       syncedAt: new Date().toISOString(),
     }, {
       headers: {

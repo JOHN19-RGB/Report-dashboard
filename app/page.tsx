@@ -102,6 +102,13 @@ type ClickUpPayload = {
     withEstimate: number;
     estimateMs: number;
   };
+  dataQuality: {
+    missingAssignment: number;
+    missingStatus: number;
+    missingType: number;
+    missingDueDate: number;
+    missingTimeEstimate: number;
+  };
   partial: boolean;
   syncedAt: string;
 };
@@ -677,9 +684,9 @@ export default function Home() {
                                 </div>
                               </td>
                               <td><span className="api-status" style={{ color: task.status.color, background: `${task.status.color}16` }}><i style={{ background: task.status.color }} />{task.status.name}</span></td>
-                              <td>{task.type ? <span className="type-badge" style={{ color: task.type.color, background: `${task.type.color}14` }}><i style={{ background: task.type.color }} />{task.type.name}</span> : <span className="empty-value">—</span>}</td>
+                              <td>{task.type ? <span className="type-badge" style={{ color: task.type.color, background: `${task.type.color}14` }}><i style={{ background: task.type.color }} />{task.type.name}</span> : <span className="empty-value">Тодорхойгүй</span>}</td>
                               <td><span className="due-date">{formatDate(task.dueDate)}</span></td>
-                              <td><span className="estimate-cell"><Clock3 size={13} />{formatApiDuration(task.timeEstimate)}</span></td>
+                              <td><span className={`estimate-cell ${task.timeEstimate ? "" : "missing-estimate"}`}><Clock3 size={13} />{task.timeEstimate ? formatApiDuration(task.timeEstimate) : "Оруулаагүй"}</span></td>
                             </tr>
                           ))}
                     </tbody>
@@ -698,7 +705,7 @@ export default function Home() {
                 )}
                 <div className="clickup-footnote">
                   <span><span className="online-dot" />{clickUpData ? `${formatDate(String(new Date(clickUpData.syncedAt).getTime()), true)}-д синк хийсэн` : "API холболт"}</span>
-                  <span>{selectedClickUpPerson?.name || "4 ажилтан"} · {clickUpData?.reportYear || 2026} оны data{clickUpData?.partial ? " · Зарим parent task түр татагдсангүй" : " · Live ClickUp sync"}</span>
+                  <span>{selectedClickUpPerson?.name || "4 ажилтан"} · {clickUpData?.reportYear || 2026} оны data{clickUpData?.partial ? " · Зарим parent task түр татагдсангүй" : " · Live ClickUp sync"}{clickUpData?.dataQuality.missingTimeEstimate ? ` · ${clickUpData.dataQuality.missingTimeEstimate} task-д estimate оруулаагүй` : ""}</span>
                 </div>
               </>
             )}

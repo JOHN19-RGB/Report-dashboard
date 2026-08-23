@@ -1330,6 +1330,16 @@ button {
 
 .estimate-cell svg { color: #9ca2ac; }
 
+.estimate-cell.missing-estimate {
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: rgb(238 157 43 / 11%);
+  color: #a86610;
+  font-weight: 680;
+}
+
+.estimate-cell.missing-estimate svg { color: #d8912d; }
+
 .location-cell strong,
 .location-cell small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .location-cell strong { font-size: 8px; font-weight: 620; }
