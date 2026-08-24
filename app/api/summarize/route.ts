@@ -30,20 +30,21 @@ function buildLocalSummary(payload: SummaryRequest) {
   const second = sorted[1];
   const currentTasks = current.tasks || 0;
   const currentMinutes = current.minutes || 0;
+  const suppliedCurrentAverage = current.averageMinutes ?? currentMinutes / Math.max(currentTasks, 1);
 
   if (!previous || !previous.tasks || !previous.minutes) {
-    return `${payload.period}-д нийт ${currentTasks.toLocaleString("mn-MN")} ажилд ${hoursAndMinutes(currentMinutes)} зарцуулсан байна. Энэ нь 2026 оны эхний хагас жилийн тайлангийн эхний сарын суурь үзүүлэлт юм.\n\nХамгийн олон давтамжтай ангилал нь ${leader?.shortName || leader?.name} бөгөөд ${(leader?.tasks || 0).toLocaleString("mn-MN")} ажил гүйцэтгэж, ${hoursAndMinutes(leader?.minutes || 0)} зарцуулжээ. Дараагийн өндөр үзүүлэлттэй ${second?.shortName || second?.name} ангилалд ${(second?.tasks || 0).toLocaleString("mn-MN")} ажил бүртгэгдсэн байна.\n\nНэг ажилд дунджаар ${(currentMinutes / Math.max(currentTasks, 1)).toFixed(1)} минут зарцуулсан. Дараагийн саруудын үзүүлэлттэй харьцуулах суурь болгон ажлын төрөл, хугацааны бүртгэлийг ижил аргачлалаар үргэлжлүүлэх нь зүйтэй.`;
+    return `${payload.period}-д нийт ${currentTasks.toLocaleString("mn-MN")} ажилд ${hoursAndMinutes(currentMinutes)} time estimate бүртгэгдсэн байна.\n\nХамгийн олон давтамжтай Type нь ${leader?.shortName || leader?.name} бөгөөд ${(leader?.tasks || 0).toLocaleString("mn-MN")} ажил, ${hoursAndMinutes(leader?.minutes || 0)} estimate-тэй. Дараагийн өндөр үзүүлэлттэй ${second?.shortName || second?.name} ангилалд ${(second?.tasks || 0).toLocaleString("mn-MN")} ажил бүртгэгдсэн байна.\n\nEstimate-тэй нэг ажилд дунджаар ${suppliedCurrentAverage.toFixed(1)} минут ногдож байна. Эдгээр үзүүлэлтийг ClickUp-ийн complete subtask, Type, Due date болон Time estimate талбараас тооцов.`;
   }
 
   const taskDifference = currentTasks - previous.tasks;
   const minuteDifference = currentMinutes - previous.minutes;
   const taskPercent = Math.abs((taskDifference / previous.tasks) * 100).toFixed(1);
   const timePercent = Math.abs((minuteDifference / previous.minutes) * 100).toFixed(1);
-  const currentAverage = currentMinutes / Math.max(currentTasks, 1);
-  const previousAverage = previous.minutes / previous.tasks;
+  const currentAverage = suppliedCurrentAverage;
+  const previousAverage = previous.averageMinutes ?? previous.minutes / previous.tasks;
   const averageDifference = currentAverage - previousAverage;
 
-  return `${payload.period}-д нийт ${currentTasks.toLocaleString("mn-MN")} ажилд ${hoursAndMinutes(currentMinutes)} зарцуулсан байна. ${previous.period}-тай харьцуулахад ажлын тоо ${Math.abs(taskDifference).toLocaleString("mn-MN")}-аар буюу ${taskPercent}% ${taskDifference >= 0 ? "өсөж" : "буурч"}, нийт хугацаа ${hoursAndMinutes(Math.abs(minuteDifference))}-аар буюу ${timePercent}% ${minuteDifference >= 0 ? "өссөн" : "буурсан"} байна.\n\nХамгийн олон давтамжтай ${leader?.shortName || leader?.name} ангилалд ${(leader?.tasks || 0).toLocaleString("mn-MN")} ажил, ${hoursAndMinutes(leader?.minutes || 0)} бүртгэгдсэн. ${second?.shortName || second?.name} ангилал ${(second?.tasks || 0).toLocaleString("mn-MN")} ажлаар дараалж байгаа нь тайлант сарын ажлын үндсэн бүтцийг харуулж байна.\n\nНэг ажилд зарцуулсан дундаж хугацаа ${previousAverage.toFixed(1)} минутаас ${currentAverage.toFixed(1)} минут болж ${Math.abs(averageDifference).toFixed(1)} минутаар ${averageDifference >= 0 ? "өссөн" : "буурсан"}. Нийт ажлын тоо болон хугацааны өөрчлөлтийг хамтад нь авч үзэхэд ажлын боловсруулалтын хурд ${averageDifference <= 0 ? "сайжирсан" : "удааширсан"} үзүүлэлттэй байна.`;
+  return `${payload.period}-д нийт ${currentTasks.toLocaleString("mn-MN")} ажилд ${hoursAndMinutes(currentMinutes)} time estimate бүртгэгдсэн байна. ${previous.period}-тай харьцуулахад ажлын тоо ${Math.abs(taskDifference).toLocaleString("mn-MN")}-аар буюу ${taskPercent}% ${taskDifference >= 0 ? "өсөж" : "буурч"}, estimate ${hoursAndMinutes(Math.abs(minuteDifference))}-аар буюу ${timePercent}% ${minuteDifference >= 0 ? "өссөн" : "буурсан"} байна.\n\nХамгийн олон давтамжтай ${leader?.shortName || leader?.name} Type-д ${(leader?.tasks || 0).toLocaleString("mn-MN")} ажил, ${hoursAndMinutes(leader?.minutes || 0)} estimate бүртгэгдсэн. ${second?.shortName || second?.name} Type ${(second?.tasks || 0).toLocaleString("mn-MN")} ажлаар дараалж байна.\n\nEstimate-тэй нэг ажилд ногдох дундаж ${previousAverage.toFixed(1)} минутаас ${currentAverage.toFixed(1)} минут болж ${Math.abs(averageDifference).toFixed(1)} минутаар ${averageDifference >= 0 ? "өссөн" : "буурсан"}. Бүх тоо ClickUp-ийн live task талбаруудаас тооцогдсон.`;
 }
 
 function buildVerifiedFacts(payload: SummaryRequest) {
@@ -51,6 +52,7 @@ function buildVerifiedFacts(payload: SummaryRequest) {
   const previous = payload.previous;
   const currentTasks = current.tasks || 0;
   const currentMinutes = current.minutes || 0;
+  const suppliedCurrentAverage = current.averageMinutes ?? currentMinutes / Math.max(currentTasks, 1);
   const sortedCategories = (payload.categories || [])
     .slice()
     .sort((a, b) => (b.tasks || 0) - (a.tasks || 0));
@@ -62,8 +64,8 @@ function buildVerifiedFacts(payload: SummaryRequest) {
 
   if (!previous || !previous.tasks || !previous.minutes) {
     return {
-      text: `Тайлант үе: ${payload.period}. Нийт: ${currentTasks} ажил, ${hoursAndMinutes(currentMinutes)}. Нэг ажилд: ${(currentMinutes / Math.max(currentTasks, 1)).toFixed(1)} минут. Ангилал: ${categoryLines}.`,
-      requiredTokens: [String(currentTasks), String(Math.floor(currentMinutes / 60)), (currentMinutes / Math.max(currentTasks, 1)).toFixed(1)],
+      text: `Тайлант үе: ${payload.period}. Нийт: ${currentTasks} ажил, ${hoursAndMinutes(currentMinutes)}. Estimate-тэй нэг ажилд: ${suppliedCurrentAverage.toFixed(1)} минут. Ангилал: ${categoryLines}.`,
+      requiredTokens: [String(currentTasks), String(Math.floor(currentMinutes / 60)), suppliedCurrentAverage.toFixed(1)],
     };
   }
 
@@ -71,8 +73,8 @@ function buildVerifiedFacts(payload: SummaryRequest) {
   const minuteDifference = currentMinutes - previous.minutes;
   const taskPercent = Math.abs((taskDifference / previous.tasks) * 100).toFixed(1);
   const timePercent = Math.abs((minuteDifference / previous.minutes) * 100).toFixed(1);
-  const currentAverage = currentMinutes / Math.max(currentTasks, 1);
-  const previousAverage = previous.minutes / previous.tasks;
+  const currentAverage = suppliedCurrentAverage;
+  const previousAverage = previous.averageMinutes ?? previous.minutes / previous.tasks;
   const averageDifference = Math.abs(currentAverage - previousAverage);
   const previousByName = new Map((payload.previousCategories || []).map((item) => [item.shortName || item.name, item]));
   const notableComparisons = (payload.categories || [])
@@ -85,8 +87,14 @@ function buildVerifiedFacts(payload: SummaryRequest) {
     .filter(Boolean)
     .join("; ");
   const halfYear = payload.halfYear;
+  const halfYearTaskChange = halfYear?.previous?.tasks
+    ? (((halfYear.current?.tasks || 0) - halfYear.previous.tasks) / halfYear.previous.tasks) * 100
+    : 0;
+  const halfYearTimeChange = halfYear?.previous?.minutes
+    ? (((halfYear.current?.minutes || 0) - halfYear.previous.minutes) / halfYear.previous.minutes) * 100
+    : 0;
   const halfYearText = halfYear?.previous && halfYear.current
-    ? `Хагас жил: ${halfYear.previous.period} = ${halfYear.previous.tasks} ажил, ${hoursAndMinutes(halfYear.previous.minutes || 0)}; ${halfYear.current.period} = ${halfYear.current.tasks} ажил, ${hoursAndMinutes(halfYear.current.minutes || 0)}. Ажлын тоо 902.4%, хугацаа 516.0%, нэг цагт гүйцэтгэх ажил 62.4% өссөн.`
+    ? `Хагас жил: ${halfYear.previous.period} = ${halfYear.previous.tasks} ажил, ${hoursAndMinutes(halfYear.previous.minutes || 0)} estimate; ${halfYear.current.period} = ${halfYear.current.tasks} ажил, ${hoursAndMinutes(halfYear.current.minutes || 0)} estimate. Өөрчлөлт: ажил ${halfYearTaskChange.toFixed(1)}%, estimate ${halfYearTimeChange.toFixed(1)}%.`
     : "";
 
   return {
@@ -110,7 +118,7 @@ export async function POST(request: Request) {
     !isFinitePositive(payload.current.minutes) ||
     !Array.isArray(payload.categories) ||
     payload.categories.length === 0 ||
-    payload.categories.length > 20
+    payload.categories.length > 30
   ) {
     return Response.json({ error: "Тайлангийн өгөгдөл дутуу байна." }, { status: 400 });
   }

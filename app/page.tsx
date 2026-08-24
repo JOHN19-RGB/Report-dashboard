@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-type MonthKey = "01" | "02" | "03" | "04" | "05" | "06";
+type MonthKey = string;
 
 type Month = {
   key: MonthKey;
@@ -35,6 +35,7 @@ type Month = {
   label: string;
   tasks: number;
   minutes: number;
+  estimatedTasks: number;
 };
 
 type Category = {
@@ -43,10 +44,11 @@ type Category = {
   shortName: string;
   tasks: number;
   minutes: number;
+  estimatedTasks: number;
   color: string;
   icon: typeof ListChecks;
   description: string;
-  examples: string[];
+  members: Array<{ name: string; tasks: number }>;
 };
 
 type ClickUpAssignee = {
@@ -113,116 +115,10 @@ type ClickUpPayload = {
   syncedAt: string;
 };
 
-const months: Month[] = [
-  { key: "01", short: "I", label: "1 дүгээр сар", tasks: 1084, minutes: 596 * 60 + 40 },
-  { key: "02", short: "II", label: "2 дугаар сар", tasks: 1157, minutes: 620 * 60 + 15 },
-  { key: "03", short: "III", label: "3 дугаар сар", tasks: 1266, minutes: 682 * 60 + 33 },
-  { key: "04", short: "IV", label: "4 дүгээр сар", tasks: 1194, minutes: 643 * 60 + 40 },
-  { key: "05", short: "V", label: "5 дугаар сар", tasks: 1045, minutes: 689 * 60 + 23 },
-  { key: "06", short: "VI", label: "6 дугаар сар", tasks: 950, minutes: 586 * 60 + 58 },
-];
-
-const categoryMeta = [
-  {
-    id: "daily",
-    name: "Өдөр тутмын ажил",
-    shortName: "Daily Task",
-    color: "#ff6b4a",
-    icon: ListChecks,
-    description: "Тогтмол хяналт, өгөгдөл шалгалт болон өдөр тутмын үйл ажиллагаа.",
-    examples: ["Өглөөний системийн хяналт", "Өдөр тутмын дата шалгалт", "Ажлын явцын бүртгэл шинэчлэх"],
-  },
-  {
-    id: "meeting",
-    name: "Teams уулзалт",
-    shortName: "Teams Meeting",
-    color: "#7c5cff",
-    icon: Users,
-    description: "Харилцагч болон хэлтэс хоорондын шаардлага, уялдааны уулзалтууд.",
-    examples: ["Шинэ боломжийн шаардлага хэлэлцэх", "Харилцагчийн танилцуулга", "Хөгжүүлэлтийн уялдаа уулзалт"],
-  },
-  {
-    id: "phone",
-    name: "Утасны хүсэлт",
-    shortName: "Phone Call",
-    color: "#168c80",
-    icon: MessageSquareText,
-    description: "Zendesk-д төвлөрүүлэн бүртгэсэн хэрэглэгчийн дуудлага, хүсэлтүүд.",
-    examples: ["Хэрэглэгчийн дуудлага хүлээн авах", "Zendesk хүсэлт үүсгэх", "Шийдлийн эргэн холбоо өгөх"],
-  },
-  {
-    id: "development",
-    name: "Хөгжүүлэлт",
-    shortName: "Development",
-    color: "#2676e8",
-    icon: Zap,
-    description: "Шинэ боломж, интеграц, автоматжуулалтын хөгжүүлэлт.",
-    examples: ["Шинэ тайлангийн модуль", "API интеграц", "Процесс автоматжуулалт"],
-  },
-  {
-    id: "bug",
-    name: "Алдаа засвар",
-    shortName: "Bug Fix",
-    color: "#ee9d2b",
-    icon: Target,
-    description: "Системийн алдааг оношлох, засах болон дахин шалгах ажил.",
-    examples: ["Логийн алдаа оношлох", "Засвар production-д гаргах", "Regression тест хийх"],
-  },
-  {
-    id: "support",
-    name: "Хэрэглэгчийн дэмжлэг",
-    shortName: "Daily Support",
-    color: "#48a561",
-    icon: CheckCircle2,
-    description: "Өдөр тутмын асуулт, тохиргоо, ашиглалтын тусламж.",
-    examples: ["Эрхийн тохиргоо шалгах", "Ашиглалтын заавар өгөх", "Хүсэлтийн шийдэл баталгаажуулах"],
-  },
-  {
-    id: "internal",
-    name: "Дотоод сайжруулалт",
-    shortName: "Internal",
-    color: "#d8588f",
-    icon: TrendingUp,
-    description: "Багийн процесс, баримтжуулалт, дотоод төслийн сайжруулалт.",
-    examples: ["Процессын зураглал шинэчлэх", "Дотоод гарын авлага", "Багийн backlog цэгцлэх"],
-  },
-  {
-    id: "analytics",
-    name: "Тест ба аналитик",
-    shortName: "Test & Analytics",
-    color: "#67758d",
-    icon: LayoutDashboard,
-    description: "Тест, өгөгдлийн шинжилгээ болон удирдлагын тайлан бэлтгэх.",
-    examples: ["Сарын KPI шинжилгээ", "Feature тест", "Удирдлагын тайлан боловсруулах"],
-  },
-];
-
-const juneValues = [
-  [138, 158 * 60 + 33],
-  [29, 35 * 60 + 7],
-  [242, 86 * 60 + 42],
-  [96, 112 * 60 + 15],
-  [124, 78 * 60 + 31],
-  [168, 48 * 60 + 20],
-  [85, 42 * 60 + 18],
-  [68, 25 * 60 + 12],
-];
-
-const mayValues = [
-  [125, 144 * 60 + 35],
-  [20, 21 * 60 + 50],
-  [188, 75 * 60 + 12],
-  [118, 137 * 60 + 40],
-  [146, 92 * 60 + 28],
-  [240, 94 * 60 + 16],
-  [108, 69 * 60 + 7],
-  [100, 54 * 60 + 15],
-];
-
-const fallbackSummary =
-  "6 дугаар сард нийт 950 ажилд 586 цаг 58 минут зарцуулсан байна. 5 дугаар сартай харьцуулахад гүйцэтгэсэн ажлын тоо 95-аар буюу 9.1%, нийт хугацаа 102 цаг 25 минутаар буюу 14.9% буурчээ.\n\nӨдөр тутмын ажил 138 болж 13-аар өссөн бөгөөд 158 цаг 33 минут зарцуулсан. Teams уулзалт 29 болж 45.0%-иар, уулзалтад зарцуулсан хугацаа 13 цаг 17 минутаар өссөн нь шинэ боломж, хөгжүүлэлтийн шаардлага болон харилцагчтай хийх уялдааны уулзалт нэмэгдсэнийг харуулж байна.\n\nНэг ажилд зарцуулсан дундаж хугацаа 39.6 минутаас 37.1 минут болж 2.5 минутаар буурсан. Энэ нь нийт ачаалал буурсан үеэр ч ажлын боловсруулалтын хурд сайжирсныг илтгэнэ.";
-
 const CLICKUP_PAGE_SIZE = 50;
+const MONTH_SHORTS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
+const CATEGORY_COLORS = ["#ff6b4a", "#7c5cff", "#168c80", "#2676e8", "#ee9d2b", "#48a561", "#d8588f", "#67758d"];
+const EMPTY_SUMMARY = "ClickUp-ийн live өгөгдөл синк хийгдсэний дараа сарын нэгтгэл автоматаар шинэчлэгдэнэ.";
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("mn-MN").format(value);
@@ -256,6 +152,7 @@ function formatApiDuration(value: number | null) {
 }
 
 function percentChange(current: number, previous: number) {
+  if (!previous) return 0;
   return ((current - previous) / previous) * 100;
 }
 
@@ -263,27 +160,112 @@ function signed(value: number, digits = 1) {
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}%`;
 }
 
-function buildCategories(month: Month): Category[] {
-  const exact = month.key === "06" ? juneValues : month.key === "05" ? mayValues : null;
-  const taskScale = month.tasks / 950;
-  const timeScale = month.minutes / (586 * 60 + 58);
-  let generated = categoryMeta.map((meta, index) => ({
-    ...meta,
-    tasks: exact ? exact[index][0] : Math.round(juneValues[index][0] * taskScale),
-    minutes: exact ? exact[index][1] : Math.round(juneValues[index][1] * timeScale),
-  }));
+function monthKeyFromDate(value: string | null) {
+  if (!value) return "";
+  const date = new Date(Number(value));
+  if (Number.isNaN(date.getTime())) return "";
+  return String(date.getUTCMonth() + 1).padStart(2, "0");
+}
 
-  if (!exact) {
-    const taskDifference = month.tasks - generated.reduce((sum, item) => sum + item.tasks, 0);
-    const timeDifference = month.minutes - generated.reduce((sum, item) => sum + item.minutes, 0);
-    generated = generated.map((item, index) =>
-      index === 0
-        ? { ...item, tasks: item.tasks + taskDifference, minutes: item.minutes + timeDifference }
-        : item,
-    );
+function buildMonths(tasks: ClickUpSubtask[]): Month[] {
+  const buckets = Array.from({ length: 12 }, () => ({ tasks: 0, estimateMs: 0, estimatedTasks: 0 }));
+  for (const task of tasks) {
+    const monthIndex = Number(monthKeyFromDate(task.dueDate)) - 1;
+    if (monthIndex < 0 || monthIndex > 11) continue;
+    buckets[monthIndex].tasks += 1;
+    if (task.timeEstimate) {
+      buckets[monthIndex].estimateMs += task.timeEstimate;
+      buckets[monthIndex].estimatedTasks += 1;
+    }
   }
 
-  return generated;
+  return buckets.map((bucket, index) => ({
+    key: String(index + 1).padStart(2, "0"),
+    short: MONTH_SHORTS[index],
+    label: `${index + 1} дүгээр сар`,
+    tasks: bucket.tasks,
+    minutes: Math.round(bucket.estimateMs / 60_000),
+    estimatedTasks: bucket.estimatedTasks,
+  }));
+}
+
+function categoryIcon(name: string) {
+  const normalized = name.toLocaleLowerCase();
+  if (normalized.includes("meeting")) return Users;
+  if (normalized.includes("call") || normalized.includes("chat") || normalized.includes("email")) return MessageSquareText;
+  if (normalized.includes("bug") || normalized.includes("incident") || normalized.includes("imp-")) return Target;
+  if (normalized.includes("support")) return CheckCircle2;
+  if (normalized.includes("training") || normalized.includes("study") || normalized.includes("test")) return Zap;
+  return ListChecks;
+}
+
+function buildCategories(tasks: ClickUpSubtask[], monthKey: MonthKey): Category[] {
+  const buckets = new Map<string, {
+    tasks: number;
+    estimateMs: number;
+    estimatedTasks: number;
+    color: string;
+    members: Map<string, number>;
+  }>();
+
+  for (const task of tasks) {
+    if (monthKeyFromDate(task.dueDate) !== monthKey) continue;
+    const typeName = task.type?.name || "Тодорхойгүй";
+    const bucket = buckets.get(typeName) || {
+      tasks: 0,
+      estimateMs: 0,
+      estimatedTasks: 0,
+      color: task.type?.color || CATEGORY_COLORS[buckets.size % CATEGORY_COLORS.length],
+      members: new Map<string, number>(),
+    };
+    bucket.tasks += 1;
+    if (task.timeEstimate) {
+      bucket.estimateMs += task.timeEstimate;
+      bucket.estimatedTasks += 1;
+    }
+    for (const assignee of task.assignment) {
+      bucket.members.set(assignee.name, (bucket.members.get(assignee.name) || 0) + 1);
+    }
+    buckets.set(typeName, bucket);
+  }
+
+  return Array.from(buckets.entries())
+    .map(([name, bucket]) => ({
+      id: name,
+      name,
+      shortName: name,
+      tasks: bucket.tasks,
+      minutes: Math.round(bucket.estimateMs / 60_000),
+      estimatedTasks: bucket.estimatedTasks,
+      color: bucket.color,
+      icon: categoryIcon(name),
+      description: `ClickUp-ийн Type талбар дахь “${name}” ангиллын ${monthKey}-р сарын live гүйцэтгэл.`,
+      members: Array.from(bucket.members.entries())
+        .map(([memberName, memberTasks]) => ({ name: memberName, tasks: memberTasks }))
+        .sort((a, b) => b.tasks - a.tasks),
+    }))
+    .sort((a, b) => b.tasks - a.tasks);
+}
+
+function sumMonths(items: Month[]) {
+  return items.reduce(
+    (total, item) => ({
+      tasks: total.tasks + item.tasks,
+      minutes: total.minutes + item.minutes,
+      estimatedTasks: total.estimatedTasks + item.estimatedTasks,
+    }),
+    { tasks: 0, minutes: 0, estimatedTasks: 0 },
+  );
+}
+
+function preparedSummary(month: Month, previous: Month, categories: Category[]) {
+  if (!month.tasks) return `${month.label}-д ClickUp дээр complete subtask бүртгэгдээгүй байна.`;
+  const leader = categories[0];
+  const average = month.minutes / Math.max(month.estimatedTasks, 1);
+  const comparison = previous.tasks
+    ? `${previous.label}-тай харьцуулахад ажлын тоо ${Math.abs(month.tasks - previous.tasks)}-аар ${month.tasks >= previous.tasks ? "өссөн" : "буурсан"}.`
+    : "Өмнөх сард харьцуулах complete subtask бүртгэгдээгүй байна.";
+  return `${month.label}-д ClickUp-ээс ${formatNumber(month.tasks)} complete subtask синк хийгдэж, ${formatMinutes(month.minutes)} time estimate бүртгэгдсэн байна. ${comparison}\n\nХамгийн олон ажилтай Type нь ${leader?.shortName || "—"}: ${formatNumber(leader?.tasks || 0)} subtask, ${formatMinutes(leader?.minutes || 0)} estimate-тэй. Ангиллын тоо болон хугацаа нь ClickUp-ийн Type, Due date, Time estimate талбараас шууд тооцогдоно.\n\nTime estimate оруулсан ${formatNumber(month.estimatedTasks)} task-д нэг ажил дунджаар ${average.toFixed(1)} минут байна. Estimate оруулаагүй task-ийг дундаж хугацааны хуваарьт оруулаагүй.`;
 }
 
 function Delta({ value, suffix = "" }: { value: number; suffix?: string }) {
@@ -298,10 +280,10 @@ function Delta({ value, suffix = "" }: { value: number; suffix?: string }) {
 }
 
 export default function Home() {
-  const [selectedMonthKey, setSelectedMonthKey] = useState<MonthKey>("06");
+  const [selectedMonthKey, setSelectedMonthKey] = useState<MonthKey>("01");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [summary, setSummary] = useState(fallbackSummary);
-  const [summaryMonth, setSummaryMonth] = useState<MonthKey>("06");
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
+  const [summaryMonth, setSummaryMonth] = useState<MonthKey>("01");
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summarySource, setSummarySource] = useState<"prepared" | "groq" | "local">("prepared");
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -313,18 +295,31 @@ export default function Home() {
   const [clickUpType, setClickUpType] = useState("all");
   const [clickUpPage, setClickUpPage] = useState(1);
 
+  const months = useMemo(() => buildMonths(clickUpData?.subtasks || []), [clickUpData]);
+  const availableMonths = useMemo(() => months.filter((item) => item.tasks > 0), [months]);
+  const displayMonths = availableMonths.length > 0 ? availableMonths : months.slice(0, 8);
   const monthIndex = months.findIndex((month) => month.key === selectedMonthKey);
-  const month = months[monthIndex];
-  const previous = months[Math.max(0, monthIndex - 1)];
-  const categories = useMemo(() => buildCategories(month), [month]);
-  const previousCategories = useMemo(() => buildCategories(previous), [previous]);
+  const safeMonthIndex = Math.max(0, monthIndex);
+  const month = months[safeMonthIndex];
+  const previous = months[Math.max(0, safeMonthIndex - 1)];
+  const categories = useMemo(() => buildCategories(clickUpData?.subtasks || [], month.key), [clickUpData, month.key]);
+  const previousCategories = useMemo(() => buildCategories(clickUpData?.subtasks || [], previous.key), [clickUpData, previous.key]);
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? null;
-  const taskDelta = monthIndex === 0 ? 0 : percentChange(month.tasks, previous.tasks);
-  const timeDelta = monthIndex === 0 ? 0 : percentChange(month.minutes, previous.minutes);
-  const averageMinutes = month.minutes / month.tasks;
-  const previousAverage = previous.minutes / previous.tasks;
-  const maxTasks = Math.max(...months.map((item) => item.tasks));
-  const maxCategoryTasks = Math.max(...categories.map((item) => item.tasks));
+  const topCategory = categories[0] || null;
+  const taskDelta = safeMonthIndex === 0 ? 0 : percentChange(month.tasks, previous.tasks);
+  const timeDelta = safeMonthIndex === 0 ? 0 : percentChange(month.minutes, previous.minutes);
+  const averageMinutes = month.minutes / Math.max(month.estimatedTasks, 1);
+  const previousAverage = previous.minutes / Math.max(previous.estimatedTasks, 1);
+  const chartMax = Math.max(100, Math.ceil(Math.max(1, ...displayMonths.map((item) => item.tasks)) / 100) * 100);
+  const maxCategoryTasks = Math.max(1, ...categories.map((item) => item.tasks));
+  const yearTotals = sumMonths(months);
+  const firstHalf = sumMonths(months.slice(0, 6));
+  const secondHalf = sumMonths(months.slice(6));
+  const latestMonth = availableMonths[availableMonths.length - 1] || months[0];
+  const latestMonthNumber = Number(latestMonth.key);
+  const secondHalfLabel = latestMonthNumber >= 7 ? `VII–${latestMonth.short}` : "VII–XII";
+  const firstHalfRate = firstHalf.minutes ? firstHalf.tasks / (firstHalf.minutes / 60) : 0;
+  const secondHalfRate = secondHalf.minutes ? secondHalf.tasks / (secondHalf.minutes / 60) : 0;
   const summaryIsCurrent = summaryMonth === selectedMonthKey;
   const selectedClickUpPerson = clickUpData?.people.find((person) => person.id === clickUpPerson) || clickUpData?.people[0] || null;
   const clickUpTypes = useMemo(() => {
@@ -374,6 +369,13 @@ export default function Home() {
     setClickUpPage(1);
   }, [clickUpPerson, clickUpSearch, clickUpType]);
 
+  useEffect(() => {
+    if (!clickUpData) return;
+    setSummary(preparedSummary(month, previous, categories));
+    setSummaryMonth(month.key);
+    setSummarySource("prepared");
+  }, [categories, clickUpData, month, previous]);
+
   async function loadClickUp() {
     setClickUpLoading(true);
     setClickUpError("");
@@ -385,6 +387,11 @@ export default function Home() {
       }
       setClickUpData(result);
       setClickUpPerson((current) => result.people.some((person) => person.id === current) ? current : result.people[0]?.id || "");
+      const latestMonthKey = result.subtasks.reduce((latest, task) => {
+        const key = monthKeyFromDate(task.dueDate);
+        return key > latest ? key : latest;
+      }, "01");
+      setSelectedMonthKey(latestMonthKey);
       setClickUpPage(1);
     } catch (error) {
       setClickUpError(error instanceof Error ? error.message : "ClickUp өгөгдөл татаж чадсангүй.");
@@ -403,7 +410,7 @@ export default function Home() {
           period: `2026 оны ${month.label}`,
           current: { tasks: month.tasks, minutes: month.minutes, averageMinutes },
           previous:
-            monthIndex > 0
+            safeMonthIndex > 0 && previous.tasks > 0
               ? {
                   period: `2026 оны ${previous.label}`,
                   tasks: previous.tasks,
@@ -418,7 +425,7 @@ export default function Home() {
             minutes,
           })),
           previousCategories:
-            monthIndex > 0
+            safeMonthIndex > 0 && previous.tasks > 0
               ? previousCategories.map(({ name, shortName, tasks, minutes }) => ({
                   name,
                   shortName,
@@ -427,8 +434,8 @@ export default function Home() {
                 }))
               : null,
           halfYear: {
-            previous: { period: "2025 оны 7–12 сар", tasks: 668, minutes: 620 * 60 },
-            current: { period: "2026 оны 1–6 сар", tasks: 6696, minutes: 3819 * 60 + 29 },
+            previous: { period: "2026 оны 1–6 сар", tasks: firstHalf.tasks, minutes: firstHalf.minutes },
+            current: { period: `2026 оны 7–${latestMonthNumber} сар`, tasks: secondHalf.tasks, minutes: secondHalf.minutes },
           },
         }),
       });
@@ -438,8 +445,8 @@ export default function Home() {
       setSummaryMonth(selectedMonthKey);
       setSummarySource(result.source ?? "groq");
     } catch {
-      setSummary(fallbackSummary);
-      setSummaryMonth("06");
+      setSummary(preparedSummary(month, previous, categories));
+      setSummaryMonth(selectedMonthKey);
       setSummarySource("local");
     } finally {
       setIsSummarizing(false);
@@ -480,7 +487,7 @@ export default function Home() {
           <div className="sidebar-note-icon"><Bot size={18} /></div>
           <div><strong>Groq AI</strong><span>Монгол тайланг секундэд нэгтгэнэ</span></div>
         </div>
-        <div className="sidebar-footer"><span className="online-dot" />Өгөгдөл шинэчлэгдсэн</div>
+        <div className="sidebar-footer"><span className="online-dot" />{clickUpLoading ? "ClickUp синк хийж байна" : clickUpError ? "ClickUp холболт тасарсан" : "ClickUp live өгөгдөл"}</div>
       </aside>
 
       {mobileMenu && <button className="menu-backdrop" onClick={() => setMobileMenu(false)} aria-label="Цэс хаах" />}
@@ -505,10 +512,10 @@ export default function Home() {
             <div className="hero-row">
               <div>
                 <h1>Ажлын тайлан<span>.</span></h1>
-                <p>Багийн ажлын ачаалал, үр ашиг болон сарын өөрчлөлтийг нэг дороос.</p>
+                <p>ClickUp-ийн complete subtask, Type болон time estimate-ээс автоматаар тооцов.</p>
               </div>
               <div className="month-switcher" aria-label="Сар сонгох">
-                {months.map((item) => (
+                {displayMonths.map((item) => (
                   <button key={item.key} className={selectedMonthKey === item.key ? "selected" : ""} onClick={() => selectMonth(item.key)}>
                     {item.short}
                   </button>
@@ -522,29 +529,29 @@ export default function Home() {
               <div className="kpi-head"><span>Гүйцэтгэсэн ажил</span><div className="kpi-icon"><CheckCircle2 size={20} /></div></div>
               <div className="kpi-value">{formatNumber(month.tasks)}</div>
               <div className="kpi-foot">
-                {monthIndex > 0 ? <><Delta value={taskDelta} /><span>өмнөх сараас</span></> : <span>хагас жилийн эхлэл</span>}
+                {previous.tasks > 0 ? <><Delta value={taskDelta} /><span>өмнөх сараас</span></> : <span>ClickUp live data</span>}
               </div>
               <div className="card-glow" />
             </article>
             <article className="kpi-card">
-              <div className="kpi-head"><span>Нийт зарцуулсан цаг</span><div className="kpi-icon blue"><Clock3 size={20} /></div></div>
+              <div className="kpi-head"><span>Нийт time estimate</span><div className="kpi-icon blue"><Clock3 size={20} /></div></div>
               <div className="kpi-value time-value">{formatMinutes(month.minutes, true)}</div>
               <div className="kpi-foot">
-                {monthIndex > 0 ? <><Delta value={timeDelta} /><span>өмнөх сараас</span></> : <span>хагас жилийн эхлэл</span>}
+                {previous.minutes > 0 ? <><Delta value={timeDelta} /><span>өмнөх сараас</span></> : <span>{formatNumber(month.estimatedTasks)} task estimate-тэй</span>}
               </div>
             </article>
             <article className="kpi-card">
               <div className="kpi-head"><span>Нэг ажилд</span><div className="kpi-icon green"><Zap size={20} /></div></div>
               <div className="kpi-value">{averageMinutes.toFixed(1)}<small> мин</small></div>
               <div className="kpi-foot">
-                {monthIndex > 0 ? <><Delta value={percentChange(averageMinutes, previousAverage)} suffix={`${(averageMinutes - previousAverage).toFixed(1)} мин`} /><span>дундаж хугацаа</span></> : <span>дундаж хугацаа</span>}
+                {previous.estimatedTasks > 0 ? <><Delta value={percentChange(averageMinutes, previousAverage)} suffix={`${(averageMinutes - previousAverage).toFixed(1)} мин`} /><span>estimate-тэй task</span></> : <span>estimate-тэй task-ийн дундаж</span>}
               </div>
             </article>
             <article className="kpi-card emphasis-card">
               <div className="kpi-head"><span>Хамгийн идэвхтэй</span><div className="kpi-icon violet"><Target size={20} /></div></div>
-              <div className="kpi-value compact-value">{categories.slice().sort((a, b) => b.tasks - a.tasks)[0].shortName}</div>
-              <button className="text-link" onClick={() => setSelectedCategoryId(categories.slice().sort((a, b) => b.tasks - a.tasks)[0].id)}>
-                {formatNumber(categories.slice().sort((a, b) => b.tasks - a.tasks)[0].tasks)} ажил <ArrowRight size={14} />
+              <div className="kpi-value compact-value">{topCategory?.shortName || (clickUpLoading ? "Синк..." : "—")}</div>
+              <button className="text-link" disabled={!topCategory} onClick={() => topCategory && setSelectedCategoryId(topCategory.id)}>
+                {formatNumber(topCategory?.tasks || 0)} ажил <ArrowRight size={14} />
               </button>
             </article>
           </section>
@@ -552,32 +559,32 @@ export default function Home() {
           <section className="dashboard-grid">
             <article className="panel trend-panel">
               <div className="panel-head">
-                <div><span className="panel-kicker">6 САРЫН ХӨДӨЛГӨӨН</span><h2>Сарын гүйцэтгэл</h2></div>
+                <div><span className="panel-kicker">CLICKUP · {displayMonths.length} САР</span><h2>Сарын гүйцэтгэл</h2></div>
                 <div className="legend"><span className="legend-dot" />Ажлын тоо</div>
               </div>
-              <div className="chart-area" role="img" aria-label="2026 оны эхний 6 сарын гүйцэтгэсэн ажлын баганан график">
-                <div className="y-labels"><span>1,300</span><span>975</span><span>650</span><span>325</span><span>0</span></div>
+              <div className="chart-area" role="img" aria-label={`2026 оны ${displayMonths.length} сарын ClickUp complete subtask график`}>
+                <div className="y-labels"><span>{formatNumber(chartMax)}</span><span>{formatNumber(Math.round(chartMax * .75))}</span><span>{formatNumber(Math.round(chartMax * .5))}</span><span>{formatNumber(Math.round(chartMax * .25))}</span><span>0</span></div>
                 <div className="chart-grid-lines"><i /><i /><i /><i /><i /></div>
                 <div className="bars">
-                  {months.map((item, index) => (
+                  {displayMonths.map((item, index) => (
                     <button key={item.key} className={`bar-group ${selectedMonthKey === item.key ? "active" : ""}`} onClick={() => selectMonth(item.key)} aria-label={`${item.label}: ${item.tasks} ажил`}>
                       <span className="bar-value">{formatNumber(item.tasks)}</span>
-                      <span className="bar-track"><span className="bar-fill" style={{ height: `${(item.tasks / maxTasks) * 100}%`, animationDelay: `${index * 70}ms` }} /></span>
+                      <span className="bar-track"><span className="bar-fill" style={{ height: `${(item.tasks / chartMax) * 100}%`, animationDelay: `${index * 70}ms` }} /></span>
                       <span className="bar-label">{item.short}</span>
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="chart-summary"><TrendingUp size={16} /><span>2026 оны эхний хагас жилд</span><strong>6,696 ажил</strong><span>гүйцэтгэв</span></div>
+              <div className="chart-summary"><TrendingUp size={16} /><span>2026 оны I–{latestMonth.short} сард</span><strong>{formatNumber(yearTotals.tasks)} ажил</strong><span>ClickUp-ээс синк хийгдэв</span></div>
             </article>
 
             <article className="panel mix-panel" id="workload">
               <div className="panel-head">
-                <div><span className="panel-kicker">{month.short} САРЫН БҮТЭЦ</span><h2>Ажлын ангилал</h2></div>
+                <div><span className="panel-kicker">{month.short} САР · TOP {Math.min(8, categories.length)} TYPE</span><h2>Ажлын ангилал</h2></div>
                 <span className="click-hint">Дарж задлах</span>
               </div>
               <div className="category-list">
-                {categories.slice().sort((a, b) => b.tasks - a.tasks).map((category) => {
+                {categories.slice(0, 8).map((category) => {
                   const Icon = category.icon;
                   return (
                     <button className="category-row" key={category.id} onClick={() => setSelectedCategoryId(category.id)}>
@@ -715,7 +722,7 @@ export default function Home() {
             <div className="ai-orb"><Sparkles size={25} /><span /></div>
             <div className="ai-content">
               <div className="ai-heading">
-                <div><span className="ai-label">GROQ AI НЭГТГЭЛ</span><h2>{summaryIsCurrent ? month.label : "6 дугаар сар"} — гол дүгнэлт</h2></div>
+                <div><span className="ai-label">GROQ AI · CLICKUP LIVE</span><h2>{summaryIsCurrent ? month.label : "Сонгосон сар"} — гол дүгнэлт</h2></div>
                 <button className="summarize-button" onClick={generateSummary} disabled={isSummarizing}>
                   {isSummarizing ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={15} />}
                   {isSummarizing ? "Нэгтгэж байна" : summaryIsCurrent ? "Дахин нэгтгэх" : "Энэ сарыг нэгтгэх"}
@@ -729,18 +736,18 @@ export default function Home() {
           </section>
 
           <section className="comparison-section" id="comparison">
-            <div className="section-title"><div><span className="panel-kicker">ХАГАС ЖИЛИЙН ХАРЬЦУУЛАЛТ</span><h2>Ачаалал ба бүтээмжийн өсөлт</h2></div><p>Багийн бүтэц болон ажлын хүрээний өөрчлөлтийг өмнөх хугацаатай харьцуулав.</p></div>
+            <div className="section-title"><div><span className="panel-kicker">CLICKUP LIVE ХАРЬЦУУЛАЛТ</span><h2>2026 оны хагас жилийн хөдөлгөөн</h2></div><p>Due date-аар I–VI сар болон VII–{latestMonth.short} сарын complete subtask-ийг харьцуулав.</p></div>
             <div className="comparison-grid">
               <article className="period-card muted-period">
-                <div className="period-head"><span>ӨМНӨХ ҮЕ</span><strong>2025 · VII–XII</strong></div>
-                <div className="period-stats"><div><small>НИЙТ АЖИЛ</small><strong>668</strong></div><div><small>НИЙТ ХУГАЦАА</small><strong>620<em> цаг</em></strong></div></div>
-                <div className="period-rate"><span>Нэг цагт</span><strong>1.08 ажил</strong></div>
+                <div className="period-head"><span>ЭХНИЙ ХАГАС</span><strong>2026 · I–VI</strong></div>
+                <div className="period-stats"><div><small>НИЙТ АЖИЛ</small><strong>{formatNumber(firstHalf.tasks)}</strong></div><div><small>TIME ESTIMATE</small><strong>{formatMinutes(firstHalf.minutes, true)}</strong></div></div>
+                <div className="period-rate"><span>Нэг estimate цагт</span><strong>{firstHalfRate.toFixed(2)} ажил</strong></div>
               </article>
-              <div className="comparison-arrow"><ArrowRight size={21} /><span>6 сарын өөрчлөлт</span></div>
+              <div className="comparison-arrow"><ArrowRight size={21} /><span>H1 → H2</span></div>
               <article className="period-card current-period">
-                <div className="period-head"><span>ТАЙЛАНТ ҮЕ</span><strong>2026 · I–VI</strong></div>
-                <div className="period-stats"><div><small>НИЙТ АЖИЛ</small><strong>6,696</strong><Delta value={902.4} /></div><div><small>НИЙТ ХУГАЦАА</small><strong>3,819<em>ц 29м</em></strong><Delta value={516.0} /></div></div>
-                <div className="period-rate"><span>Нэг цагт</span><strong>1.75 ажил</strong><span className="rate-chip">+62.4%</span></div>
+                <div className="period-head"><span>ХОЁР ДАХЬ ХАГАС · ОДОО</span><strong>2026 · {secondHalfLabel}</strong></div>
+                <div className="period-stats"><div><small>НИЙТ АЖИЛ</small><strong>{formatNumber(secondHalf.tasks)}</strong>{firstHalf.tasks > 0 && <Delta value={percentChange(secondHalf.tasks, firstHalf.tasks)} />}</div><div><small>TIME ESTIMATE</small><strong>{formatMinutes(secondHalf.minutes, true)}</strong>{firstHalf.minutes > 0 && <Delta value={percentChange(secondHalf.minutes, firstHalf.minutes)} />}</div></div>
+                <div className="period-rate"><span>Нэг estimate цагт</span><strong>{secondHalfRate.toFixed(2)} ажил</strong>{firstHalfRate > 0 && <span className="rate-chip">{signed(percentChange(secondHalfRate, firstHalfRate))}</span>}</div>
               </article>
             </div>
           </section>
@@ -765,19 +772,19 @@ export default function Home() {
             <p className="drawer-description">{selectedCategory.description}</p>
             <div className="drawer-stats">
               <div><small>ГҮЙЦЭТГЭСЭН</small><strong>{formatNumber(selectedCategory.tasks)}</strong><span>ажил</span></div>
-              <div><small>ЗАРЦУУЛСАН</small><strong>{formatMinutes(selectedCategory.minutes, true)}</strong><span>нийт хугацаа</span></div>
+              <div><small>TIME ESTIMATE</small><strong>{formatMinutes(selectedCategory.minutes, true)}</strong><span>{selectedCategory.estimatedTasks} task</span></div>
             </div>
-            <div className="drawer-average"><Clock3 size={16} /><span>Нэг ажилд дунджаар</span><strong>{(selectedCategory.minutes / selectedCategory.tasks).toFixed(1)} мин</strong></div>
+            <div className="drawer-average"><Clock3 size={16} /><span>Estimate-тэй нэг ажилд</span><strong>{(selectedCategory.minutes / Math.max(selectedCategory.estimatedTasks, 1)).toFixed(1)} мин</strong></div>
             <div className="drawer-tasks">
-              <div className="drawer-section-title"><span>Жишиг ажлууд</span><small>{month.label}</small></div>
-              {selectedCategory.examples.map((task, index) => (
-                <div className="task-item" key={task}>
+              <div className="drawer-section-title"><span>Ажилтны оролцоо</span><small>{month.label}</small></div>
+              {selectedCategory.members.map((member) => (
+                <div className="task-item" key={member.name}>
                   <span className="task-check"><CheckCircle2 size={15} /></span>
-                  <div><strong>{task}</strong><small>Дууссан · #{String(index + 1).padStart(2, "0")}</small></div>
+                  <div><strong>{member.name}</strong><small>{formatNumber(member.tasks)} complete subtask</small></div>
                 </div>
               ))}
             </div>
-            <div className="drawer-callout"><Sparkles size={17} /><span>Энэ ангиллын мэдээлэл AI нэгтгэлд автоматаар тусгагдана.</span></div>
+            <div className="drawer-callout"><Sparkles size={17} /><span>ClickUp sync шинэчлэгдэхэд энэ Type-ийн үзүүлэлт автоматаар дахин тооцогдоно.</span></div>
           </>
         )}
       </aside>
