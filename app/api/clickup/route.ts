@@ -1,3 +1,7 @@
+import { eq } from "drizzle-orm";
+import { getDb } from "../../../db";
+import { clickUpSnapshots } from "../../../db/schema";
+
 type ClickUpUser = {
   id?: number;
   username?: string;
@@ -34,6 +38,50 @@ const CX_DEV_TEAM_LIST_ID = "901804865220";
 const TYPE_FIELD_ID = "71ce5c62-1c3c-4dd5-9d70-84dc6933f55f";
 const REPORT_YEAR = 2026;
 const CX_TEAM_MEMBERS = ["Ариунгэрэл", "Байгалмаа", "Мишээл", "Энхбат"];
+const SNAPSHOT_ID = 1;
+
+type SnapshotPayload = Record<string, unknown> & { syncedAt: string };
+
+async function encodeSnapshot(payload: SnapshotPayload) {
+  const compressed = new Blob([JSON.stringify(payload)])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
+  const bytes = new Uint8Array(await new Response(compressed).arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 32_768) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
+  }
+  return btoa(binary);
+}
+
+async function decodeSnapshot(value: string) {
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const decompressed = new Response(bytes.buffer).body!.pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(decompressed).text()) as SnapshotPayload;
+}
+
+async function readSnapshot() {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(clickUpSnapshots)
+    .where(eq(clickUpSnapshots.id, SNAPSHOT_ID))
+    .limit(1);
+  return row ? decodeSnapshot(row.payload) : null;
+}
+
+async function saveSnapshot(payload: SnapshotPayload) {
+  const db = getDb();
+  const encoded = await encodeSnapshot(payload);
+  await db
+    .insert(clickUpSnapshots)
+    .values({ id: SNAPSHOT_ID, payload: encoded, syncedAt: payload.syncedAt })
+    .onConflictDoUpdate({
+      target: clickUpSnapshots.id,
+      set: { payload: encoded, syncedAt: payload.syncedAt },
+    });
+}
 
 function safeColor(value: unknown, fallback = "#64748b") {
   return typeof value === "string" && /^#[0-9a-f]{3,8}$/i.test(value) ? value : fallback;
@@ -108,13 +156,23 @@ async function getCompletedSubtasks(parentId: string, workspaceId: string, token
   return tasks;
 }
 
-export async function GET() {
-  const token = process.env.CLICKUP_API_TOKEN;
-  if (!token) {
-    return Response.json({ error: "ClickUp API тохиргоо хийгдээгүй байна." }, { status: 503 });
-  }
-
+export async function GET(request: Request) {
   try {
+    const refresh = new URL(request.url).searchParams.get("refresh") === "1";
+    if (!refresh) {
+      const snapshot = await readSnapshot();
+      if (snapshot) {
+        return Response.json({ ...snapshot, cacheSource: "snapshot" }, {
+          headers: { "Cache-Control": "private, no-store" },
+        });
+      }
+    }
+
+    const token = process.env.CLICKUP_API_TOKEN;
+    if (!token) {
+      return Response.json({ error: "ClickUp API тохиргоо хийгдээгүй байна." }, { status: 503 });
+    }
+
     const parentQuery = new URLSearchParams({
       include_closed: "true",
       subtasks: "true",
@@ -244,7 +302,7 @@ export async function GET() {
       missingTimeEstimate: subtasks.filter((task) => !task.timeEstimate).length,
     };
 
-    return Response.json({
+    const payload = {
       workspace: {
         id: workspace.id,
         name: safeText(workspace.name, "ClickUp Workspace"),
@@ -266,9 +324,13 @@ export async function GET() {
       dataQuality,
       partial: false,
       syncedAt: new Date().toISOString(),
-    }, {
+    } satisfies SnapshotPayload;
+
+    await saveSnapshot(payload);
+
+    return Response.json({ ...payload, cacheSource: "clickup" }, {
       headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Cache-Control": "private, no-store",
       },
     });
   } catch {

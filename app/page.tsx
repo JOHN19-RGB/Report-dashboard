@@ -113,6 +113,7 @@ type ClickUpPayload = {
   };
   partial: boolean;
   syncedAt: string;
+  cacheSource?: "snapshot" | "clickup";
 };
 
 const CLICKUP_PAGE_SIZE = 50;
@@ -362,7 +363,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    void loadClickUp();
+    void loadClickUp(false);
   }, []);
 
   useEffect(() => {
@@ -376,11 +377,11 @@ export default function Home() {
     setSummarySource("prepared");
   }, [categories, clickUpData, month, previous]);
 
-  async function loadClickUp() {
+  async function loadClickUp(refresh = false) {
     setClickUpLoading(true);
     setClickUpError("");
     try {
-      const response = await fetch(`/api/clickup?sync=${Date.now()}`, { cache: "no-store" });
+      const response = await fetch(refresh ? "/api/clickup?refresh=1" : "/api/clickup", { cache: "no-store" });
       const result = (await response.json()) as ClickUpPayload & { error?: string };
       if (!response.ok || !result.workspace || !Array.isArray(result.people) || !Array.isArray(result.parents) || !Array.isArray(result.subtasks)) {
         throw new Error(result.error || "ClickUp өгөгдөл татаж чадсангүй.");
@@ -487,7 +488,7 @@ export default function Home() {
           <div className="sidebar-note-icon"><Bot size={18} /></div>
           <div><strong>Groq AI</strong><span>Монгол тайланг секундэд нэгтгэнэ</span></div>
         </div>
-        <div className="sidebar-footer"><span className="online-dot" />{clickUpLoading ? "ClickUp синк хийж байна" : clickUpError ? "ClickUp холболт тасарсан" : "ClickUp live өгөгдөл"}</div>
+        <div className="sidebar-footer"><span className="online-dot" />{clickUpLoading ? "Хадгалсан data уншиж байна" : clickUpError ? "ClickUp холболт тасарсан" : "ClickUp хадгалсан data"}</div>
       </aside>
 
       {mobileMenu && <button className="menu-backdrop" onClick={() => setMobileMenu(false)} aria-label="Цэс хаах" />}
@@ -603,14 +604,14 @@ export default function Home() {
               <div className="clickup-title-row">
                 <div className="clickup-logo" aria-hidden="true"><span /><span /><span /></div>
                 <div>
-                  <div className="clickup-source"><span className="live-pulse" />CLICKUP LIVE API</div>
+                  <div className="clickup-source"><span className="live-pulse" />CLICKUP SAVED SNAPSHOT</div>
                   <h2>{clickUpData?.list.name || "CX Dev.Team"} · 2026 Daily Task</h2>
-                  <p>4 ажилтны Daily Task parent-аас 2026 оны complete subtask-уудыг live харуулж байна.</p>
+                  <p>Хамгийн сүүлд гараар шинэчилсэн complete subtask-уудыг харуулж байна.</p>
                 </div>
               </div>
-              <button className="clickup-refresh" onClick={loadClickUp} disabled={clickUpLoading}>
+              <button className="clickup-refresh" onClick={() => void loadClickUp(true)} disabled={clickUpLoading}>
                 <RefreshCw className={clickUpLoading ? "spin" : ""} size={15} />
-                {clickUpLoading ? "Татаж байна" : "Шинэчлэх"}
+                {clickUpLoading ? "Шинэчилж байна" : "Шинэчлэх"}
               </button>
             </div>
 
@@ -618,7 +619,7 @@ export default function Home() {
               <div className="clickup-error">
                 <span><X size={18} /></span>
                 <div><strong>Өгөгдөл татагдсангүй</strong><p>{clickUpError}</p></div>
-                <button onClick={loadClickUp}>Дахин оролдох</button>
+                <button onClick={() => void loadClickUp(true)}>Дахин оролдох</button>
               </div>
             ) : (
               <>
@@ -712,7 +713,7 @@ export default function Home() {
                 )}
                 <div className="clickup-footnote">
                   <span><span className="online-dot" />{clickUpData ? `${formatDate(String(new Date(clickUpData.syncedAt).getTime()), true)}-д синк хийсэн` : "API холболт"}</span>
-                  <span>{selectedClickUpPerson?.name || "4 ажилтан"} · {clickUpData?.reportYear || 2026} оны data{clickUpData?.partial ? " · Зарим parent task түр татагдсангүй" : " · Live ClickUp sync"}{clickUpData?.dataQuality.missingTimeEstimate ? ` · ${clickUpData.dataQuality.missingTimeEstimate} task-д estimate оруулаагүй` : ""}</span>
+                  <span>{selectedClickUpPerson?.name || "4 ажилтан"} · {clickUpData?.reportYear || 2026} оны data{clickUpData?.partial ? " · Зарим parent task түр татагдсангүй" : clickUpData?.cacheSource === "clickup" ? " · ClickUp-ээс шинээр татсан" : " · Хадгалсан snapshot"}{clickUpData?.dataQuality.missingTimeEstimate ? ` · ${clickUpData.dataQuality.missingTimeEstimate} task-д estimate оруулаагүй` : ""}</span>
                 </div>
               </>
             )}
