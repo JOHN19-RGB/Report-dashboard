@@ -17,7 +17,6 @@ import {
   Menu,
   MessageSquareText,
   RefreshCw,
-  Search,
   Sparkles,
   Target,
   TrendingUp,
@@ -25,6 +24,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type MonthKey = string;
@@ -116,10 +116,9 @@ type ClickUpPayload = {
   cacheSource?: "snapshot" | "clickup";
 };
 
-const CLICKUP_PAGE_SIZE = 50;
 const MONTH_SHORTS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
 const CATEGORY_COLORS = ["#ff6b4a", "#7c5cff", "#168c80", "#2676e8", "#ee9d2b", "#48a561", "#d8588f", "#67758d"];
-const EMPTY_SUMMARY = "ClickUp-ийн live өгөгдөл синк хийгдсэний дараа сарын нэгтгэл автоматаар шинэчлэгдэнэ.";
+const EMPTY_SUMMARY = "ClickUp-ийн хадгалсан өгөгдөл уншигдсаны дараа сарын нэгтгэл автоматаар шинэчлэгдэнэ.";
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("mn-MN").format(value);
@@ -129,27 +128,6 @@ function formatMinutes(value: number, compact = false) {
   const hours = Math.floor(value / 60);
   const minutes = value % 60;
   return compact ? `${formatNumber(hours)}ц ${minutes}м` : `${formatNumber(hours)} цаг ${minutes} мин`;
-}
-
-function formatDate(value: string | null, includeTime = false) {
-  if (!value) return "—";
-  const date = new Date(Number(value));
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("mn-MN", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    ...(includeTime ? { hour: "2-digit", minute: "2-digit" } : {}),
-  }).format(date);
-}
-
-function formatApiDuration(value: number | null) {
-  if (!value) return "—";
-  const totalMinutes = Math.round(value / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (!hours) return `${minutes} мин`;
-  return `${hours}ц ${minutes}м`;
 }
 
 function percentChange(current: number, previous: number) {
@@ -240,7 +218,7 @@ function buildCategories(tasks: ClickUpSubtask[], monthKey: MonthKey): Category[
       estimatedTasks: bucket.estimatedTasks,
       color: bucket.color,
       icon: categoryIcon(name),
-      description: `ClickUp-ийн Type талбар дахь “${name}” ангиллын ${monthKey}-р сарын live гүйцэтгэл.`,
+      description: `ClickUp-ийн Type талбар дахь “${name}” ангиллын ${monthKey}-р сарын хадгалсан гүйцэтгэл.`,
       members: Array.from(bucket.members.entries())
         .map(([memberName, memberTasks]) => ({ name: memberName, tasks: memberTasks }))
         .sort((a, b) => b.tasks - a.tasks),
@@ -283,28 +261,40 @@ function Delta({ value, suffix = "" }: { value: number; suffix?: string }) {
 export default function Home() {
   const [selectedMonthKey, setSelectedMonthKey] = useState<MonthKey>("01");
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const [summary, setSummary] = useState(EMPTY_SUMMARY);
-  const [summaryMonth, setSummaryMonth] = useState<MonthKey>("01");
   const [isSummarizing, setIsSummarizing] = useState(false);
-  const [summarySource, setSummarySource] = useState<"prepared" | "groq" | "local">("prepared");
+  const [generatedSummary, setGeneratedSummary] = useState<{
+    text: string;
+    monthKey: MonthKey;
+    assignment: string;
+    source: "groq" | "local";
+  } | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [clickUpData, setClickUpData] = useState<ClickUpPayload | null>(null);
   const [clickUpLoading, setClickUpLoading] = useState(true);
   const [clickUpError, setClickUpError] = useState("");
-  const [clickUpSearch, setClickUpSearch] = useState("");
-  const [clickUpPerson, setClickUpPerson] = useState("");
-  const [clickUpType, setClickUpType] = useState("all");
-  const [clickUpPage, setClickUpPage] = useState(1);
+  const [dashboardAssignment, setDashboardAssignment] = useState("all");
 
-  const months = useMemo(() => buildMonths(clickUpData?.subtasks || []), [clickUpData]);
+  const dashboardTasks = useMemo(() => {
+    if (dashboardAssignment === "all") return clickUpData?.subtasks || [];
+    const person = clickUpData?.people.find((item) => item.id === dashboardAssignment);
+    const parentIds = new Set(person?.parentIds || []);
+    return (clickUpData?.subtasks || []).filter((task) => parentIds.has(task.parentId));
+  }, [clickUpData, dashboardAssignment]);
+  const dashboardAssignmentName = dashboardAssignment === "all"
+    ? "Бүх ажилтан"
+    : clickUpData?.people.find((item) => item.id === dashboardAssignment)?.name || "Ажилтан";
+  const months = useMemo(() => buildMonths(dashboardTasks), [dashboardTasks]);
   const availableMonths = useMemo(() => months.filter((item) => item.tasks > 0), [months]);
   const displayMonths = availableMonths.length > 0 ? availableMonths : months.slice(0, 8);
-  const monthIndex = months.findIndex((month) => month.key === selectedMonthKey);
+  const activeMonthKey = availableMonths.some((item) => item.key === selectedMonthKey)
+    ? selectedMonthKey
+    : availableMonths[availableMonths.length - 1]?.key || selectedMonthKey;
+  const monthIndex = months.findIndex((month) => month.key === activeMonthKey);
   const safeMonthIndex = Math.max(0, monthIndex);
   const month = months[safeMonthIndex];
   const previous = months[Math.max(0, safeMonthIndex - 1)];
-  const categories = useMemo(() => buildCategories(clickUpData?.subtasks || [], month.key), [clickUpData, month.key]);
-  const previousCategories = useMemo(() => buildCategories(clickUpData?.subtasks || [], previous.key), [clickUpData, previous.key]);
+  const categories = useMemo(() => buildCategories(dashboardTasks, month.key), [dashboardTasks, month.key]);
+  const previousCategories = useMemo(() => buildCategories(dashboardTasks, previous.key), [dashboardTasks, previous.key]);
   const selectedCategory = categories.find((category) => category.id === selectedCategoryId) ?? null;
   const topCategory = categories[0] || null;
   const taskDelta = safeMonthIndex === 0 ? 0 : percentChange(month.tasks, previous.tasks);
@@ -321,35 +311,10 @@ export default function Home() {
   const secondHalfLabel = latestMonthNumber >= 7 ? `VII–${latestMonth.short}` : "VII–XII";
   const firstHalfRate = firstHalf.minutes ? firstHalf.tasks / (firstHalf.minutes / 60) : 0;
   const secondHalfRate = secondHalf.minutes ? secondHalf.tasks / (secondHalf.minutes / 60) : 0;
-  const summaryIsCurrent = summaryMonth === selectedMonthKey;
-  const selectedClickUpPerson = clickUpData?.people.find((person) => person.id === clickUpPerson) || clickUpData?.people[0] || null;
-  const clickUpTypes = useMemo(() => {
-    const parentIds = new Set(selectedClickUpPerson?.parentIds || []);
-    return Array.from(new Set(
-      (clickUpData?.subtasks || [])
-        .filter((task) => parentIds.has(task.parentId))
-        .map((task) => task.type?.name)
-        .filter((name): name is string => Boolean(name)),
-    )).sort();
-  }, [clickUpData, selectedClickUpPerson]);
-  const filteredClickUpTasks = useMemo(() => {
-    const query = clickUpSearch.trim().toLocaleLowerCase("mn-MN");
-    const parentIds = new Set(selectedClickUpPerson?.parentIds || []);
-    return (clickUpData?.subtasks || []).filter((task) => {
-      const matchesPerson = parentIds.has(task.parentId);
-      const matchesType = clickUpType === "all" || task.type?.name === clickUpType;
-      const haystack = [task.parentName, task.type?.name, ...task.assignment.map((item) => item.name)]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase("mn-MN");
-      return matchesPerson && matchesType && (!query || haystack.includes(query));
-    });
-  }, [clickUpData, clickUpSearch, clickUpType, selectedClickUpPerson]);
-  const clickUpPageCount = Math.max(1, Math.ceil(filteredClickUpTasks.length / CLICKUP_PAGE_SIZE));
-  const visibleClickUpTasks = filteredClickUpTasks.slice(
-    (clickUpPage - 1) * CLICKUP_PAGE_SIZE,
-    clickUpPage * CLICKUP_PAGE_SIZE,
-  );
+  const preparedSummaryText = clickUpData ? preparedSummary(month, previous, categories) : EMPTY_SUMMARY;
+  const summaryIsCurrent = generatedSummary?.monthKey === month.key && generatedSummary.assignment === dashboardAssignment;
+  const summary = summaryIsCurrent ? generatedSummary.text : preparedSummaryText;
+  const summarySource = summaryIsCurrent ? generatedSummary.source : "prepared";
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -363,43 +328,30 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    void loadClickUp(false);
-  }, []);
-
-  useEffect(() => {
-    setClickUpPage(1);
-  }, [clickUpPerson, clickUpSearch, clickUpType]);
-
-  useEffect(() => {
-    if (!clickUpData) return;
-    setSummary(preparedSummary(month, previous, categories));
-    setSummaryMonth(month.key);
-    setSummarySource("prepared");
-  }, [categories, clickUpData, month, previous]);
-
-  async function loadClickUp(refresh = false) {
-    setClickUpLoading(true);
-    setClickUpError("");
-    try {
-      const response = await fetch(refresh ? "/api/clickup?refresh=1" : "/api/clickup", { cache: "no-store" });
-      const result = (await response.json()) as ClickUpPayload & { error?: string };
-      if (!response.ok || !result.workspace || !Array.isArray(result.people) || !Array.isArray(result.parents) || !Array.isArray(result.subtasks)) {
-        throw new Error(result.error || "ClickUp өгөгдөл татаж чадсангүй.");
+    let cancelled = false;
+    async function loadClickUp() {
+      try {
+        const response = await fetch("/api/clickup", { cache: "no-store" });
+        const result = (await response.json()) as ClickUpPayload & { error?: string };
+        if (!response.ok || !result.workspace || !Array.isArray(result.people) || !Array.isArray(result.parents) || !Array.isArray(result.subtasks)) {
+          throw new Error(result.error || "ClickUp өгөгдөл татаж чадсангүй.");
+        }
+        if (cancelled) return;
+        setClickUpData(result);
+        const latestMonthKey = result.subtasks.reduce((latest, task) => {
+          const key = monthKeyFromDate(task.dueDate);
+          return key > latest ? key : latest;
+        }, "01");
+        setSelectedMonthKey(latestMonthKey);
+      } catch (error) {
+        if (!cancelled) setClickUpError(error instanceof Error ? error.message : "ClickUp өгөгдөл татаж чадсангүй.");
+      } finally {
+        if (!cancelled) setClickUpLoading(false);
       }
-      setClickUpData(result);
-      setClickUpPerson((current) => result.people.some((person) => person.id === current) ? current : result.people[0]?.id || "");
-      const latestMonthKey = result.subtasks.reduce((latest, task) => {
-        const key = monthKeyFromDate(task.dueDate);
-        return key > latest ? key : latest;
-      }, "01");
-      setSelectedMonthKey(latestMonthKey);
-      setClickUpPage(1);
-    } catch (error) {
-      setClickUpError(error instanceof Error ? error.message : "ClickUp өгөгдөл татаж чадсангүй.");
-    } finally {
-      setClickUpLoading(false);
     }
-  }
+    void loadClickUp();
+    return () => { cancelled = true; };
+  }, []);
 
   async function generateSummary() {
     setIsSummarizing(true);
@@ -442,13 +394,19 @@ export default function Home() {
       });
       const result = (await response.json()) as { summary?: string; source?: "groq" | "local"; error?: string };
       if (!response.ok || !result.summary) throw new Error(result.error || "Нэгтгэл үүссэнгүй");
-      setSummary(result.summary);
-      setSummaryMonth(selectedMonthKey);
-      setSummarySource(result.source ?? "groq");
+      setGeneratedSummary({
+        text: result.summary,
+        monthKey: month.key,
+        assignment: dashboardAssignment,
+        source: result.source ?? "groq",
+      });
     } catch {
-      setSummary(preparedSummary(month, previous, categories));
-      setSummaryMonth(selectedMonthKey);
-      setSummarySource("local");
+      setGeneratedSummary({
+        text: preparedSummary(month, previous, categories),
+        monthKey: month.key,
+        assignment: dashboardAssignment,
+        source: "local",
+      });
     } finally {
       setIsSummarizing(false);
     }
@@ -468,21 +426,21 @@ export default function Home() {
           </span>
         </div>
         <nav className="nav-list">
-          <a className="nav-item active" href="#overview" onClick={() => setMobileMenu(false)}>
+          <Link className="nav-item active" href="/#overview" onClick={() => setMobileMenu(false)}>
             <LayoutDashboard size={19} /> <span>Хураангуй</span>
-          </a>
-          <a className="nav-item" href="#workload" onClick={() => setMobileMenu(false)}>
+          </Link>
+          <Link className="nav-item" href="/#workload" onClick={() => setMobileMenu(false)}>
             <ListChecks size={19} /> <span>Ажлын төрөл</span>
-          </a>
-          <a className="nav-item" href="#clickup" onClick={() => setMobileMenu(false)}>
+          </Link>
+          <Link className="nav-item" href="/clickup" onClick={() => setMobileMenu(false)}>
             <Layers3 size={19} /> <span>ClickUp таск</span>
-          </a>
-          <a className="nav-item" href="#comparison" onClick={() => setMobileMenu(false)}>
+          </Link>
+          <Link className="nav-item" href="/#comparison" onClick={() => setMobileMenu(false)}>
             <TrendingUp size={19} /> <span>Харьцуулалт</span>
-          </a>
-          <a className="nav-item" href="#ai-summary" onClick={() => setMobileMenu(false)}>
+          </Link>
+          <Link className="nav-item" href="/#ai-summary" onClick={() => setMobileMenu(false)}>
             <Sparkles size={19} /> <span>AI нэгтгэл</span>
-          </a>
+          </Link>
         </nav>
         <div className="sidebar-note">
           <div className="sidebar-note-icon"><Bot size={18} /></div>
@@ -515,12 +473,22 @@ export default function Home() {
                 <h1>Ажлын тайлан<span>.</span></h1>
                 <p>ClickUp-ийн complete subtask, Type болон time estimate-ээс автоматаар тооцов.</p>
               </div>
-              <div className="month-switcher" aria-label="Сар сонгох">
-                {displayMonths.map((item) => (
-                  <button key={item.key} className={selectedMonthKey === item.key ? "selected" : ""} onClick={() => selectMonth(item.key)}>
-                    {item.short}
-                  </button>
-                ))}
+              <div className="dashboard-filter-group">
+                <label className="assignment-filter">
+                  <span>Assignment</span>
+                  <select value={dashboardAssignment} onChange={(event) => setDashboardAssignment(event.target.value)}>
+                    <option value="all">Бүх ажилтан</option>
+                    {(clickUpData?.people || []).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+                  </select>
+                  <ChevronDown size={14} />
+                </label>
+                <div className="month-switcher" aria-label="Сар сонгох">
+                  {displayMonths.map((item) => (
+                    <button key={item.key} className={activeMonthKey === item.key ? "selected" : ""} onClick={() => selectMonth(item.key)}>
+                      {item.short}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </section>
@@ -530,7 +498,7 @@ export default function Home() {
               <div className="kpi-head"><span>Гүйцэтгэсэн ажил</span><div className="kpi-icon"><CheckCircle2 size={20} /></div></div>
               <div className="kpi-value">{formatNumber(month.tasks)}</div>
               <div className="kpi-foot">
-                {previous.tasks > 0 ? <><Delta value={taskDelta} /><span>өмнөх сараас</span></> : <span>ClickUp live data</span>}
+                {previous.tasks > 0 ? <><Delta value={taskDelta} /><span>өмнөх сараас</span></> : <span>ClickUp snapshot data</span>}
               </div>
               <div className="card-glow" />
             </article>
@@ -560,7 +528,7 @@ export default function Home() {
           <section className="dashboard-grid">
             <article className="panel trend-panel">
               <div className="panel-head">
-                <div><span className="panel-kicker">CLICKUP · {displayMonths.length} САР</span><h2>Сарын гүйцэтгэл</h2></div>
+                <div><span className="panel-kicker">{dashboardAssignmentName.toLocaleUpperCase("mn-MN")} · {displayMonths.length} САР</span><h2>Сарын гүйцэтгэл</h2></div>
                 <div className="legend"><span className="legend-dot" />Ажлын тоо</div>
               </div>
               <div className="chart-area" role="img" aria-label={`2026 оны ${displayMonths.length} сарын ClickUp complete subtask график`}>
@@ -568,7 +536,7 @@ export default function Home() {
                 <div className="chart-grid-lines"><i /><i /><i /><i /><i /></div>
                 <div className="bars">
                   {displayMonths.map((item, index) => (
-                    <button key={item.key} className={`bar-group ${selectedMonthKey === item.key ? "active" : ""}`} onClick={() => selectMonth(item.key)} aria-label={`${item.label}: ${item.tasks} ажил`}>
+                    <button key={item.key} className={`bar-group ${activeMonthKey === item.key ? "active" : ""}`} onClick={() => selectMonth(item.key)} aria-label={`${item.label}: ${item.tasks} ажил`}>
                       <span className="bar-value">{formatNumber(item.tasks)}</span>
                       <span className="bar-track"><span className="bar-fill" style={{ height: `${(item.tasks / chartMax) * 100}%`, animationDelay: `${index * 70}ms` }} /></span>
                       <span className="bar-label">{item.short}</span>
@@ -576,7 +544,7 @@ export default function Home() {
                   ))}
                 </div>
               </div>
-              <div className="chart-summary"><TrendingUp size={16} /><span>2026 оны I–{latestMonth.short} сард</span><strong>{formatNumber(yearTotals.tasks)} ажил</strong><span>ClickUp-ээс синк хийгдэв</span></div>
+              <div className="chart-summary"><TrendingUp size={16} /><span>{dashboardAssignmentName} · 2026 оны I–{latestMonth.short}</span><strong>{formatNumber(yearTotals.tasks)} ажил</strong><span>хадгалсан ClickUp data</span></div>
             </article>
 
             <article className="panel mix-panel" id="workload">
@@ -599,145 +567,25 @@ export default function Home() {
             </article>
           </section>
 
-          <section className="clickup-panel" id="clickup">
-            <div className="clickup-head">
-              <div className="clickup-title-row">
-                <div className="clickup-logo" aria-hidden="true"><span /><span /><span /></div>
-                <div>
-                  <div className="clickup-source"><span className="live-pulse" />CLICKUP SAVED SNAPSHOT</div>
-                  <h2>{clickUpData?.list.name || "CX Dev.Team"} · 2026 Daily Task</h2>
-                  <p>Хамгийн сүүлд гараар шинэчилсэн complete subtask-уудыг харуулж байна.</p>
-                </div>
-              </div>
-              <button className="clickup-refresh" onClick={() => void loadClickUp(true)} disabled={clickUpLoading}>
-                <RefreshCw className={clickUpLoading ? "spin" : ""} size={15} />
-                {clickUpLoading ? "Шинэчилж байна" : "Шинэчлэх"}
-              </button>
-            </div>
-
-            {clickUpError ? (
-              <div className="clickup-error">
-                <span><X size={18} /></span>
-                <div><strong>Өгөгдөл татагдсангүй</strong><p>{clickUpError}</p></div>
-                <button onClick={() => void loadClickUp(true)}>Дахин оролдох</button>
-              </div>
-            ) : (
-              <>
-                <div className="clickup-stats">
-                  <div><span className="clickup-stat-icon purple"><Layers3 size={17} /></span><span><small>2026 DAILY TASK PARENT</small><strong>{clickUpLoading ? "—" : formatNumber(selectedClickUpPerson?.parentIds.length || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon green"><CheckCircle2 size={17} /></span><span><small>COMPLETE SUBTASK</small><strong>{clickUpLoading ? "—" : formatNumber(selectedClickUpPerson?.completeSubtasks || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon orange"><ListChecks size={17} /></span><span><small>TYPE БҮРТГЭЛТЭЙ</small><strong>{clickUpLoading ? "—" : formatNumber(selectedClickUpPerson?.withType || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon blue"><Clock3 size={17} /></span><span><small>TIME ESTIMATE</small><strong>{clickUpLoading ? "—" : formatApiDuration(selectedClickUpPerson?.estimateMs || 0)}</strong></span></div>
-                </div>
-
-                <div className="person-selector" role="tablist" aria-label="CX Dev.Team ажилтан сонгох">
-                  {clickUpLoading
-                    ? Array.from({ length: 4 }).map((_, index) => <span className="person-card person-card-loading" key={index} />)
-                    : (clickUpData?.people || []).map((person) => (
-                        <button
-                          className={`person-card ${selectedClickUpPerson?.id === person.id ? "active" : ""}`}
-                          key={person.id}
-                          onClick={() => {
-                            setClickUpPerson(person.id);
-                            setClickUpSearch("");
-                            setClickUpType("all");
-                          }}
-                          role="tab"
-                          aria-selected={selectedClickUpPerson?.id === person.id}
-                        >
-                          <span className="person-avatar" style={{ background: person.color }}>
-                            {person.avatar ? <img src={person.avatar} alt="" /> : person.name.slice(0, 1).toUpperCase()}
-                          </span>
-                          <span className="person-card-copy"><small>2026 · COMPLETE</small><strong>{person.name}</strong></span>
-                          <span className="person-task-count"><strong>{formatNumber(person.completeSubtasks)}</strong><small>subtask</small></span>
-                        </button>
-                      ))}
-                </div>
-
-                <div className="clickup-toolbar">
-                  <label className="task-search">
-                    <Search size={15} />
-                    <input value={clickUpSearch} onChange={(event) => setClickUpSearch(event.target.value)} placeholder="Assignment эсвэл Type-аар хайх" />
-                    {clickUpSearch && <button onClick={() => setClickUpSearch("")} aria-label="Хайлт цэвэрлэх"><X size={14} /></button>}
-                  </label>
-                  <label className="status-filter">
-                    <span>Type</span>
-                    <select value={clickUpType} onChange={(event) => setClickUpType(event.target.value)}>
-                      <option value="all">Бүх Type</option>
-                      {clickUpTypes.map((type) => <option value={type} key={type}>{type}</option>)}
-                    </select>
-                    <ChevronDown size={14} />
-                  </label>
-                  <span className="filter-result">{formatNumber(filteredClickUpTasks.length)} үр дүн</span>
-                </div>
-
-                <div className="clickup-table-wrap">
-                  <table className="clickup-table">
-                    <thead>
-                      <tr><th>Assignment</th><th>Status</th><th>Type</th><th>Due date</th><th>Time estimate</th></tr>
-                    </thead>
-                    <tbody>
-                      {clickUpLoading
-                        ? Array.from({ length: 6 }).map((_, index) => (
-                            <tr className="task-loading-row" key={index}><td colSpan={5}><span style={{ animationDelay: `${index * 80}ms` }} /></td></tr>
-                          ))
-                        : visibleClickUpTasks.map((task, index) => (
-                            <tr className="subtask-row" key={task.id} style={{ animationDelay: `${Math.min(index, 12) * 24}ms` }}>
-                              <td>
-                                <div className="subtask-assignment">
-                                  <div className="assignee-stack">
-                                    {task.assignment.length > 0 ? task.assignment.slice(0, 3).map((assignee) => <span key={`${task.id}-${assignee.id}`} title={assignee.name} style={{ background: assignee.color }}>{assignee.name.slice(0, 1).toUpperCase()}</span>) : <em>—</em>}
-                                  </div>
-                                  <span><strong>{task.assignment.map((item) => item.name).join(", ") || "—"}</strong><small>{task.parentName}</small></span>
-                                </div>
-                              </td>
-                              <td><span className="api-status" style={{ color: task.status.color, background: `${task.status.color}16` }}><i style={{ background: task.status.color }} />{task.status.name}</span></td>
-                              <td>{task.type ? <span className="type-badge" style={{ color: task.type.color, background: `${task.type.color}14` }}><i style={{ background: task.type.color }} />{task.type.name}</span> : <span className="empty-value">Тодорхойгүй</span>}</td>
-                              <td><span className="due-date">{formatDate(task.dueDate)}</span></td>
-                              <td><span className={`estimate-cell ${task.timeEstimate ? "" : "missing-estimate"}`}><Clock3 size={13} />{task.timeEstimate ? formatApiDuration(task.timeEstimate) : "Оруулаагүй"}</span></td>
-                            </tr>
-                          ))}
-                    </tbody>
-                  </table>
-                  {!clickUpLoading && filteredClickUpTasks.length === 0 && <div className="empty-tasks"><Search size={21} /><strong>Тохирох subtask олдсонгүй</strong><span>Хайлт эсвэл шүүлтүүрээ өөрчилнө үү.</span></div>}
-                </div>
-                {!clickUpLoading && filteredClickUpTasks.length > 0 && (
-                  <div className="table-pagination">
-                    <span>{formatNumber((clickUpPage - 1) * CLICKUP_PAGE_SIZE + 1)}–{formatNumber(Math.min(clickUpPage * CLICKUP_PAGE_SIZE, filteredClickUpTasks.length))} / {formatNumber(filteredClickUpTasks.length)}</span>
-                    <div>
-                      <button onClick={() => setClickUpPage((page) => Math.max(1, page - 1))} disabled={clickUpPage === 1}>Өмнөх</button>
-                      <strong>{clickUpPage} / {clickUpPageCount}</strong>
-                      <button onClick={() => setClickUpPage((page) => Math.min(clickUpPageCount, page + 1))} disabled={clickUpPage === clickUpPageCount}>Дараах</button>
-                    </div>
-                  </div>
-                )}
-                <div className="clickup-footnote">
-                  <span><span className="online-dot" />{clickUpData ? `${formatDate(String(new Date(clickUpData.syncedAt).getTime()), true)}-д синк хийсэн` : "API холболт"}</span>
-                  <span>{selectedClickUpPerson?.name || "4 ажилтан"} · {clickUpData?.reportYear || 2026} оны data{clickUpData?.partial ? " · Зарим parent task түр татагдсангүй" : clickUpData?.cacheSource === "clickup" ? " · ClickUp-ээс шинээр татсан" : " · Хадгалсан snapshot"}{clickUpData?.dataQuality.missingTimeEstimate ? ` · ${clickUpData.dataQuality.missingTimeEstimate} task-д estimate оруулаагүй` : ""}</span>
-                </div>
-              </>
-            )}
-          </section>
-
           <section className="ai-panel" id="ai-summary">
             <div className="ai-orb"><Sparkles size={25} /><span /></div>
             <div className="ai-content">
               <div className="ai-heading">
-                <div><span className="ai-label">GROQ AI · CLICKUP LIVE</span><h2>{summaryIsCurrent ? month.label : "Сонгосон сар"} — гол дүгнэлт</h2></div>
+                <div><span className="ai-label">GROQ AI · CLICKUP SNAPSHOT</span><h2>{summaryIsCurrent ? month.label : "Сонгосон сар"} — гол дүгнэлт</h2></div>
                 <button className="summarize-button" onClick={generateSummary} disabled={isSummarizing}>
                   {isSummarizing ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={15} />}
                   {isSummarizing ? "Нэгтгэж байна" : summaryIsCurrent ? "Дахин нэгтгэх" : "Энэ сарыг нэгтгэх"}
                 </button>
               </div>
               <div className={`summary-text ${isSummarizing ? "loading" : ""}`}>
-                {summary.split(/\n\s*\n/).map((paragraph, index) => <p key={`${summaryMonth}-${index}`}>{paragraph}</p>)}
+                {summary.split(/\n\s*\n/).map((paragraph, index) => <p key={`${month.key}-${dashboardAssignment}-${index}`}>{paragraph}</p>)}
               </div>
               <div className="ai-meta"><span className="online-dot" />{summarySource === "groq" ? "Groq загвараар шинээр боловсруулав" : summarySource === "local" ? "Бэлтгэсэн нэгтгэл ашиглав" : "Өгөгдөлд суурилсан бэлтгэсэн дүгнэлт"}<span className="meta-separator" />Тоон үзүүлэлтийг автоматаар шалгасан</div>
             </div>
           </section>
 
           <section className="comparison-section" id="comparison">
-            <div className="section-title"><div><span className="panel-kicker">CLICKUP LIVE ХАРЬЦУУЛАЛТ</span><h2>2026 оны хагас жилийн хөдөлгөөн</h2></div><p>Due date-аар I–VI сар болон VII–{latestMonth.short} сарын complete subtask-ийг харьцуулав.</p></div>
+            <div className="section-title"><div><span className="panel-kicker">CLICKUP SNAPSHOT ХАРЬЦУУЛАЛТ</span><h2>2026 оны хагас жилийн хөдөлгөөн</h2></div><p>Due date-аар I–VI сар болон VII–{latestMonth.short} сарын complete subtask-ийг харьцуулав.</p></div>
             <div className="comparison-grid">
               <article className="period-card muted-period">
                 <div className="period-head"><span>ЭХНИЙ ХАГАС</span><strong>2026 · I–VI</strong></div>

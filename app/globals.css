@@ -343,6 +343,56 @@ button {
   font-size: 12px;
 }
 
+.dashboard-filter-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.assignment-filter {
+  position: relative;
+  display: flex;
+  width: 174px;
+  height: 41px;
+  align-items: flex-end;
+  padding: 13px 31px 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 20px rgb(23 34 58 / 4%);
+}
+
+.assignment-filter > span {
+  position: absolute;
+  top: 5px;
+  left: 11px;
+  color: #9a9faa;
+  font-size: 6px;
+  font-weight: 740;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.assignment-filter select {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 680;
+}
+
+.assignment-filter svg {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  color: #8c929e;
+  pointer-events: none;
+}
+
 .month-switcher {
   display: flex;
   gap: 3px;
@@ -2130,6 +2180,8 @@ button {
   .topbar { height: 60px; padding: 0 16px; }
   .content-wrap { padding: 27px 16px 20px; }
   .hero-row { align-items: flex-start; flex-direction: column; }
+  .dashboard-filter-group { width: 100%; align-items: stretch; flex-direction: column; }
+  .assignment-filter { width: 100%; }
   .month-switcher { width: 100%; }
   .month-switcher button { flex: 1; }
   .kpi-grid { grid-template-columns: 1fr 1fr; }
@@ -2184,6 +2236,7 @@ button {
 @media print {
   .sidebar,
   .topbar,
+  .assignment-filter,
   .month-switcher,
   .summarize-button,
   .drawer-backdrop,

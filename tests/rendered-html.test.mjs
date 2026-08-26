@@ -2,15 +2,13 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
-const templateRoot = new URL("../", import.meta.url);
-
-async function render() {
+async function render(pathname = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request(`http://localhost${pathname}`, { headers: { accept: "text/html" } }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
     { waitUntil() {}, passThroughOnException() {} },
   );
@@ -27,6 +25,19 @@ test("server-renders the work report dashboard", async () => {
   assert.match(html, /Гүйцэтгэсэн ажил/);
   assert.match(html, /Groq AI/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Building your site/i);
+});
+
+test("keeps the dashboard filter and ClickUp task table on separate routes", async () => {
+  const [dashboardResponse, clickUpResponse] = await Promise.all([render("/"), render("/clickup")]);
+  assert.equal(dashboardResponse.status, 200);
+  assert.equal(clickUpResponse.status, 200);
+
+  const [dashboardHtml, clickUpHtml] = await Promise.all([dashboardResponse.text(), clickUpResponse.text()]);
+  assert.match(dashboardHtml, /Assignment/);
+  assert.match(dashboardHtml, /href="\/clickup"/);
+  assert.doesNotMatch(dashboardHtml, /clickup-page-panel/);
+  assert.match(clickUpHtml, /ClickUp таск/);
+  assert.match(clickUpHtml, /clickup-page-panel/);
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {
