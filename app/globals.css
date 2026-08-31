@@ -94,9 +94,15 @@ button {
 
 .nav-list {
   display: flex;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   gap: 5px;
   padding: 28px 12px;
+}
+
+.nav-item-bottom {
+  margin-top: auto;
 }
 
 .nav-item {

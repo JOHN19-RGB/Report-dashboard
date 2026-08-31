@@ -432,14 +432,14 @@ export default function Home() {
           <Link className="nav-item" href="/#workload" onClick={() => setMobileMenu(false)}>
             <ListChecks size={19} /> <span>Ажлын төрөл</span>
           </Link>
-          <Link className="nav-item" href="/clickup" onClick={() => setMobileMenu(false)}>
-            <Layers3 size={19} /> <span>ClickUp таск</span>
-          </Link>
           <Link className="nav-item" href="/#comparison" onClick={() => setMobileMenu(false)}>
             <TrendingUp size={19} /> <span>Харьцуулалт</span>
           </Link>
           <Link className="nav-item" href="/#ai-summary" onClick={() => setMobileMenu(false)}>
             <Sparkles size={19} /> <span>AI нэгтгэл</span>
+          </Link>
+          <Link className="nav-item nav-item-bottom" href="/clickup" onClick={() => setMobileMenu(false)}>
+            <Layers3 size={19} /> <span>ClickUp таск</span>
           </Link>
         </nav>
         <div className="sidebar-note">
