@@ -118,6 +118,13 @@ type ClickUpPayload = {
 
 const MONTH_SHORTS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"];
 const CATEGORY_COLORS = ["#ff6b4a", "#7c5cff", "#168c80", "#2676e8", "#ee9d2b", "#48a561", "#d8588f", "#67758d"];
+const MEMBER_COLORS: Record<string, string> = {
+  "Ариунгэрэл": "#168c80",
+  "Байгалмаа": "#7c5cff",
+  "Мишээл": "#2676e8",
+  "Энхбат": "#ff6b4a",
+};
+const MEMBER_FALLBACK_COLORS = ["#ee9d2b", "#d8588f", "#48a561", "#67758d"];
 const EMPTY_SUMMARY = "ClickUp-ийн хадгалсан өгөгдөл уншигдсаны дараа сарын нэгтгэл автоматаар шинэчлэгдэнэ.";
 
 function formatNumber(value: number) {
@@ -245,6 +252,56 @@ function preparedSummary(month: Month, previous: Month, categories: Category[]) 
     ? `${previous.label}-тай харьцуулахад ажлын тоо ${Math.abs(month.tasks - previous.tasks)}-аар ${month.tasks >= previous.tasks ? "өссөн" : "буурсан"}.`
     : "Өмнөх сард харьцуулах complete subtask бүртгэгдээгүй байна.";
   return `${month.label}-д ClickUp-ээс ${formatNumber(month.tasks)} complete subtask синк хийгдэж, ${formatMinutes(month.minutes)} time estimate бүртгэгдсэн байна. ${comparison}\n\nХамгийн олон ажилтай Type нь ${leader?.shortName || "—"}: ${formatNumber(leader?.tasks || 0)} subtask, ${formatMinutes(leader?.minutes || 0)} estimate-тэй. Ангиллын тоо болон хугацаа нь ClickUp-ийн Type, Due date, Time estimate талбараас шууд тооцогдоно.\n\nTime estimate оруулсан ${formatNumber(month.estimatedTasks)} task-д нэг ажил дунджаар ${average.toFixed(1)} минут байна. Estimate оруулаагүй task-ийг дундаж хугацааны хуваарьт оруулаагүй.`;
+}
+
+function MemberParticipationPie({ members, monthLabel }: { members: Category["members"]; monthLabel: string }) {
+  const total = members.reduce((sum, member) => sum + member.tasks, 0);
+  if (!total) {
+    return <div className="member-pie-empty">Энэ сард ажилтны оролцооны өгөгдөл бүртгэгдээгүй байна.</div>;
+  }
+
+  let cumulativePercent = 0;
+  const segments = members.map((member, index) => {
+    const start = cumulativePercent;
+    const percent = (member.tasks / total) * 100;
+    cumulativePercent += percent;
+    return {
+      ...member,
+      color: MEMBER_COLORS[member.name] || MEMBER_FALLBACK_COLORS[index % MEMBER_FALLBACK_COLORS.length],
+      percent,
+      start,
+      end: cumulativePercent,
+    };
+  });
+  const chartBackground = `conic-gradient(from -90deg, ${segments
+    .map((segment) => `${segment.color} ${segment.start}% ${segment.end}%`)
+    .join(", ")})`;
+  const chartDescription = segments
+    .map((segment) => `${segment.name}: ${formatNumber(segment.tasks)} ажил, ${segment.percent.toFixed(1)} хувь`)
+    .join("; ");
+
+  return (
+    <div className="member-pie-layout">
+      <div className="member-pie-visual">
+        <div
+          className="member-pie-chart"
+          style={{ background: chartBackground }}
+          role="img"
+          aria-label={`${monthLabel} ажилтны оролцооны pie chart. ${chartDescription}`}
+        />
+        <div className="member-pie-total"><strong>{formatNumber(total)}</strong><span>нийт subtask</span></div>
+      </div>
+      <div className="member-pie-legend" aria-label="Ажилтны оролцооны тайлбар">
+        {segments.map((segment) => (
+          <div className="member-pie-item" key={segment.name}>
+            <span className="member-pie-swatch" style={{ background: segment.color }} aria-hidden="true" />
+            <div><strong>{segment.name}</strong><small>{formatNumber(segment.tasks)} complete subtask</small></div>
+            <b>{segment.percent.toFixed(1)}%</b>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Delta({ value, suffix = "" }: { value: number; suffix?: string }) {
@@ -626,12 +683,7 @@ export default function Home() {
             <div className="drawer-average"><Clock3 size={16} /><span>Estimate-тэй нэг ажилд</span><strong>{(selectedCategory.minutes / Math.max(selectedCategory.estimatedTasks, 1)).toFixed(1)} мин</strong></div>
             <div className="drawer-tasks">
               <div className="drawer-section-title"><span>Ажилтны оролцоо</span><small>{month.label}</small></div>
-              {selectedCategory.members.map((member) => (
-                <div className="task-item" key={member.name}>
-                  <span className="task-check"><CheckCircle2 size={15} /></span>
-                  <div><strong>{member.name}</strong><small>{formatNumber(member.tasks)} complete subtask</small></div>
-                </div>
-              ))}
+              <MemberParticipationPie members={selectedCategory.members} monthLabel={month.label} />
             </div>
             <div className="drawer-callout"><Sparkles size={17} /><span>ClickUp sync шинэчлэгдэхэд энэ Type-ийн үзүүлэлт автоматаар дахин тооцогдоно.</span></div>
           </>
