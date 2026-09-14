@@ -31,6 +31,7 @@ export type DevReportData = {
   reportYear: number;
   tasks: DevTask[];
   availableFields: string[];
+  partial?: boolean;
   syncedAt: string;
   cacheSource?: "snapshot" | "clickup";
 };
@@ -78,6 +79,7 @@ export function taskTypeTotals(tasks: DevTask[]) {
   const counts = new Map<string, { type: string; count: number; color: string }>();
   for (const task of tasks) {
     const type = task.type || "Тодорхойгүй";
+    if (type === "Тодорхойгүй") continue;
     const current = counts.get(type) || { type, count: 0, color: "" };
     current.count += 1;
     counts.set(type, current);

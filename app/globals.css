@@ -2605,6 +2605,7 @@ button {
 .dev-reset-filter { display: flex; height: 42px; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid #deddea; border-radius: 9px; background: transparent; color: #6f7182; font-size: 10px; cursor: pointer; }
 .dev-refresh-filter { display: flex; height: 42px; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; border: 0; border-radius: 9px; background: var(--dev-purple); color: #fff; font-size: 10px; font-weight: 650; cursor: pointer; }
 .dev-refresh-filter:disabled { opacity: .55; cursor: wait; }
+.dev-data-warning { margin: -8px 0 20px; padding: 11px 13px; border: 1px solid #f3d999; border-radius: 9px; background: #fff8e8; color: #806421; font-size: 10px; line-height: 1.5; }
 .dev-dashboard .main-content button:focus-visible,
 .dev-dashboard .main-content a:focus-visible,
 .dev-dashboard .main-content input:focus-visible,

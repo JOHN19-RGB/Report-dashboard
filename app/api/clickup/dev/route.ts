@@ -130,8 +130,19 @@ function findField(fields: Record<string, string>, patterns: RegExp[]) {
   return entry?.[1] || "";
 }
 
-function resolveTaskType(fields: Record<string, string>) {
-  return findField(fields, [/^type$/, /^task type$/, /төрөл/]);
+function knownTaskType(value: string) {
+  const normalized = normalize(value);
+  if (/not bug|not imp/.test(normalized)) return "Not bug/imp";
+  if (/improvement|(^|\s)imp(\s|$)/.test(normalized)) return "Imp";
+  if (/bugs?|алдаа/.test(normalized)) return "Bug";
+  if (/headless/.test(normalized)) return "Headless";
+  if (/hold|хүлээлт/.test(normalized)) return "Hold";
+  return "";
+}
+
+function resolveTaskType(fields: Record<string, string>, status: string, parentStatus = "") {
+  const customType = findField(fields, [/^type$/, /^task type$/, /төрөл/]);
+  return knownTaskType(customType) || knownTaskType(status) || knownTaskType(parentStatus) || customType || "Тодорхойгүй";
 }
 
 async function clickUpFetch(path: string, token: string) {
@@ -186,14 +197,20 @@ async function resolveB2cMasterList(workspaceId: string, token: string) {
 
 async function getListTasks(listId: string, token: string) {
   const tasks: ClickUpTask[] = [];
-  for (let page = 0; page < 50; page += 1) {
-    const query = new URLSearchParams({ archived: "false", include_closed: "true", subtasks: "true", page: String(page), order_by: "due_date", reverse: "true" });
-    const data = await clickUpJson<{ tasks?: ClickUpTask[]; last_page?: boolean }>(`/list/${encodeURIComponent(listId)}/task?${query}`, token);
-    const pageTasks = data.tasks || [];
-    tasks.push(...pageTasks);
-    if (data.last_page === true || pageTasks.length < 100) break;
+  const pageLimit = 100;
+  const batchSize = 5;
+  for (let batchStart = 0; batchStart < pageLimit; batchStart += batchSize) {
+    const pages = await Promise.all(Array.from({ length: batchSize }, async (_, offset) => {
+      const page = batchStart + offset;
+      const query = new URLSearchParams({ archived: "false", include_closed: "true", subtasks: "true", page: String(page), order_by: "due_date", reverse: "true" });
+      return clickUpJson<{ tasks?: ClickUpTask[]; last_page?: boolean }>(`/list/${encodeURIComponent(listId)}/task?${query}`, token);
+    }));
+    const completePageIndex = pages.findIndex(data => data.last_page === true || (data.tasks || []).length < 100);
+    const pagesToKeep = completePageIndex >= 0 ? pages.slice(0, completePageIndex + 1) : pages;
+    for (const data of pagesToKeep) tasks.push(...(data.tasks || []));
+    if (completePageIndex >= 0) return { tasks, partial: false };
   }
-  return tasks;
+  return { tasks, partial: true };
 }
 
 export async function GET(request: Request) {
@@ -212,11 +229,14 @@ export async function GET(request: Request) {
       clickUpJson<{ teams?: Array<{ id?: string; name?: string; color?: string; members?: unknown[] }> }>("/team", token),
       resolveB2cMasterList(workspaceId, token),
     ]);
-    const rawTasks = await getListTasks(list.id, token);
+    const taskResult = await getListTasks(list.id, token);
+    const rawTasks = taskResult.tasks;
     const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
+    const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
     const tasks = rawTasks.filter(task => task.id).map(task => {
       const fields = customFieldMap(task.custom_fields);
       const statusName = safeText(task.status?.status, "Тодорхойгүй");
+      const parentStatus = task.parent ? safeText(rawTasksById.get(task.parent)?.status?.status) : "";
       return {
         id: safeText(task.id),
         name: safeText(task.name, "Нэргүй ажил"),
@@ -225,7 +245,7 @@ export async function GET(request: Request) {
         url: safeText(task.url),
         status: { name: statusName, color: safeColor(task.status?.color, "#64748b"), type: safeText(task.status?.type), done: normalize(task.status?.type) === "closed" || /complete|closed|done|дууссан/.test(normalize(statusName)) },
         assignees: mapAssignees(task.assignees),
-        type: resolveTaskType(fields) || "Тодорхойгүй",
+        type: resolveTaskType(fields, statusName, parentStatus),
         sprint: findField(fields, [/sprint/, /спринт/]),
         position: findField(fields, [/position/, /role/, /албан тушаал/]),
         project: findField(fields, [/project/, /website/, /domain/, /site/, /төсөл/, /вэб/]),
@@ -243,6 +263,7 @@ export async function GET(request: Request) {
       list,
       reportYear: REPORT_YEAR,
       tasks,
+      partial: taskResult.partial,
       availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
       syncedAt: new Date().toISOString(),
     } satisfies SnapshotPayload;

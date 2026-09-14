@@ -82,7 +82,7 @@ export default function DevMasterDashboard() {
   const monthly = useMemo(() => monthlyTaskPerformance(tasks, data?.reportYear || 2026), [data?.reportYear, tasks]);
   const changes = useMemo(() => changeRequestRows(tasks), [tasks]);
   const metrics = useMemo(() => reportMetrics(tasks), [tasks]);
-  const taskTypes = useMemo(() => Array.from(new Set((data?.tasks || []).map(task => task.type))).sort(), [data]);
+  const taskTypes = useMemo(() => Array.from(new Set((data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
   const maxMonthly = Math.max(1, ...monthly.flatMap(item => [item.bug, item.imp]));
   const totalTypeCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
   const sprint = currentSprint(tasks);
@@ -127,6 +127,7 @@ export default function DevMasterDashboard() {
         </section>
 
         {error && <div className="clickup-error" role="alert"><span><X size={18} /></span><div><strong>ClickUp өгөгдөл татагдсангүй</strong><p>{error}</p></div><button onClick={() => void loadData(true)}>Дахин оролдох</button></div>}
+        {data?.partial && <div className="dev-data-warning" role="status">ClickUp-ийн хариу 10,000 ажлын хязгаарт хүрсэн тул хамгийн сүүлийн ажлуудыг харуулж байна.</div>}
 
         <section className="dev-kpi-grid" aria-label="Dev төслийн гол үзүүлэлтүүд">
           <article className="dev-kpi-card"><div><strong>{loading ? "—" : tasks.length}</strong><span>Total Tasks</span><small><CheckCircle2 size={12} /> {metrics.doneTasks} completed</small></div><span className="dev-kpi-art coral"><ClipboardCheck size={31} /></span></article>
