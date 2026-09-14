@@ -15,6 +15,7 @@ export type DevTask = {
   assignees: DevAssignee[];
   type: string;
   sprint: string;
+  sprintIds: string[];
   position: string;
   project: string;
   dueDate: string | null;
@@ -25,11 +26,23 @@ export type DevTask = {
   customFields: Record<string, string>;
 };
 
+export type DevSprint = {
+  id: string;
+  name: string;
+  folder: string;
+  startDate: string | null;
+  endDate: string | null;
+  taskCount: number;
+  partial?: boolean;
+};
+
 export type DevReportData = {
+  schemaVersion?: number;
   workspace: { id: string; name: string; color: string; memberCount: number };
   list: { id: string; name: string };
   reportYear: number;
   tasks: DevTask[];
+  sprints: DevSprint[];
   availableFields: string[];
   partial?: boolean;
   syncedAt: string;
@@ -41,6 +54,7 @@ export type DevReportFilters = {
   startDate: string;
   endDate: string;
   taskType: string;
+  sprintId: string;
 };
 
 export type DevMemberProductivity = {
@@ -66,12 +80,14 @@ function includesSearch(value: string, search: string) {
 export function selectDevTasks(data: DevReportData, filters: DevReportFilters) {
   return data.tasks.filter(task => {
     const date = taskDate(task);
-    const hasDateFilter = Boolean(filters.startDate || filters.endDate);
-    const matchesDate = (!hasDateFilter || Boolean(date)) && (!filters.startDate || date! >= filters.startDate) && (!filters.endDate || date! <= filters.endDate);
+    const hasSprintFilter = filters.sprintId !== "all";
+    const hasDateFilter = !hasSprintFilter && Boolean(filters.startDate || filters.endDate);
+    const matchesDate = (!hasDateFilter || Boolean(date)) && (!hasDateFilter || !filters.startDate || date! >= filters.startDate) && (!hasDateFilter || !filters.endDate || date! <= filters.endDate);
+    const matchesSprint = !hasSprintFilter || (task.sprintIds || []).includes(filters.sprintId);
     const matchesType = filters.taskType === "all" || task.type === filters.taskType;
-    const searchable = [task.id, task.name, task.parentName, task.project, task.type, task.status.name, ...task.assignees.map(person => person.name), ...Object.values(task.customFields)];
+    const searchable = [task.id, task.name, task.parentName, task.project, task.type, task.sprint, task.status.name, ...task.assignees.map(person => person.name), ...Object.values(task.customFields)];
     const matchesSearch = !filters.search || searchable.some(value => includesSearch(value, filters.search));
-    return matchesDate && matchesType && matchesSearch;
+    return matchesDate && matchesSprint && matchesType && matchesSearch;
   });
 }
 
@@ -147,7 +163,12 @@ export function reportMetrics(tasks: DevTask[]) {
   return { doneTasks: doneTasks.length, objectiveAchievement, performance, estimateMs };
 }
 
-export function currentSprint(tasks: DevTask[]) {
+export function currentSprint(tasks: DevTask[], sprints: DevSprint[] = [], selectedSprintId = "all") {
+  const selected = selectedSprintId === "all" ? null : sprints.find(sprint => sprint.id === selectedSprintId);
+  if (selected) return selected.name;
+  const today = new Date().toISOString().slice(0, 10);
+  const current = sprints.find(sprint => (!sprint.startDate || sprint.startDate <= today) && (!sprint.endDate || sprint.endDate >= today) && tasks.some(task => (task.sprintIds || []).includes(sprint.id)));
+  if (current) return current.name;
   const activeSprints = tasks.filter(task => !task.status.done && task.sprint).map(task => task.sprint);
   const allSprints = tasks.map(task => task.sprint).filter(Boolean);
   const candidates = activeSprints.length ? activeSprints : allSprints;

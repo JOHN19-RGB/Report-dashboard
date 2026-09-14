@@ -39,10 +39,26 @@ type ClickUpTask = {
   custom_fields?: ClickUpCustomField[];
 };
 
-type ClickUpList = { id?: string; name?: string };
+type ClickUpList = {
+  id?: string;
+  name?: string;
+  start_date?: string | null;
+  due_date?: string | null;
+  task_count?: number | string | null;
+};
+type ClickUpListLocation = {
+  id: string;
+  name: string;
+  space: string;
+  folder: string;
+  startDate: string | null;
+  endDate: string | null;
+  taskCount: number;
+};
 type SnapshotPayload = Record<string, unknown> & { syncedAt: string };
 
 const SNAPSHOT_ID = 2;
+const SNAPSHOT_VERSION = 3;
 const REPORT_YEAR = 2026;
 
 async function encodeSnapshot(payload: SnapshotPayload) {
@@ -158,15 +174,9 @@ async function clickUpJson<T>(path: string, token: string) {
   return response.json() as Promise<T>;
 }
 
-async function resolveB2cMasterList(workspaceId: string, token: string) {
-  const configuredListId = process.env.CLICKUP_B2C_MASTER_LIST_ID;
-  if (configuredListId) {
-    const list = await clickUpJson<ClickUpList>(`/list/${encodeURIComponent(configuredListId)}`, token);
-    if (list.id) return { id: list.id, name: safeText(list.name, "B2C Master") };
-  }
-
+async function discoverWorkspaceLists(workspaceId: string, token: string) {
   const spacesData = await clickUpJson<{ spaces?: Array<{ id?: string; name?: string }> }>(`/team/${encodeURIComponent(workspaceId)}/space?archived=false`, token);
-  const candidates: Array<{ id: string; name: string; space: string; folder: string }> = [];
+  const candidates: ClickUpListLocation[] = [];
 
   await Promise.all((spacesData.spaces || []).map(async space => {
     if (!space.id) return;
@@ -175,14 +185,37 @@ async function resolveB2cMasterList(workspaceId: string, token: string) {
       clickUpJson<{ lists?: ClickUpList[] }>(`/space/${encodeURIComponent(space.id)}/list?archived=false`, token),
     ]);
     for (const list of listsData.lists || []) {
-      if (list.id) candidates.push({ id: list.id, name: safeText(list.name), space: safeText(space.name), folder: "" });
+      if (list.id) candidates.push({ id: list.id, name: safeText(list.name), space: safeText(space.name), folder: "", startDate: dateToIso(list.start_date), endDate: dateToIso(list.due_date), taskCount: Number(list.task_count) || 0 });
     }
     for (const folder of foldersData.folders || []) {
       for (const list of folder.lists || []) {
-        if (list.id) candidates.push({ id: list.id, name: safeText(list.name), space: safeText(space.name), folder: safeText(folder.name) });
+        if (list.id) candidates.push({ id: list.id, name: safeText(list.name), space: safeText(space.name), folder: safeText(folder.name), startDate: dateToIso(list.start_date), endDate: dateToIso(list.due_date), taskCount: Number(list.task_count) || 0 });
       }
     }
   }));
+
+  return candidates;
+}
+
+function isSprintList(candidate: ClickUpListLocation) {
+  const listName = normalize(candidate.name);
+  const folderName = normalize(candidate.folder);
+  const hierarchy = normalize(`${candidate.space} ${candidate.folder} ${candidate.name}`);
+  const isBacklog = /backlog|master|төслийн жагсаалт|ажлын жагсаалт/.test(listName);
+  const sprintNamed = /sprints?|спринт/.test(hierarchy);
+  const numberedCycle = /^\d{1,3}\s*[-–—]\s*\d{1,3}$/.test(listName);
+  const hasCycleDates = Boolean(candidate.startDate && candidate.endDate);
+  return !isBacklog && (numberedCycle || /sprints?|спринт/.test(listName) || (sprintNamed && hasCycleDates) || (/sprints?|спринт/.test(folderName) && numberedCycle));
+}
+
+async function resolveB2cWorkspace(workspaceId: string, token: string) {
+  const candidates = await discoverWorkspaceLists(workspaceId, token);
+  const configuredListId = process.env.CLICKUP_B2C_MASTER_LIST_ID;
+  let list: { id: string; name: string } | null = null;
+  if (configuredListId) {
+    const configured = candidates.find(candidate => candidate.id === configuredListId) || await clickUpJson<ClickUpList>(`/list/${encodeURIComponent(configuredListId)}`, token);
+    if (configured.id) list = { id: configured.id, name: safeText(configured.name, "B2C Master") };
+  }
 
   const scored = candidates.map(candidate => {
     const listName = normalize(candidate.name);
@@ -191,18 +224,25 @@ async function resolveB2cMasterList(workspaceId: string, token: string) {
     return { ...candidate, score };
   }).sort((a, b) => b.score - a.score);
 
-  if (!scored[0] || scored[0].score < 50) throw new Error("B2C Master list олдсонгүй.");
-  return { id: scored[0].id, name: scored[0].name || "B2C Master" };
+  if (!list) {
+    if (!scored[0] || scored[0].score < 50) throw new Error("B2C Master list олдсонгүй.");
+    list = { id: scored[0].id, name: scored[0].name || "B2C Master" };
+  }
+
+  const sprintLists = candidates
+    .filter(candidate => candidate.id !== list.id && isSprintList(candidate))
+    .sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }));
+  return { list, sprintLists };
 }
 
-async function getListTasks(listId: string, token: string) {
+async function getListTasks(listId: string, token: string, options: { includeTiml?: boolean; pageLimit?: number; batchSize?: number } = {}) {
   const tasks: ClickUpTask[] = [];
-  const pageLimit = 100;
-  const batchSize = 5;
+  const pageLimit = options.pageLimit || 100;
+  const batchSize = options.batchSize || 5;
   for (let batchStart = 0; batchStart < pageLimit; batchStart += batchSize) {
     const pages = await Promise.all(Array.from({ length: batchSize }, async (_, offset) => {
       const page = batchStart + offset;
-      const query = new URLSearchParams({ archived: "false", include_closed: "true", subtasks: "true", page: String(page), order_by: "due_date", reverse: "true" });
+      const query = new URLSearchParams({ archived: "false", include_closed: "true", subtasks: "true", include_timl: options.includeTiml ? "true" : "false", page: String(page), order_by: "due_date", reverse: "true" });
       return clickUpJson<{ tasks?: ClickUpTask[]; last_page?: boolean }>(`/list/${encodeURIComponent(listId)}/task?${query}`, token);
     }));
     const completePageIndex = pages.findIndex(data => data.last_page === true || (data.tasks || []).length < 100);
@@ -213,30 +253,62 @@ async function getListTasks(listId: string, token: string) {
   return { tasks, partial: true };
 }
 
+async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], masterTaskIds: Set<string>, token: string) {
+  const assignments: Array<{ sprint: ClickUpListLocation; taskIds: string[]; partial: boolean }> = [];
+  const concurrency = 4;
+  for (let start = 0; start < sprintLists.length; start += concurrency) {
+    const batch = sprintLists.slice(start, start + concurrency);
+    const results = await Promise.all(batch.map(async sprint => {
+      const result = await getListTasks(sprint.id, token, { includeTiml: true, pageLimit: 20, batchSize: 1 });
+      const taskIds = Array.from(new Set(result.tasks.map(task => safeText(task.id)).filter(id => id && masterTaskIds.has(id))));
+      return { sprint, taskIds, partial: result.partial };
+    }));
+    assignments.push(...results.filter(result => result.taskIds.length));
+  }
+  return assignments;
+}
+
 export async function GET(request: Request) {
   try {
     const refresh = new URL(request.url).searchParams.get("refresh") === "1";
     if (!refresh) {
       const snapshot = await readSnapshot();
-      if (snapshot) return Response.json({ ...snapshot, cacheSource: "snapshot" }, { headers: { "Cache-Control": "private, no-store" } });
+      if (snapshot?.schemaVersion === SNAPSHOT_VERSION) return Response.json({ ...snapshot, cacheSource: "snapshot" }, { headers: { "Cache-Control": "private, no-store" } });
     }
 
     const token = process.env.CLICKUP_API_TOKEN;
     const workspaceId = process.env.CLICKUP_WORKSPACE_ID;
     if (!token || !workspaceId) return Response.json({ error: "ClickUp API тохиргоо дутуу байна." }, { status: 503 });
 
-    const [workspaceData, list] = await Promise.all([
+    const [workspaceData, discovery] = await Promise.all([
       clickUpJson<{ teams?: Array<{ id?: string; name?: string; color?: string; members?: unknown[] }> }>("/team", token),
-      resolveB2cMasterList(workspaceId, token),
+      resolveB2cWorkspace(workspaceId, token),
     ]);
+    const { list, sprintLists } = discovery;
     const taskResult = await getListTasks(list.id, token);
     const rawTasks = taskResult.tasks;
+    const sprintAssignments = await resolveSprintAssignments(sprintLists, new Set(rawTasks.map(task => safeText(task.id)).filter(Boolean)), token);
+    const sprintIdsByTaskId = new Map<string, string[]>();
+    for (const assignment of sprintAssignments) {
+      for (const taskId of assignment.taskIds) sprintIdsByTaskId.set(taskId, [...(sprintIdsByTaskId.get(taskId) || []), assignment.sprint.id]);
+    }
+    const sprints = sprintAssignments.map(({ sprint, taskIds, partial }) => ({
+      id: sprint.id,
+      name: sprint.name,
+      folder: sprint.folder,
+      startDate: sprint.startDate,
+      endDate: sprint.endDate,
+      taskCount: taskIds.length,
+      partial,
+    }));
+    const sprintById = new Map(sprints.map(sprint => [sprint.id, sprint]));
     const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
     const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
     const tasks = rawTasks.filter(task => task.id).map(task => {
       const fields = customFieldMap(task.custom_fields);
       const statusName = safeText(task.status?.status, "Тодорхойгүй");
       const parentStatus = task.parent ? safeText(rawTasksById.get(task.parent)?.status?.status) : "";
+      const sprintIds = sprintIdsByTaskId.get(safeText(task.id)) || [];
       return {
         id: safeText(task.id),
         name: safeText(task.name, "Нэргүй ажил"),
@@ -246,7 +318,8 @@ export async function GET(request: Request) {
         status: { name: statusName, color: safeColor(task.status?.color, "#64748b"), type: safeText(task.status?.type), done: normalize(task.status?.type) === "closed" || /complete|closed|done|дууссан/.test(normalize(statusName)) },
         assignees: mapAssignees(task.assignees),
         type: resolveTaskType(fields, statusName, parentStatus),
-        sprint: findField(fields, [/sprint/, /спринт/]),
+        sprint: sprintById.get(sprintIds[0])?.name || findField(fields, [/sprint/, /спринт/]),
+        sprintIds,
         position: findField(fields, [/position/, /role/, /албан тушаал/]),
         project: findField(fields, [/project/, /website/, /domain/, /site/, /төсөл/, /вэб/]),
         dueDate: dateToIso(task.due_date),
@@ -259,11 +332,13 @@ export async function GET(request: Request) {
     });
     const workspace = workspaceData.teams?.find(team => team.id === workspaceId) || workspaceData.teams?.[0];
     const payload = {
+      schemaVersion: SNAPSHOT_VERSION,
       workspace: { id: workspaceId, name: safeText(workspace?.name, "ClickUp Workspace"), color: safeColor(workspace?.color), memberCount: Array.isArray(workspace?.members) ? workspace.members.length : 0 },
       list,
       reportYear: REPORT_YEAR,
       tasks,
-      partial: taskResult.partial,
+      sprints,
+      partial: taskResult.partial || sprintAssignments.some(assignment => assignment.partial),
       availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
       syncedAt: new Date().toISOString(),
     } satisfies SnapshotPayload;

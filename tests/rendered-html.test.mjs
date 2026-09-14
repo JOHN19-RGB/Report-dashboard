@@ -54,6 +54,9 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /Dev\.Master/);
   assert.match(projectsHtml, /Dev\.All project/);
   assert.match(masterHtml, /Task Performance Comparison/);
+  assert.match(masterHtml, /Хугацаа:/);
+  assert.match(masterHtml, /Sprint:/);
+  assert.match(masterHtml, /All Sprints/);
   assert.match(masterHtml, /Project Team Members Productivity/);
   assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);
   assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
@@ -81,7 +84,10 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(clickUpRoute, /api\.clickup\.com\/api\/v2/);
   assert.match(devClickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
   assert.match(devClickUpRoute, /B2C Master/);
+  assert.match(devClickUpRoute, /include_timl/);
+  assert.match(devClickUpRoute, /resolveSprintAssignments/);
   assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=1" : "\/api\/clickup\/dev"/);
+  assert.match(devDashboard, /sprintId/);
   assert.doesNotMatch(devDashboard, /DEV_REPORT_DATA|dev-topbar/);
   assert.match(route, /reasoning_effort: "none"/);
   assert.match(layout, /openGraph/);
