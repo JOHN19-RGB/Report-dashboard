@@ -2,77 +2,25 @@
 
 import {
   ArrowRight,
-  Bot,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  ExternalLink,
   Clock3,
-  Download,
-  LayoutDashboard,
   Layers3,
   ListChecks,
   Menu,
   RefreshCw,
   Search,
-  Sparkles,
-  TrendingUp,
   X,
 } from "lucide-react";
-import Link from "next/link";
+import TeamSidebar from "../components/team-sidebar";
+import ReportDownload from "../components/report-download";
+import { filterTasks, totals, taskMonth, type ReportData } from "../lib/report";
 import { useEffect, useMemo, useState } from "react";
-
-type ClickUpAssignee = {
-  id: number | null;
-  name: string;
-  color: string;
-  avatar: string | null;
-};
-
-type ClickUpParent = {
-  id: string;
-  name: string;
-  assignees: ClickUpAssignee[];
-  completedCount: number;
-  fetchedCount: number;
-  fetched: boolean;
-};
-
-type ClickUpPerson = {
-  id: string;
-  name: string;
-  color: string;
-  avatar: string | null;
-  parentIds: string[];
-  completeSubtasks: number;
-  withType: number;
-  withEstimate: number;
-  estimateMs: number;
-};
-
-type ClickUpSubtask = {
-  id: string;
-  parentId: string;
-  parentName: string;
-  assignment: ClickUpAssignee[];
-  status: { name: string; color: string; type: string };
-  type: { name: string; color: string } | null;
-  dueDate: string | null;
-  timeEstimate: number | null;
-};
-
-type ClickUpPayload = {
-  list: { id: string; name: string };
-  reportYear: number;
-  people: ClickUpPerson[];
-  parents: ClickUpParent[];
-  subtasks: ClickUpSubtask[];
-  dataQuality: { missingTimeEstimate: number };
-  partial: boolean;
-  syncedAt: string;
-  cacheSource?: "snapshot" | "clickup";
-};
-
-const LATEST_TASK_LIMIT = 10;
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("mn-MN").format(value);
@@ -100,44 +48,27 @@ function formatDuration(value: number | null) {
 
 export default function ClickUpPage() {
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [data, setData] = useState<ClickUpPayload | null>(null);
+  const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [personId, setPersonId] = useState("");
+  const [personId, setPersonId] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const selectedPerson = data?.people.find((person) => person.id === personId) || data?.people[0] || null;
-  const availableTypes = useMemo(() => {
-    const parentIds = new Set(selectedPerson?.parentIds || []);
-    return Array.from(new Set(
-      (data?.subtasks || [])
-        .filter((task) => parentIds.has(task.parentId))
-        .map((task) => task.type?.name)
-        .filter((name): name is string => Boolean(name)),
-    )).sort();
-  }, [data, selectedPerson]);
-
-  const filteredTasks = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("mn-MN");
-    const parentIds = new Set(selectedPerson?.parentIds || []);
-    return (data?.subtasks || []).filter((task) => {
-      const matchesPerson = parentIds.has(task.parentId);
-      const matchesType = typeFilter === "all" || task.type?.name === typeFilter;
-      const haystack = [task.parentName, task.type?.name, ...task.assignment.map((item) => item.name)]
-        .filter(Boolean)
-        .join(" ")
-        .toLocaleLowerCase("mn-MN");
-      return matchesPerson && matchesType && (!query || haystack.includes(query));
-    });
-  }, [data, search, selectedPerson, typeFilter]);
-
-  const latestTasks = useMemo(
-    () => [...filteredTasks]
-      .sort((a, b) => Number(b.dueDate || 0) - Number(a.dueDate || 0))
-      .slice(0, LATEST_TASK_LIMIT),
-    [filteredTasks],
-  );
+  const [monthFilter, setMonthFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const selectedPerson = data?.people.find(person => person.id === personId) || null;
+  const filters = { person: personId, type: typeFilter, search, month: monthFilter };
+  const availableTypes = useMemo(() => Array.from(new Set((data?.subtasks || []).map(task => task.type?.name || "Тодорхойгүй"))).sort(), [data]);
+  const availableMonths = useMemo(() => Array.from(new Set((data?.subtasks || []).map(taskMonth))).filter(Boolean).sort(), [data]);
+  const filteredTasks = useMemo(() => data ? filterTasks(data, { person: personId, type: typeFilter, search, month: monthFilter }) : [], [data, personId, typeFilter, search, monthFilter]);
+  const stats = totals(filteredTasks);
+  const pageCount = Math.max(1, Math.ceil(filteredTasks.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visibleTasks = filteredTasks.slice(pageStart, pageStart + pageSize);
+  function resetFilters() { setPersonId("all"); setTypeFilter("all"); setSearch(""); setMonthFilter("all"); setPage(1); }
 
   useEffect(() => {
     void loadData(false);
@@ -148,12 +79,13 @@ export default function ClickUpPage() {
     setError("");
     try {
       const response = await fetch(refresh ? "/api/clickup?refresh=1" : "/api/clickup", { cache: "no-store" });
-      const result = (await response.json()) as ClickUpPayload & { error?: string };
+      const result = (await response.json()) as ReportData & { error?: string };
       if (!response.ok || !Array.isArray(result.people) || !Array.isArray(result.parents) || !Array.isArray(result.subtasks)) {
         throw new Error(result.error || "ClickUp өгөгдөл татаж чадсангүй.");
       }
       setData(result);
-      setPersonId((current) => result.people.some((person) => person.id === current) ? current : result.people[0]?.id || "");
+      setPersonId(current => current === "all" || result.people.some(person => person.id === current) ? current : "all");
+      setPage(1);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "ClickUp өгөгдөл татаж чадсангүй.");
     } finally {
@@ -163,35 +95,17 @@ export default function ClickUpPage() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${mobileMenu ? "mobile-open" : ""}`} aria-label="Үндсэн цэс">
-        <div className="brand">
-          <span className="brand-logo-wrap"><img className="brand-logo" src="/cody-logo.svg" alt="Cody" width="151" height="59" /></span>
-        </div>
-        <nav className="nav-list">
-          <Link className="nav-item" href="/#overview" onClick={() => setMobileMenu(false)}><LayoutDashboard size={19} /><span>Хураангуй</span></Link>
-          <Link className="nav-item" href="/#workload" onClick={() => setMobileMenu(false)}><ListChecks size={19} /><span>Ажлын төрөл</span></Link>
-          <Link className="nav-item" href="/#comparison" onClick={() => setMobileMenu(false)}><TrendingUp size={19} /><span>Харьцуулалт</span></Link>
-          <Link className="nav-item" href="/#ai-summary" onClick={() => setMobileMenu(false)}><Sparkles size={19} /><span>AI нэгтгэл</span></Link>
-          <Link className="nav-item nav-item-bottom active" href="/clickup" onClick={() => setMobileMenu(false)}><Layers3 size={19} /><span>ClickUp таск</span></Link>
-        </nav>
-        <div className="sidebar-note">
-          <div className="sidebar-note-icon"><Bot size={18} /></div>
-          <div><strong>ClickUp snapshot</strong><span>Refresh товч дарахад л шинэчлэгдэнэ</span></div>
-        </div>
-        <div className="sidebar-footer"><span className="online-dot" />{loading ? "Data уншиж байна" : error ? "ClickUp холболт тасарсан" : "Хадгалсан ClickUp data"}</div>
-      </aside>
-
-      {mobileMenu && <button className="menu-backdrop" onClick={() => setMobileMenu(false)} aria-label="Цэс хаах" />}
+      <TeamSidebar team="cx" page="all-project" open={mobileMenu} onClose={() => setMobileMenu(false)} />
 
       <main className="main-content">
         <header className="topbar">
           <div className="topbar-left">
             <button className="icon-button menu-button" onClick={() => setMobileMenu(true)} aria-label="Цэс нээх"><Menu size={20} /></button>
-            <div className="breadcrumb"><span>Тайлан</span><ArrowRight size={14} /><strong>ClickUp таск</strong></div>
+            <div className="breadcrumb"><span>CX team</span><ArrowRight size={14} /><strong>ClickUp таск</strong></div>
           </div>
           <div className="topbar-actions">
             <button className="period-select" aria-label="Тайлангийн жил сонгох"><CalendarDays size={16} /> 2026 он <ChevronDown size={14} /></button>
-            <button className="export-button" onClick={() => window.print()}><Download size={16} /><span>Тайлан татах</span></button>
+            <ReportDownload data={data} filters={filters} />
           </div>
         </header>
 
@@ -199,7 +113,7 @@ export default function ClickUpPage() {
           <section className="hero clickup-page-hero">
             <div className="eyebrow"><span /> CX DEV.TEAM · SAVED SNAPSHOT</div>
             <div className="hero-row">
-              <div><h1>ClickUp таск<span>.</span></h1><p>2026 оны хамгийн сүүлийн 10 complete subtask-ийг ажилтан, Type болон Assignment-аар шалгана.</p></div>
+              <div><h1>ClickUp таск<span>.</span></h1><p>Бүх complete subtask-ийг сар, ажилтан, Type-аар шүүж, дэлгэрэнгүйг үзэх болон тайлан татах боломжтой.</p></div>
             </div>
           </section>
 
@@ -218,32 +132,33 @@ export default function ClickUpPage() {
               </button>
             </div>
 
-            {error ? (
+            {error && (
               <div className="clickup-error">
                 <span><X size={18} /></span><div><strong>Өгөгдөл татагдсангүй</strong><p>{error}</p></div>
                 <button onClick={() => void loadData(true)}>Дахин оролдох</button>
               </div>
-            ) : (
+            )}
+            {(data || loading) && (
               <>
                 <div className="clickup-stats">
-                  <div><span className="clickup-stat-icon purple"><Layers3 size={17} /></span><span><small>2026 DAILY TASK PARENT</small><strong>{loading ? "—" : formatNumber(selectedPerson?.parentIds.length || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon green"><CheckCircle2 size={17} /></span><span><small>COMPLETE SUBTASK</small><strong>{loading ? "—" : formatNumber(selectedPerson?.completeSubtasks || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon orange"><ListChecks size={17} /></span><span><small>TYPE БҮРТГЭЛТЭЙ</small><strong>{loading ? "—" : formatNumber(selectedPerson?.withType || 0)}</strong></span></div>
-                  <div><span className="clickup-stat-icon blue"><Clock3 size={17} /></span><span><small>TIME ESTIMATE</small><strong>{loading ? "—" : formatDuration(selectedPerson?.estimateMs || 0)}</strong></span></div>
+                  <div><span className="clickup-stat-icon purple"><Layers3 size={17} /></span><span><small>2026 DAILY TASK PARENT</small><strong>{loading ? "—" : formatNumber(new Set(filteredTasks.map(task => task.parentId)).size)}</strong></span></div>
+                  <div><span className="clickup-stat-icon green"><CheckCircle2 size={17} /></span><span><small>COMPLETE SUBTASK</small><strong>{loading ? "—" : formatNumber(stats.tasks)}</strong></span></div>
+                  <div><span className="clickup-stat-icon orange"><ListChecks size={17} /></span><span><small>TYPE БҮРТГЭЛТЭЙ</small><strong>{loading ? "—" : formatNumber(filteredTasks.filter(task => task.type).length)}</strong></span></div>
+                  <div><span className="clickup-stat-icon blue"><Clock3 size={17} /></span><span><small>TIME ESTIMATE</small><strong>{loading ? "—" : formatDuration(stats.estimateMs)}</strong></span></div>
                 </div>
 
-                <div className="person-selector" role="tablist" aria-label="CX Dev.Team ажилтан сонгох">
+                <div className="person-selector" role="group" aria-label="CX Dev.Team ажилтан сонгох">
+                  {!loading && <button className={`person-card ${personId === "all" ? "active" : ""}`} aria-pressed={personId === "all"} onClick={() => { setPersonId("all"); setPage(1); }}><span className="person-avatar all-people"><Users size={20} /></span><span className="person-card-copy"><small>CX DEV.TEAM</small><strong>Бүх ажилтан</strong></span><span className="person-task-count"><strong>{formatNumber(data?.subtasks.length || 0)}</strong><small>ажил</small></span></button>}
                   {loading
                     ? Array.from({ length: 4 }).map((_, index) => <span className="person-card person-card-loading" key={index} />)
                     : (data?.people || []).map((person) => (
                         <button
                           className={`person-card ${selectedPerson?.id === person.id ? "active" : ""}`}
                           key={person.id}
-                          onClick={() => { setPersonId(person.id); setSearch(""); setTypeFilter("all"); }}
-                          role="tab"
-                          aria-selected={selectedPerson?.id === person.id}
+                          onClick={() => { setPersonId(person.id); setPage(1); }}
+                          aria-pressed={selectedPerson?.id === person.id}
                         >
-                          <span className="person-avatar" style={{ background: person.color }}>{person.avatar ? <img src={person.avatar} alt="" /> : person.name.slice(0, 1).toUpperCase()}</span>
+                          <span className="person-avatar" style={{ background: person.color || "#168c80" }}>{person.avatar ? <img src={person.avatar} alt="" /> : person.name.slice(0, 1).toUpperCase()}</span>
                           <span className="person-card-copy"><small>2026 · COMPLETE</small><strong>{person.name}</strong></span>
                           <span className="person-task-count"><strong>{formatNumber(person.completeSubtasks)}</strong><small>subtask</small></span>
                         </button>
@@ -253,28 +168,31 @@ export default function ClickUpPage() {
                 <div className="clickup-toolbar">
                   <label className="task-search">
                     <Search size={15} />
-                    <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Assignment эсвэл Type-аар хайх" />
-                    {search && <button onClick={() => setSearch("")} aria-label="Хайлт цэвэрлэх"><X size={14} /></button>}
+                    <input value={search} aria-label="Ажлын ID, нэр, ажилтан эсвэл Type хайх" onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Ажлын ID, нэр, ажилтан эсвэл Type хайх" />
+                    {search && <button onClick={() => { setSearch(""); setPage(1); }} aria-label="Хайлт цэвэрлэх"><X size={14} /></button>}
                   </label>
                   <label className="status-filter">
                     <span>Type</span>
-                    <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}>
+                    <select value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); setPage(1); }}>
                       <option value="all">Бүх Type</option>
                       {availableTypes.map((type) => <option value={type} key={type}>{type}</option>)}
                     </select>
                     <ChevronDown size={14} />
                   </label>
-                  <span className="filter-result">Сүүлийн {formatNumber(latestTasks.length)} / {formatNumber(filteredTasks.length)} үр дүн</span>
+                  <label className="status-filter"><span>Сар</span><select value={monthFilter} onChange={event => { setMonthFilter(event.target.value); setPage(1); }}><option value="all">Бүх сар</option>{availableMonths.map(month => <option key={month} value={month}>{Number(month)}-р сар</option>)}</select><ChevronDown size={14} /></label>
+                  <button className="reset-filters" onClick={resetFilters}>Шүүлтүүр цэвэрлэх</button>
+                  <span className="filter-result" role="status">{formatNumber(filteredTasks.length)} / {formatNumber(data?.subtasks.length || 0)} ажил</span>
                 </div>
 
-                <div className="clickup-table-wrap">
+                <div className="clickup-table-wrap" tabIndex={0} role="region" aria-label="Бүх ClickUp ажлын хүснэгт">
                   <table className="clickup-table">
-                    <thead><tr><th>Assignment</th><th>Status</th><th>Type</th><th>Due date</th><th>Time estimate</th></tr></thead>
+                    <thead><tr><th scope="col">Ажил / ID</th><th scope="col">Assignment</th><th>Status</th><th>Type</th><th>Due date</th><th>Time estimate</th></tr></thead>
                     <tbody>
                       {loading
-                        ? Array.from({ length: LATEST_TASK_LIMIT }).map((_, index) => <tr className="task-loading-row" key={index}><td colSpan={5}><span style={{ animationDelay: `${index * 80}ms` }} /></td></tr>)
-                        : latestTasks.map((task, index) => (
+                        ? Array.from({ length: 8 }).map((_, index) => <tr className="task-loading-row" key={index}><td colSpan={6}><span style={{ animationDelay: `${index * 80}ms` }} /></td></tr>)
+                        : visibleTasks.map((task, index) => (
                             <tr className="subtask-row" key={task.id} style={{ animationDelay: `${Math.min(index, 12) * 24}ms` }}>
+                              <td className="task-identity"><a href={`https://app.clickup.com/t/${encodeURIComponent(task.id)}`} target="_blank" rel="noreferrer"><strong>{task.name || task.id}</strong><ExternalLink size={13} /></a>{task.name && <small>{task.id}</small>}</td>
                               <td>
                                 <div className="subtask-assignment">
                                   <div className="assignee-stack">{task.assignment.length > 0 ? task.assignment.slice(0, 3).map((assignee) => <span key={`${task.id}-${assignee.id}`} title={assignee.name} style={{ background: assignee.color }}>{assignee.name.slice(0, 1).toUpperCase()}</span>) : <em>—</em>}</div>
@@ -292,10 +210,12 @@ export default function ClickUpPage() {
                   {!loading && filteredTasks.length === 0 && <div className="empty-tasks"><Search size={21} /><strong>Тохирох subtask олдсонгүй</strong><span>Хайлт эсвэл шүүлтүүрээ өөрчилнө үү.</span></div>}
                 </div>
 
-                <div className="clickup-footnote">
-                  <span><span className="online-dot" />{data ? `${formatDate(String(new Date(data.syncedAt).getTime()), true)}-д синк хийсэн` : "API холболт"}</span>
-                  <span>{selectedPerson?.name || "4 ажилтан"} · {data?.reportYear || 2026} оны data{data?.partial ? " · Зарим parent task түр татагдсангүй" : data?.cacheSource === "clickup" ? " · ClickUp-ээс шинээр татсан" : " · Хадгалсан snapshot"}{data?.dataQuality.missingTimeEstimate ? ` · ${data.dataQuality.missingTimeEstimate} task-д estimate оруулаагүй` : ""}</span>
-                </div>
+                <nav className="table-pagination" aria-label="Ажлын хуудаслалт">
+                  <label>Хуудас бүрд <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}>{[25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+                  <span aria-live="polite">{filteredTasks.length ? formatNumber(pageStart + 1) : 0}–{formatNumber(Math.min(pageStart + pageSize, filteredTasks.length))} / {formatNumber(filteredTasks.length)} ажил</span>
+                  <div><button disabled={currentPage === 1} onClick={() => setPage(1)} aria-label="Эхний хуудас">Эхний</button><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Өмнөх хуудас"><ChevronLeft size={16} /></button><label><span className="sr-only">Хуудас сонгох</span><select value={currentPage} onChange={event => setPage(Number(event.target.value))}>{Array.from({ length: pageCount }, (_, i) => <option key={i + 1} value={i + 1}>{i + 1} / {pageCount}</option>)}</select></label><button disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} aria-label="Дараагийн хуудас"><ChevronRight size={16} /></button><button disabled={currentPage === pageCount} onClick={() => setPage(pageCount)} aria-label="Сүүлийн хуудас">Сүүлийн</button></div>
+                </nav>
+                <div className="clickup-footnote"><span><span className="online-dot" />{data ? `${formatDate(String(new Date(data.syncedAt).getTime()), true)}-д синк хийсэн` : "Өгөгдөл уншиж байна"}</span><span>{data?.partial ? "Эх сурвалжийн зарим өгөгдөл дутуу" : "Бүх хадгалсан ажил хуудас бүрд нээлттэй"} · Экспортод бүх тохирох ажил багтана</span></div>
               </>
             )}
           </section>

@@ -4,14 +4,10 @@ import {
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
-  Bot,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
   Clock3,
-  Download,
-  LayoutDashboard,
-  Layers3,
   ListChecks,
   LoaderCircle,
   Menu,
@@ -24,7 +20,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import Link from "next/link";
+import TeamSidebar from "./components/team-sidebar";
+import ReportDownload from "./components/report-download";
 import { useEffect, useMemo, useState } from "react";
 
 type MonthKey = string;
@@ -260,17 +257,15 @@ function MemberParticipationPie({ members, monthLabel }: { members: Category["me
     return <div className="member-pie-empty">Энэ сард ажилтны оролцооны өгөгдөл бүртгэгдээгүй байна.</div>;
   }
 
-  let cumulativePercent = 0;
   const segments = members.map((member, index) => {
-    const start = cumulativePercent;
+    const start = members.slice(0, index).reduce((sum, item) => sum + item.tasks, 0) / total * 100;
     const percent = (member.tasks / total) * 100;
-    cumulativePercent += percent;
     return {
       ...member,
       color: MEMBER_COLORS[member.name] || MEMBER_FALLBACK_COLORS[index % MEMBER_FALLBACK_COLORS.length],
       percent,
       start,
-      end: cumulativePercent,
+      end: start + percent,
     };
   });
   const chartBackground = `conic-gradient(from -90deg, ${segments
@@ -476,53 +471,24 @@ export default function Home() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${mobileMenu ? "mobile-open" : ""}`} aria-label="Үндсэн цэс">
-        <div className="brand">
-          <span className="brand-logo-wrap">
-            <img className="brand-logo" src="/cody-logo.svg" alt="Cody" width="151" height="59" />
-          </span>
-        </div>
-        <nav className="nav-list">
-          <Link className="nav-item active" href="/#overview" onClick={() => setMobileMenu(false)}>
-            <LayoutDashboard size={19} /> <span>Хураангуй</span>
-          </Link>
-          <Link className="nav-item" href="/#workload" onClick={() => setMobileMenu(false)}>
-            <ListChecks size={19} /> <span>Ажлын төрөл</span>
-          </Link>
-          <Link className="nav-item" href="/#comparison" onClick={() => setMobileMenu(false)}>
-            <TrendingUp size={19} /> <span>Харьцуулалт</span>
-          </Link>
-          <Link className="nav-item" href="/#ai-summary" onClick={() => setMobileMenu(false)}>
-            <Sparkles size={19} /> <span>AI нэгтгэл</span>
-          </Link>
-          <Link className="nav-item nav-item-bottom" href="/clickup" onClick={() => setMobileMenu(false)}>
-            <Layers3 size={19} /> <span>ClickUp таск</span>
-          </Link>
-        </nav>
-        <div className="sidebar-note">
-          <div className="sidebar-note-icon"><Bot size={18} /></div>
-          <div><strong>Groq AI</strong><span>Монгол тайланг секундэд нэгтгэнэ</span></div>
-        </div>
-        <div className="sidebar-footer"><span className="online-dot" />{clickUpLoading ? "Хадгалсан data уншиж байна" : clickUpError ? "ClickUp холболт тасарсан" : "ClickUp хадгалсан data"}</div>
-      </aside>
-
-      {mobileMenu && <button className="menu-backdrop" onClick={() => setMobileMenu(false)} aria-label="Цэс хаах" />}
+      <TeamSidebar team="cx" open={mobileMenu} onClose={() => setMobileMenu(false)} />
 
       <main className="main-content">
         <header className="topbar">
           <div className="topbar-left">
             <button className="icon-button menu-button" onClick={() => setMobileMenu(true)} aria-label="Цэс нээх"><Menu size={20} /></button>
-            <div className="breadcrumb"><span>Тайлан</span><ArrowRight size={14} /><strong>Сарын гүйцэтгэл</strong></div>
+            <div className="breadcrumb"><span>CX team</span><ArrowRight size={14} /><strong>Сарын гүйцэтгэл</strong></div>
           </div>
           <div className="topbar-actions">
             <button className="period-select" aria-label="Тайлангийн жил сонгох">
               <CalendarDays size={16} /> 2026 он <ChevronDown size={14} />
             </button>
-            <button className="export-button" onClick={() => window.print()}><Download size={16} /> <span>Тайлан татах</span></button>
+            <ReportDownload data={clickUpData} filters={{ person: dashboardAssignment, month: activeMonthKey }} context={{ label: `${month.label} · ${dashboardAssignmentName}`, text: summary }} />
           </div>
         </header>
 
         <div className="content-wrap">
+          {clickUpError && <div className="clickup-error" role="alert"><span><X size={18} /></span><div><strong>Өгөгдөл татагдсангүй</strong><p>{clickUpError}</p></div></div>}
           <section className="hero" id="overview">
             <div className="eyebrow"><span /> ГҮЙЦЭТГЭЛИЙН ХЯНАЛТ</div>
             <div className="hero-row">

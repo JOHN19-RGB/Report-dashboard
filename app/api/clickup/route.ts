@@ -203,10 +203,11 @@ export async function GET(request: Request) {
 
     const parentsData = (await parentsResponse.json()) as { tasks?: ClickUpTask[] };
     const dailyTaskParents = parentsData.tasks || [];
+    const workspaceId = workspace.id;
     const parentResults = await Promise.all(
       dailyTaskParents.map(async (parent) => ({
         parent,
-        subtasks: parent.id ? await getCompletedSubtasks(parent.id, workspace.id, token) : [],
+        subtasks: parent.id ? await getCompletedSubtasks(parent.id, workspaceId, token) : [],
       })),
     );
 
@@ -225,6 +226,7 @@ export async function GET(request: Request) {
           const taskAssignees = mapAssignees(task.assignees);
           return {
             id: safeText(task.id),
+            name: safeText(task.name),
             parentId: safeText(parent.id),
             parentName: safeText(parent.name, "Daily Task"),
             assignment: taskAssignees.length > 0 ? taskAssignees : mapAssignees(parent.assignees),

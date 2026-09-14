@@ -2,9 +2,10 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { setDatabaseBinding } from "../db";
+import type { D1Database } from "@cloudflare/workers-types";
 
 interface Env {
-  ASSETS: Fetcher;
+  ASSETS: { fetch(request: Request): Promise<Response> };
   DB: D1Database;
   IMAGES: {
     input(stream: ReadableStream): {

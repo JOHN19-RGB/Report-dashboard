@@ -1,4 +1,5 @@
 import { drizzle } from "drizzle-orm/d1";
+import type { D1Database } from "@cloudflare/workers-types";
 import * as schema from "./schema";
 
 type RuntimeWithDatabase = typeof globalThis & { __WORK_REPORT_DB__?: D1Database };
