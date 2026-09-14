@@ -278,42 +278,67 @@ async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], toke
 
 export async function GET(request: Request) {
   try {
-    const refresh = new URL(request.url).searchParams.get("refresh") === "1";
-    if (!refresh) {
-      const snapshot = await readSnapshot();
-      if (snapshot?.schemaVersion === SNAPSHOT_VERSION) return Response.json({ ...snapshot, cacheSource: "snapshot" }, { headers: { "Cache-Control": "private, no-store" } });
-    }
+    const refresh = new URL(request.url).searchParams.get("refresh") || "";
+    const snapshot = await readSnapshot();
+    if (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION) return Response.json({ ...snapshot, cacheSource: "snapshot" }, { headers: { "Cache-Control": "private, no-store" } });
 
     const token = process.env.CLICKUP_API_TOKEN;
     const workspaceId = process.env.CLICKUP_WORKSPACE_ID;
     if (!token || !workspaceId) return Response.json({ error: "ClickUp API тохиргоо дутуу байна." }, { status: 503 });
 
+    const refreshSprints = refresh === "sprints" || (!refresh && snapshot && Array.isArray(snapshot.tasks));
+    if (refreshSprints && snapshot && Array.isArray(snapshot.tasks)) {
+      const discovery = await resolveB2cWorkspace(workspaceId, token);
+      const rawSprintAssignments = await resolveSprintAssignments(discovery.sprintLists, token);
+      const snapshotTasks = snapshot.tasks as Array<Record<string, unknown> & { id?: string; sprint?: string; sprintIds?: string[] }>;
+      const masterTaskIds = new Set(snapshotTasks.map(task => safeText(task.id)).filter(Boolean));
+      const sprintAssignments = rawSprintAssignments.map(assignment => ({ ...assignment, taskIds: assignment.taskIds.filter(taskId => masterTaskIds.has(taskId)) }));
+      const sprintIdsByTaskId = new Map<string, string[]>();
+      for (const assignment of sprintAssignments) {
+        for (const taskId of assignment.taskIds) sprintIdsByTaskId.set(taskId, [...(sprintIdsByTaskId.get(taskId) || []), assignment.sprint.id]);
+      }
+      const sprints = sprintAssignments.filter(assignment => assignment.taskIds.length).map(({ sprint, taskIds, partial }) => ({
+        id: sprint.id,
+        name: sprint.name,
+        folder: sprint.folder,
+        startDate: sprint.startDate,
+        endDate: sprint.endDate,
+        taskCount: taskIds.length,
+        partial,
+      }));
+      const sprintById = new Map(sprints.map(sprint => [sprint.id, sprint]));
+      const tasks = snapshotTasks.map(task => {
+        const sprintIds = sprintIdsByTaskId.get(safeText(task.id)) || [];
+        return { ...task, sprintIds, sprint: sprintById.get(sprintIds[0])?.name || safeText(task.sprint) };
+      });
+      const taskPartial = snapshot.taskPartial === true;
+      const payload = {
+        ...snapshot,
+        schemaVersion: SNAPSHOT_VERSION,
+        list: discovery.list,
+        tasks,
+        sprints,
+        taskPartial,
+        sprintSyncErrors: rawSprintAssignments.filter(assignment => assignment.failed).length,
+        partial: taskPartial || rawSprintAssignments.some(assignment => assignment.partial),
+        syncedAt: new Date().toISOString(),
+      } satisfies SnapshotPayload;
+      await saveSnapshot(payload);
+      return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+
     const [workspaceData, discovery] = await Promise.all([
       clickUpJson<{ teams?: Array<{ id?: string; name?: string; color?: string; members?: unknown[] }> }>("/team", token),
       resolveB2cWorkspace(workspaceId, token),
     ]);
-    const { list, sprintLists } = discovery;
-    const [taskResult, rawSprintAssignments] = await Promise.all([
-      getListTasks(list.id, token),
-      resolveSprintAssignments(sprintLists, token),
-    ]);
+    const { list } = discovery;
+    const taskResult = await getListTasks(list.id, token);
     const rawTasks = taskResult.tasks;
-    const masterTaskIds = new Set(rawTasks.map(task => safeText(task.id)).filter(Boolean));
-    const sprintAssignments = rawSprintAssignments.map(assignment => ({ ...assignment, taskIds: assignment.taskIds.filter(taskId => masterTaskIds.has(taskId)) }));
+    const previousTasks = snapshot && Array.isArray(snapshot.tasks) ? snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : [];
+    const previousSprintByTaskId = new Map(previousTasks.map(task => [safeText(task.id), { sprint: safeText(task.sprint), sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }]));
+    const sprints = snapshot && Array.isArray(snapshot.sprints) ? snapshot.sprints : [];
     const sprintIdsByTaskId = new Map<string, string[]>();
-    for (const assignment of sprintAssignments) {
-      for (const taskId of assignment.taskIds) sprintIdsByTaskId.set(taskId, [...(sprintIdsByTaskId.get(taskId) || []), assignment.sprint.id]);
-    }
-    const sprints = sprintAssignments.filter(assignment => assignment.taskIds.length).map(({ sprint, taskIds, partial }) => ({
-      id: sprint.id,
-      name: sprint.name,
-      folder: sprint.folder,
-      startDate: sprint.startDate,
-      endDate: sprint.endDate,
-      taskCount: taskIds.length,
-      partial,
-    }));
-    const sprintById = new Map(sprints.map(sprint => [sprint.id, sprint]));
+    for (const task of previousTasks) sprintIdsByTaskId.set(safeText(task.id), Array.isArray(task.sprintIds) ? task.sprintIds : []);
     const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
     const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
     const tasks = rawTasks.filter(task => task.id).map(task => {
@@ -330,7 +355,7 @@ export async function GET(request: Request) {
         status: { name: statusName, color: safeColor(task.status?.color, "#64748b"), type: safeText(task.status?.type), done: normalize(task.status?.type) === "closed" || /complete|closed|done|дууссан/.test(normalize(statusName)) },
         assignees: mapAssignees(task.assignees),
         type: resolveTaskType(fields, statusName, parentStatus),
-        sprint: sprintById.get(sprintIds[0])?.name || findField(fields, [/sprint/, /спринт/]),
+        sprint: previousSprintByTaskId.get(safeText(task.id))?.sprint || findField(fields, [/sprint/, /спринт/]),
         sprintIds,
         position: findField(fields, [/position/, /role/, /албан тушаал/]),
         project: findField(fields, [/project/, /website/, /domain/, /site/, /төсөл/, /вэб/]),
@@ -344,15 +369,15 @@ export async function GET(request: Request) {
     });
     const workspace = workspaceData.teams?.find(team => team.id === workspaceId) || workspaceData.teams?.[0];
     const payload = {
-      schemaVersion: SNAPSHOT_VERSION,
+      schemaVersion: snapshot?.schemaVersion === SNAPSHOT_VERSION ? SNAPSHOT_VERSION : SNAPSHOT_VERSION - 1,
       workspace: { id: workspaceId, name: safeText(workspace?.name, "ClickUp Workspace"), color: safeColor(workspace?.color), memberCount: Array.isArray(workspace?.members) ? workspace.members.length : 0 },
       list,
       reportYear: REPORT_YEAR,
       tasks,
       sprints,
       taskPartial: taskResult.partial,
-      sprintSyncErrors: rawSprintAssignments.filter(assignment => assignment.failed).length,
-      partial: taskResult.partial || rawSprintAssignments.some(assignment => assignment.partial),
+      sprintSyncErrors: Number(snapshot?.sprintSyncErrors) || 0,
+      partial: taskResult.partial || (snapshot?.partial === true && snapshot?.taskPartial !== true),
       availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
       syncedAt: new Date().toISOString(),
     } satisfies SnapshotPayload;

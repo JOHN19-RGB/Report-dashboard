@@ -98,9 +98,15 @@ export default function DevMasterDashboard() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(refresh ? "/api/clickup/dev?refresh=1" : "/api/clickup/dev", { cache: "no-store" });
-      const payload = (await response.json()) as DevReportData & { error?: string };
+      const response = await fetch(refresh ? "/api/clickup/dev?refresh=tasks" : "/api/clickup/dev", { cache: "no-store" });
+      let payload = (await response.json()) as DevReportData & { error?: string };
       if (!response.ok || !Array.isArray(payload.tasks)) throw new Error(payload.error || "B2C Master list-ийн мэдээлэл татагдсангүй.");
+      if (refresh) {
+        const sprintResponse = await fetch("/api/clickup/dev?refresh=sprints", { cache: "no-store" });
+        const sprintPayload = (await sprintResponse.json()) as DevReportData & { error?: string };
+        if (sprintResponse.ok && Array.isArray(sprintPayload.tasks)) payload = sprintPayload;
+        else payload = { ...payload, partial: true, sprintSyncErrors: Math.max(1, payload.sprintSyncErrors || 0) };
+      }
       const normalizedPayload: DevReportData = {
         ...payload,
         sprints: Array.isArray(payload.sprints) ? payload.sprints : [],

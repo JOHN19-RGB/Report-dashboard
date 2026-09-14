@@ -86,7 +86,8 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(devClickUpRoute, /B2C Master/);
   assert.match(devClickUpRoute, /include_timl/);
   assert.match(devClickUpRoute, /resolveSprintAssignments/);
-  assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=1" : "\/api\/clickup\/dev"/);
+  assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=tasks" : "\/api\/clickup\/dev"/);
+  assert.match(devDashboard, /\/api\/clickup\/dev\?refresh=sprints/);
   assert.match(devDashboard, /sprintId/);
   assert.doesNotMatch(devDashboard, /DEV_REPORT_DATA|dev-topbar/);
   assert.match(route, /reasoning_effort: "none"/);
