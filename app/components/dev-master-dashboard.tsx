@@ -54,8 +54,9 @@ function isoDate(date: Date) {
 }
 
 function periodRange(period: Exclude<PeriodPreset, "custom" | "sprint">, year: number) {
-  const today = new Date();
-  const anchor = today.getUTCFullYear() === year ? today : new Date(Date.UTC(year, 11, 31));
+  const todayParts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const todayPart = (type: Intl.DateTimeFormatPartTypes) => Number(todayParts.find(item => item.type === type)?.value || 0);
+  const anchor = todayPart("year") === year ? new Date(Date.UTC(year, todayPart("month") - 1, todayPart("day"))) : new Date(Date.UTC(year, 11, 31));
   if (period === "year") return { startDate: `${year}-01-01`, endDate: `${year}-12-31` };
   if (period === "month") {
     const month = anchor.getUTCMonth();

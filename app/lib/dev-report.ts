@@ -168,7 +168,9 @@ export function reportMetrics(tasks: DevTask[]) {
 export function currentSprint(tasks: DevTask[], sprints: DevSprint[] = [], selectedSprintId = "all") {
   const selected = selectedSprintId === "all" ? null : sprints.find(sprint => sprint.id === selectedSprintId);
   if (selected) return selected.name;
-  const today = new Date().toISOString().slice(0, 10);
+  const todayParts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const todayPart = (type: Intl.DateTimeFormatPartTypes) => todayParts.find(item => item.type === type)?.value || "";
+  const today = `${todayPart("year")}-${todayPart("month")}-${todayPart("day")}`;
   const current = sprints.find(sprint => (!sprint.startDate || sprint.startDate <= today) && (!sprint.endDate || sprint.endDate >= today) && tasks.some(task => (task.sprintIds || []).includes(sprint.id)));
   if (current) return current.name;
   const activeSprints = tasks.filter(task => !task.status.done && task.sprint).map(task => task.sprint);

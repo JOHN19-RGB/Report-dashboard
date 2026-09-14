@@ -106,7 +106,10 @@ function normalize(value: unknown) {
 function dateToIso(value: string | null | undefined) {
   if (!value || !Number.isFinite(Number(value))) return null;
   const date = new Date(Number(value));
-  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value || "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 function mapAssignees(users: ClickUpUser[] | undefined) {
