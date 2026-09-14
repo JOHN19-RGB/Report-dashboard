@@ -24,10 +24,10 @@ test("server-renders the work report dashboard", async () => {
   assert.match(html, /Ажлын тайлан/);
   assert.match(html, /Гүйцэтгэсэн ажил/);
   assert.match(html, /GROQ AI/);
-  assert.match(html, /CX\.Master/);
-  assert.match(html, /CX\.All project/);
-  assert.match(html, />Dev<\/h2>/);
-  assert.doesNotMatch(html, /Dev\.Master|B2C\.Master/);
+  assert.match(html, /href="\/"[^>]*>CX<\/a>/);
+  assert.match(html, /Dev\.Master/);
+  assert.match(html, /Dev\.All project/);
+  assert.doesNotMatch(html, /CX\.Master|CX\.All project|B2C\.Master/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Building your site/i);
 });
 
@@ -42,7 +42,21 @@ test("keeps the dashboard filter and ClickUp task table on separate routes", asy
   assert.doesNotMatch(dashboardHtml, /clickup-page-panel/);
   assert.match(clickUpHtml, /ClickUp таск/);
   assert.match(clickUpHtml, /clickup-page-panel/);
-  assert.match(clickUpHtml, /href="\/clickup"[^>]*aria-current="page"[^>]*>CX\.All project/);
+  assert.match(clickUpHtml, /href="\/clickup"[^>]*aria-current="page"[^>]*>ClickUp таск/);
+});
+
+test("keeps both Dev destinations empty and separate from CX data", async () => {
+  const [masterResponse, projectsResponse] = await Promise.all([render("/dev/master"), render("/dev/all-project")]);
+  assert.equal(masterResponse.status, 200);
+  assert.equal(projectsResponse.status, 200);
+
+  const [masterHtml, projectsHtml] = await Promise.all([masterResponse.text(), projectsResponse.text()]);
+  assert.match(masterHtml, /Dev\.Master/);
+  assert.match(projectsHtml, /Dev\.All project/);
+  assert.match(masterHtml, /Одоогоор өгөгдөл алга/);
+  assert.match(projectsHtml, /Одоогоор өгөгдөл алга/);
+  assert.doesNotMatch(masterHtml, /kpi-grid|clickup-page-panel/);
+  assert.doesNotMatch(projectsHtml, /kpi-grid|clickup-page-panel/);
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {

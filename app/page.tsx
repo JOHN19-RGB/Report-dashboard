@@ -20,7 +20,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import TeamSidebar from "./components/team-sidebar";
+import TeamSidebar, { CxReportNav } from "./components/team-sidebar";
 import ReportDownload from "./components/report-download";
 import { useEffect, useMemo, useState } from "react";
 
@@ -488,6 +488,7 @@ export default function Home() {
         </header>
 
         <div className="content-wrap">
+          <CxReportNav active="overview" />
           {clickUpError && <div className="clickup-error" role="alert"><span><X size={18} /></span><div><strong>Өгөгдөл татагдсангүй</strong><p>{clickUpError}</p></div></div>}
           <section className="hero" id="overview">
             <div className="eyebrow"><span /> ГҮЙЦЭТГЭЛИЙН ХЯНАЛТ</div>

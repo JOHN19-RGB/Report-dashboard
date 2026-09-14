@@ -17,7 +17,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import TeamSidebar from "../components/team-sidebar";
+import TeamSidebar, { CxReportNav } from "../components/team-sidebar";
 import ReportDownload from "../components/report-download";
 import { filterTasks, totals, taskMonth, type ReportData } from "../lib/report";
 import { useEffect, useMemo, useState } from "react";
@@ -95,7 +95,7 @@ export default function ClickUpPage() {
 
   return (
     <div className="app-shell">
-      <TeamSidebar page="all-project" open={mobileMenu} onClose={() => setMobileMenu(false)} />
+      <TeamSidebar open={mobileMenu} onClose={() => setMobileMenu(false)} />
 
       <main className="main-content">
         <header className="topbar">
@@ -110,6 +110,7 @@ export default function ClickUpPage() {
         </header>
 
         <div className="content-wrap clickup-page-wrap">
+          <CxReportNav active="tasks" />
           <section className="hero clickup-page-hero">
             <div className="eyebrow"><span /> CX DEV.TEAM · SAVED SNAPSHOT</div>
             <div className="hero-row">
