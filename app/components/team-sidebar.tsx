@@ -6,12 +6,10 @@ import { X } from "lucide-react";
 type SidebarPage = "master" | "all-project";
 
 export default function TeamSidebar({
-  team,
   page = "master",
   open,
   onClose,
 }: {
-  team: "cx" | "b2c";
   page?: SidebarPage;
   open: boolean;
   onClose: () => void;
@@ -21,18 +19,15 @@ export default function TeamSidebar({
       <div className="brand"><span className="brand-logo-wrap"><img className="brand-logo" src="/cody-logo.svg" alt="Cody" width="151" height="59" /></span><button className="team-menu-close" aria-label="Цэс хаах" onClick={onClose}><X size={20} /></button></div>
       <nav className="nav-list" aria-label="Багууд">
         <span className="team-nav-label">БАГУУД</span>
-        <section className={`sidebar-section ${team === "cx" ? "active" : ""}`} aria-labelledby="dev-section-title">
-          <h2 className="sidebar-section-title" id="dev-section-title">Dev</h2>
+        <section className="sidebar-section active" aria-labelledby="cx-section-title">
+          <h2 className="sidebar-section-title" id="cx-section-title">CX</h2>
           <div className="sidebar-subnav">
-            <Link href="/" className={`nav-item ${team === "cx" && page === "master" ? "active" : ""}`} aria-current={team === "cx" && page === "master" ? "page" : undefined} onClick={onClose}>Dev.Master</Link>
-            <Link href="/clickup" className={`nav-item ${team === "cx" && page === "all-project" ? "active" : ""}`} aria-current={team === "cx" && page === "all-project" ? "page" : undefined} onClick={onClose}>Dev.All project</Link>
+            <Link href="/" className={`nav-item ${page === "master" ? "active" : ""}`} aria-current={page === "master" ? "page" : undefined} onClick={onClose}>CX.Master</Link>
+            <Link href="/clickup" className={`nav-item ${page === "all-project" ? "active" : ""}`} aria-current={page === "all-project" ? "page" : undefined} onClick={onClose}>CX.All project</Link>
           </div>
         </section>
-        <section className={`sidebar-section ${team === "b2c" ? "active" : ""}`} aria-labelledby="b2c-section-title">
-          <h2 className="sidebar-section-title" id="b2c-section-title">B2C</h2>
-          <div className="sidebar-subnav">
-            <Link href="/b2c" className={`nav-item ${team === "b2c" ? "active" : ""}`} aria-current={team === "b2c" ? "page" : undefined} onClick={onClose}>B2C.Master</Link>
-          </div>
+        <section className="sidebar-section sidebar-section-empty" aria-labelledby="dev-section-title">
+          <h2 className="sidebar-section-title" id="dev-section-title">Dev</h2>
         </section>
       </nav>
       <div className="sidebar-footer">Cody · Ажлын тайлан</div>

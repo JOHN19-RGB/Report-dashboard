@@ -471,7 +471,7 @@ export default function Home() {
 
   return (
     <div className="app-shell">
-      <TeamSidebar team="cx" open={mobileMenu} onClose={() => setMobileMenu(false)} />
+      <TeamSidebar open={mobileMenu} onClose={() => setMobileMenu(false)} />
 
       <main className="main-content">
         <header className="topbar">

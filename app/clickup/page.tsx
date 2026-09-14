@@ -95,7 +95,7 @@ export default function ClickUpPage() {
 
   return (
     <div className="app-shell">
-      <TeamSidebar team="cx" page="all-project" open={mobileMenu} onClose={() => setMobileMenu(false)} />
+      <TeamSidebar page="all-project" open={mobileMenu} onClose={() => setMobileMenu(false)} />
 
       <main className="main-content">
         <header className="topbar">

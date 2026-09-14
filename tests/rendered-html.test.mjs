@@ -24,8 +24,10 @@ test("server-renders the work report dashboard", async () => {
   assert.match(html, /Ажлын тайлан/);
   assert.match(html, /Гүйцэтгэсэн ажил/);
   assert.match(html, /GROQ AI/);
-  assert.match(html, /Dev\.Master/);
-  assert.match(html, /Dev\.All project/);
+  assert.match(html, /CX\.Master/);
+  assert.match(html, /CX\.All project/);
+  assert.match(html, />Dev<\/h2>/);
+  assert.doesNotMatch(html, /Dev\.Master|B2C\.Master/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Building your site/i);
 });
 
@@ -40,7 +42,7 @@ test("keeps the dashboard filter and ClickUp task table on separate routes", asy
   assert.doesNotMatch(dashboardHtml, /clickup-page-panel/);
   assert.match(clickUpHtml, /ClickUp таск/);
   assert.match(clickUpHtml, /clickup-page-panel/);
-  assert.match(clickUpHtml, /href="\/"[^>]*aria-current="page"[^>]*>Dev\.Master|href="\/clickup"[^>]*aria-current="page"[^>]*>Dev\.All project/);
+  assert.match(clickUpHtml, /href="\/clickup"[^>]*aria-current="page"[^>]*>CX\.All project/);
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {
