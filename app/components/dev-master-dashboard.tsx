@@ -102,7 +102,7 @@ export default function DevMasterDashboard() {
       let payload = (await response.json()) as DevReportData & { error?: string };
       if (!response.ok || !Array.isArray(payload.tasks)) throw new Error(payload.error || "B2C Master list-ийн мэдээлэл татагдсангүй.");
       if (refresh) {
-        const sprintResponse = await fetch("/api/clickup/dev?refresh=sprints", { cache: "no-store" });
+        const sprintResponse = await fetch("/api/clickup/dev?refresh=recent-sprints", { cache: "no-store" });
         const sprintPayload = (await sprintResponse.json()) as DevReportData & { error?: string };
         if (sprintResponse.ok && Array.isArray(sprintPayload.tasks)) payload = sprintPayload;
         else payload = { ...payload, partial: true, sprintSyncErrors: Math.max(1, payload.sprintSyncErrors || 0) };
