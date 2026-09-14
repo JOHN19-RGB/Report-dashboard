@@ -45,7 +45,7 @@ test("keeps the dashboard filter and ClickUp task table on separate routes", asy
   assert.match(clickUpHtml, /href="\/clickup"[^>]*aria-current="page"[^>]*>ClickUp таск/);
 });
 
-test("keeps both Dev destinations empty and separate from CX data", async () => {
+test("renders the Dev master dashboard and keeps all-project separate", async () => {
   const [masterResponse, projectsResponse] = await Promise.all([render("/dev/master"), render("/dev/all-project")]);
   assert.equal(masterResponse.status, 200);
   assert.equal(projectsResponse.status, 200);
@@ -53,10 +53,12 @@ test("keeps both Dev destinations empty and separate from CX data", async () => 
   const [masterHtml, projectsHtml] = await Promise.all([masterResponse.text(), projectsResponse.text()]);
   assert.match(masterHtml, /Dev\.Master/);
   assert.match(projectsHtml, /Dev\.All project/);
-  assert.match(masterHtml, /Одоогоор өгөгдөл алга/);
+  assert.match(masterHtml, /Task Performance Comparison/);
+  assert.match(masterHtml, /Project Team Members Productivity/);
+  assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);
   assert.match(projectsHtml, /Одоогоор өгөгдөл алга/);
-  assert.doesNotMatch(masterHtml, /kpi-grid|clickup-page-panel/);
-  assert.doesNotMatch(projectsHtml, /kpi-grid|clickup-page-panel/);
+  assert.doesNotMatch(masterHtml, /class="kpi-grid|clickup-page-panel/);
+  assert.doesNotMatch(projectsHtml, /class="kpi-grid|clickup-page-panel/);
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {

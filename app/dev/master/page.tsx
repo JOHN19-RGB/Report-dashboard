@@ -1,5 +1,5 @@
-import DevEmptyPage from "../../components/dev-empty-page";
+import DevMasterDashboard from "../../components/dev-master-dashboard";
 
 export default function DevMasterPage() {
-  return <DevEmptyPage page="master" />;
+  return <DevMasterDashboard />;
 }
