@@ -120,8 +120,8 @@ export function monthlyTaskPerformance(tasks: DevTask[], year: number) {
     const monthTasks = tasks.filter(task => taskDate(task)?.startsWith(`${year}-${month}`));
     return {
       month: new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, monthIndex, 1))),
-      bug: monthTasks.filter(task => task.type.toLocaleLowerCase().includes("bug") && !task.type.toLocaleLowerCase().includes("not bug")).length,
-      imp: monthTasks.filter(task => /(^|\W)imp(\W|$)|improvement/i.test(task.type)).length,
+      bug: monthTasks.filter(task => task.type === "Bug").length,
+      imp: monthTasks.filter(task => task.type === "Imp").length,
     };
   });
 }
