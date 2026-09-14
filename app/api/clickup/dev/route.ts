@@ -229,9 +229,13 @@ async function resolveB2cWorkspace(workspaceId: string, token: string) {
     list = { id: scored[0].id, name: scored[0].name || "B2C Master" };
   }
 
+  const reportStart = `${REPORT_YEAR}-01-01`;
+  const reportEnd = `${REPORT_YEAR}-12-31`;
   const sprintLists = candidates
     .filter(candidate => candidate.id !== list.id && isSprintList(candidate))
-    .sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }));
+    .filter(candidate => !candidate.startDate || !candidate.endDate || (candidate.startDate <= reportEnd && candidate.endDate >= reportStart))
+    .sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }))
+    .slice(0, 32);
   return { list, sprintLists };
 }
 
@@ -253,17 +257,21 @@ async function getListTasks(listId: string, token: string, options: { includeTim
   return { tasks, partial: true };
 }
 
-async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], masterTaskIds: Set<string>, token: string) {
-  const assignments: Array<{ sprint: ClickUpListLocation; taskIds: string[]; partial: boolean }> = [];
+async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], token: string) {
+  const assignments: Array<{ sprint: ClickUpListLocation; taskIds: string[]; partial: boolean; failed: boolean }> = [];
   const concurrency = 4;
   for (let start = 0; start < sprintLists.length; start += concurrency) {
     const batch = sprintLists.slice(start, start + concurrency);
     const results = await Promise.all(batch.map(async sprint => {
-      const result = await getListTasks(sprint.id, token, { includeTiml: true, pageLimit: 20, batchSize: 1 });
-      const taskIds = Array.from(new Set(result.tasks.map(task => safeText(task.id)).filter(id => id && masterTaskIds.has(id))));
-      return { sprint, taskIds, partial: result.partial };
+      try {
+        const result = await getListTasks(sprint.id, token, { includeTiml: true, pageLimit: 20, batchSize: 1 });
+        const taskIds = Array.from(new Set(result.tasks.map(task => safeText(task.id)).filter(Boolean)));
+        return { sprint, taskIds, partial: result.partial, failed: false };
+      } catch {
+        return { sprint, taskIds: [], partial: true, failed: true };
+      }
     }));
-    assignments.push(...results.filter(result => result.taskIds.length));
+    assignments.push(...results);
   }
   return assignments;
 }
@@ -285,14 +293,18 @@ export async function GET(request: Request) {
       resolveB2cWorkspace(workspaceId, token),
     ]);
     const { list, sprintLists } = discovery;
-    const taskResult = await getListTasks(list.id, token);
+    const [taskResult, rawSprintAssignments] = await Promise.all([
+      getListTasks(list.id, token),
+      resolveSprintAssignments(sprintLists, token),
+    ]);
     const rawTasks = taskResult.tasks;
-    const sprintAssignments = await resolveSprintAssignments(sprintLists, new Set(rawTasks.map(task => safeText(task.id)).filter(Boolean)), token);
+    const masterTaskIds = new Set(rawTasks.map(task => safeText(task.id)).filter(Boolean));
+    const sprintAssignments = rawSprintAssignments.map(assignment => ({ ...assignment, taskIds: assignment.taskIds.filter(taskId => masterTaskIds.has(taskId)) }));
     const sprintIdsByTaskId = new Map<string, string[]>();
     for (const assignment of sprintAssignments) {
       for (const taskId of assignment.taskIds) sprintIdsByTaskId.set(taskId, [...(sprintIdsByTaskId.get(taskId) || []), assignment.sprint.id]);
     }
-    const sprints = sprintAssignments.map(({ sprint, taskIds, partial }) => ({
+    const sprints = sprintAssignments.filter(assignment => assignment.taskIds.length).map(({ sprint, taskIds, partial }) => ({
       id: sprint.id,
       name: sprint.name,
       folder: sprint.folder,
@@ -338,7 +350,9 @@ export async function GET(request: Request) {
       reportYear: REPORT_YEAR,
       tasks,
       sprints,
-      partial: taskResult.partial || sprintAssignments.some(assignment => assignment.partial),
+      taskPartial: taskResult.partial,
+      sprintSyncErrors: rawSprintAssignments.filter(assignment => assignment.failed).length,
+      partial: taskResult.partial || rawSprintAssignments.some(assignment => assignment.partial),
       availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
       syncedAt: new Date().toISOString(),
     } satisfies SnapshotPayload;
@@ -346,6 +360,7 @@ export async function GET(request: Request) {
     await saveSnapshot(payload);
     return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
+    console.error("Dev ClickUp refresh failed", error);
     const message = error instanceof Error && error.message === "B2C Master list олдсонгүй." ? error.message : "B2C Master list-ийн ClickUp мэдээллийг татаж чадсангүй.";
     return Response.json({ error: message }, { status: 502 });
   }

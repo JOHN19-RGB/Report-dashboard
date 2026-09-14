@@ -197,7 +197,7 @@ export default function DevMasterDashboard() {
         </section>
 
         {error && <div className="clickup-error" role="alert"><span><X size={18} /></span><div><strong>ClickUp өгөгдөл татагдсангүй</strong><p>{error}</p></div><button onClick={() => void loadData(true)}>Дахин оролдох</button></div>}
-        {data?.partial && <div className="dev-data-warning" role="status">ClickUp-ийн хариу 10,000 ажлын хязгаарт хүрсэн тул хамгийн сүүлийн ажлуудыг харуулж байна.</div>}
+        {data?.partial && <div className="dev-data-warning" role="status">{data.taskPartial ? "ClickUp-ийн B2C Master хариу 10,000 ажлын хязгаарт хүрсэн тул хамгийн сүүлийн ажлуудыг харуулж байна." : data.sprintSyncErrors ? `${data.sprintSyncErrors} sprint-ийн мэдээлэл түр шинэчлэгдсэнгүй. Бусад ClickUp өгөгдлийг хэвийн харуулж байна.` : "Зарим sprint 2,000-аас олон ажилтай тул тухайн sprint-ийн хамгийн сүүлийн ажлуудыг харуулж байна."}</div>}
 
         <section className="dev-kpi-grid" aria-label="Dev төслийн гол үзүүлэлтүүд">
           <article className="dev-kpi-card"><div><strong>{loading ? "—" : tasks.length}</strong><span>Total Tasks</span><small><CheckCircle2 size={12} /> {metrics.doneTasks} completed</small></div><span className="dev-kpi-art coral"><ClipboardCheck size={31} /></span></article>

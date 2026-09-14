@@ -45,6 +45,8 @@ export type DevReportData = {
   sprints: DevSprint[];
   availableFields: string[];
   partial?: boolean;
+  taskPartial?: boolean;
+  sprintSyncErrors?: number;
   syncedAt: string;
   cacheSource?: "snapshot" | "clickup";
 };
