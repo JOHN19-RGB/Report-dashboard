@@ -173,6 +173,7 @@ export function currentSprint(tasks: DevTask[], sprints: DevSprint[] = [], selec
   const today = `${todayPart("year")}-${todayPart("month")}-${todayPart("day")}`;
   const current = sprints.find(sprint => (!sprint.startDate || sprint.startDate <= today) && (!sprint.endDate || sprint.endDate >= today) && tasks.some(task => (task.sprintIds || []).includes(sprint.id)));
   if (current) return current.name;
+  if (sprints.length) return sprints[0].name;
   const activeSprints = tasks.filter(task => !task.status.done && task.sprint).map(task => task.sprint);
   const allSprints = tasks.map(task => task.sprint).filter(Boolean);
   const candidates = activeSprints.length ? activeSprints : allSprints;
