@@ -1,154 +1,156 @@
-export const DEV_TASK_TYPES = ["Imp", "Bug", "Headless", "Hold", "Not bug/imp"] as const;
-
-export type DevTaskType = (typeof DEV_TASK_TYPES)[number];
-
-export type DevMember = {
-  id: string;
-  position: string;
+export type DevAssignee = {
+  id: string | null;
   name: string;
-  presence: number;
+  color: string;
+  avatar: string | null;
 };
 
 export type DevTask = {
   id: string;
-  title: string;
-  type: DevTaskType;
-  date: string;
-  memberId: string;
-  done: boolean;
-  estimateHours: number;
-  performanceScore: number;
-};
-
-export type DevChangeRequest = {
-  id: string;
-  website: string;
-  request: string;
-  owner: string;
-  date: string;
+  name: string;
+  parentId: string | null;
+  parentName: string;
+  url: string;
+  status: { name: string; color: string; type: string; done: boolean };
+  assignees: DevAssignee[];
+  type: string;
+  sprint: string;
+  position: string;
+  project: string;
+  dueDate: string | null;
+  startDate: string | null;
+  createdDate: string | null;
+  closedDate: string | null;
+  timeEstimateMs: number | null;
+  customFields: Record<string, string>;
 };
 
 export type DevReportData = {
+  workspace: { id: string; name: string; color: string; memberCount: number };
+  list: { id: string; name: string };
   reportYear: number;
-  sprint: string;
-  objectives: { completed: number; total: number };
-  members: DevMember[];
   tasks: DevTask[];
-  changeRequests: DevChangeRequest[];
+  availableFields: string[];
+  syncedAt: string;
+  cacheSource?: "snapshot" | "clickup";
 };
 
 export type DevReportFilters = {
   search: string;
   startDate: string;
   endDate: string;
-  taskType: "all" | DevTaskType;
+  taskType: string;
 };
 
-const MEMBERS: DevMember[] = [
-  { id: "member-1", position: "Front-End", name: "Ариунбаатар", presence: 93 },
-  { id: "member-2", position: "Front-End", name: "Эрдэнэ-жаргал", presence: 88 },
-  { id: "member-3", position: "Front-End", name: "Өлзийбаяр", presence: 91 },
-  { id: "member-4", position: "Front-End", name: "Маралмаа", presence: 82 },
-  { id: "member-5", position: "UI/UX", name: "Есүгэн", presence: 76 },
-];
-
-const MONTHLY_TYPE_COUNTS: Record<DevTaskType, number[]> = {
-  Imp: [4, 4, 3, 5, 4, 5, 4, 4, 5, 3, 3, 5],
-  Bug: [1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1],
-  Headless: [1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 0, 1],
-  Hold: [0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 0],
-  "Not bug/imp": [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+export type DevMemberProductivity = {
+  id: string;
+  name: string;
+  color: string;
+  avatar: string | null;
+  position: string;
+  totalTasks: number;
+  doneTasks: number;
+  estimateMs: number;
+  completion: number;
 };
 
-function buildTasks(): DevTask[] {
-  const tasks: DevTask[] = [];
-  let index = 0;
-
-  for (const type of DEV_TASK_TYPES) {
-    MONTHLY_TYPE_COUNTS[type].forEach((count, monthIndex) => {
-      for (let itemIndex = 0; itemIndex < count; itemIndex += 1) {
-        const member = MEMBERS[index % MEMBERS.length];
-        const sequence = String(index + 1).padStart(3, "0");
-        tasks.push({
-          id: `DEV-${sequence}`,
-          title: `${type} development task ${sequence}`,
-          type,
-          date: `2026-${String(monthIndex + 1).padStart(2, "0")}-${String(4 + ((index * 3) % 23)).padStart(2, "0")}`,
-          memberId: member.id,
-          done: index % 8 !== 0,
-          estimateHours: 2 + (index % 7) * 0.5,
-          performanceScore: 78 + (index % 17),
-        });
-        index += 1;
-      }
-    });
-  }
-
-  return tasks.sort((a, b) => a.date.localeCompare(b.date));
+export function taskDate(task: DevTask) {
+  return task.dueDate || task.closedDate || task.startDate || task.createdDate;
 }
 
-export const DEV_REPORT_DATA: DevReportData = {
-  reportYear: 2026,
-  sprint: "17–18",
-  objectives: { completed: 43, total: 50 },
-  members: MEMBERS,
-  tasks: buildTasks(),
-  changeRequests: [
-    { id: "cr-1", website: "Setsukaa.mn", request: "Санал хүсэлт дээр зураг оруулдаг болгох", owner: "Ариунбаатар", date: "2026-02-12" },
-    { id: "cr-2", website: "sogolocashmere.mn", request: "Сайт дээр гадаад хэлээр оруулах боломжтой болгох", owner: "Ариунбаатар", date: "2026-04-08" },
-    { id: "cr-3", website: "Flamme.mn", request: "Form dropdown олон сонголт нэмэх", owner: "Эрдэнэ-жаргал", date: "2026-05-19" },
-    { id: "cr-4", website: "Nox.mn", request: "Checkout — Address хэсгийн мэдээлэл хоосон үед алдаа өгөх", owner: "Өлзийбаяр", date: "2026-08-03" },
-    { id: "cr-5", website: "Amuse.mn", request: "Шинэ бичлэг үүсгэдэг урсгалыг сайжруулах", owner: "Маралмаа", date: "2026-09-07" },
-  ],
-};
-
 function includesSearch(value: string, search: string) {
-  return value.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase());
+  return value.toLocaleLowerCase("mn-MN").includes(search.trim().toLocaleLowerCase("mn-MN"));
 }
 
 export function selectDevTasks(data: DevReportData, filters: DevReportFilters) {
-  const membersById = new Map(data.members.map(member => [member.id, member]));
   return data.tasks.filter(task => {
-    const member = membersById.get(task.memberId);
-    const matchesDate = (!filters.startDate || task.date >= filters.startDate) && (!filters.endDate || task.date <= filters.endDate);
+    const date = taskDate(task);
+    const hasDateFilter = Boolean(filters.startDate || filters.endDate);
+    const matchesDate = (!hasDateFilter || Boolean(date)) && (!filters.startDate || date! >= filters.startDate) && (!filters.endDate || date! <= filters.endDate);
     const matchesType = filters.taskType === "all" || task.type === filters.taskType;
-    const matchesSearch = !filters.search || [task.id, task.title, task.type, member?.name || ""].some(value => includesSearch(value, filters.search));
+    const searchable = [task.id, task.name, task.parentName, task.project, task.type, task.status.name, ...task.assignees.map(person => person.name), ...Object.values(task.customFields)];
+    const matchesSearch = !filters.search || searchable.some(value => includesSearch(value, filters.search));
     return matchesDate && matchesType && matchesSearch;
   });
 }
 
-export function selectChangeRequests(data: DevReportData, filters: DevReportFilters) {
-  return data.changeRequests.filter(request => {
-    const matchesDate = (!filters.startDate || request.date >= filters.startDate) && (!filters.endDate || request.date <= filters.endDate);
-    const matchesSearch = !filters.search || [request.website, request.request, request.owner].some(value => includesSearch(value, filters.search));
-    return matchesDate && matchesSearch;
-  });
-}
-
 export function taskTypeTotals(tasks: DevTask[]) {
-  return DEV_TASK_TYPES.map(type => ({ type, count: tasks.filter(task => task.type === type).length }));
+  const counts = new Map<string, { type: string; count: number; color: string }>();
+  for (const task of tasks) {
+    const type = task.type || "Тодорхойгүй";
+    const current = counts.get(type) || { type, count: 0, color: "" };
+    current.count += 1;
+    counts.set(type, current);
+  }
+  return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
 }
 
-export function memberProductivity(data: DevReportData, tasks: DevTask[]) {
-  return data.members.map(member => {
-    const memberTasks = tasks.filter(task => task.memberId === member.id);
-    return {
-      ...member,
-      estimateHours: memberTasks.reduce((total, task) => total + task.estimateHours, 0),
-      totalTasks: memberTasks.length,
-      doneTasks: memberTasks.filter(task => task.done).length,
-    };
-  });
+export function memberProductivity(tasks: DevTask[]): DevMemberProductivity[] {
+  const members = new Map<string, DevMemberProductivity>();
+  for (const task of tasks) {
+    for (const assignee of task.assignees) {
+      const id = assignee.id || assignee.name;
+      const current = members.get(id) || {
+        id,
+        name: assignee.name,
+        color: assignee.color,
+        avatar: assignee.avatar,
+        position: task.position || "Development",
+        totalTasks: 0,
+        doneTasks: 0,
+        estimateMs: 0,
+        completion: 0,
+      };
+      current.totalTasks += 1;
+      current.doneTasks += task.status.done ? 1 : 0;
+      current.estimateMs += task.timeEstimateMs || 0;
+      if (task.position && current.position === "Development") current.position = task.position;
+      current.completion = Math.round((current.doneTasks / current.totalTasks) * 100);
+      members.set(id, current);
+    }
+  }
+  return Array.from(members.values()).sort((a, b) => b.totalTasks - a.totalTasks || a.name.localeCompare(b.name));
 }
 
 export function monthlyTaskPerformance(tasks: DevTask[], year: number) {
   return Array.from({ length: 12 }, (_, monthIndex) => {
     const month = String(monthIndex + 1).padStart(2, "0");
-    const monthTasks = tasks.filter(task => task.date.startsWith(`${year}-${month}`));
+    const monthTasks = tasks.filter(task => taskDate(task)?.startsWith(`${year}-${month}`));
     return {
       month: new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, monthIndex, 1))),
-      bug: monthTasks.filter(task => task.type === "Bug").length,
-      imp: monthTasks.filter(task => task.type === "Imp").length,
+      bug: monthTasks.filter(task => task.type.toLocaleLowerCase().includes("bug") && !task.type.toLocaleLowerCase().includes("not bug")).length,
+      imp: monthTasks.filter(task => /(^|\W)imp(\W|$)|improvement/i.test(task.type)).length,
     };
   });
+}
+
+export function changeRequestRows(tasks: DevTask[]) {
+  const nested = tasks.filter(task => task.parentId || task.parentName || task.project);
+  return (nested.length ? nested : tasks).map(task => ({
+    id: task.id,
+    website: task.project || task.parentName || "B2C Master",
+    request: task.name,
+    owner: task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй",
+    url: task.url,
+  }));
+}
+
+export function reportMetrics(tasks: DevTask[]) {
+  const doneTasks = tasks.filter(task => task.status.done);
+  const dueDatedDone = doneTasks.filter(task => task.dueDate && task.closedDate);
+  const onTimeTasks = dueDatedDone.filter(task => task.closedDate! <= task.dueDate!);
+  const objectiveAchievement = tasks.length ? Math.round((doneTasks.length / tasks.length) * 100) : 0;
+  const performance = dueDatedDone.length ? Math.round((onTimeTasks.length / dueDatedDone.length) * 100) : objectiveAchievement;
+  const estimateMs = tasks.reduce((sum, task) => sum + (task.timeEstimateMs || 0), 0);
+  return { doneTasks: doneTasks.length, objectiveAchievement, performance, estimateMs };
+}
+
+export function currentSprint(tasks: DevTask[]) {
+  const activeSprints = tasks.filter(task => !task.status.done && task.sprint).map(task => task.sprint);
+  const allSprints = tasks.map(task => task.sprint).filter(Boolean);
+  const candidates = activeSprints.length ? activeSprints : allSprints;
+  if (!candidates.length) return "—";
+  const counts = new Map<string, number>();
+  for (const sprint of candidates) counts.set(sprint, (counts.get(sprint) || 0) + 1);
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0][0];
 }

@@ -56,16 +56,19 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /Task Performance Comparison/);
   assert.match(masterHtml, /Project Team Members Productivity/);
   assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);
+  assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
   assert.match(projectsHtml, /Одоогоор өгөгдөл алга/);
   assert.doesNotMatch(masterHtml, /class="kpi-grid|clickup-page-panel/);
   assert.doesNotMatch(projectsHtml, /class="kpi-grid|clickup-page-panel/);
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {
-  const [page, route, clickUpRoute, layout, packageJson] = await Promise.all([
+  const [page, route, clickUpRoute, devClickUpRoute, devDashboard, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/summarize/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/clickup/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/clickup/dev/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/dev-master-dashboard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
@@ -76,6 +79,10 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(route, /process\.env\.GROQ_API_KEY/);
   assert.match(clickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
   assert.match(clickUpRoute, /api\.clickup\.com\/api\/v2/);
+  assert.match(devClickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
+  assert.match(devClickUpRoute, /B2C Master/);
+  assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=1" : "\/api\/clickup\/dev"/);
+  assert.doesNotMatch(devDashboard, /DEV_REPORT_DATA|dev-topbar/);
   assert.match(route, /reasoning_effort: "none"/);
   assert.match(layout, /openGraph/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
