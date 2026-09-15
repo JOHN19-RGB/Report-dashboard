@@ -41,6 +41,7 @@ export type DevReportData = {
   workspace: { id: string; name: string; color: string; memberCount: number };
   list: { id: string; name: string };
   reportYear: number;
+  reportYears?: number[];
   tasks: DevTask[];
   sprints: DevSprint[];
   availableFields: string[];
@@ -50,6 +51,27 @@ export type DevReportData = {
   syncedAt: string;
   cacheSource?: "snapshot" | "clickup";
 };
+
+export const DEV_TEAM_ASSIGNEES = [
+  "Ariunbileg Garam-Ayush",
+  "Ulziibayar S",
+  "maralmaa",
+  "Erdenejargal",
+  "Yesugen",
+] as const;
+
+function normalizeAssigneeName(value: string) {
+  return value.trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
+}
+
+const DEV_TEAM_ASSIGNEE_NAMES = new Set(DEV_TEAM_ASSIGNEES.map(normalizeAssigneeName));
+
+export function scopeDevTeamTasks(tasks: DevTask[]) {
+  return tasks.flatMap(task => {
+    const assignees = task.assignees.filter(assignee => DEV_TEAM_ASSIGNEE_NAMES.has(normalizeAssigneeName(assignee.name)));
+    return assignees.length ? [{ ...task, assignees }] : [];
+  });
+}
 
 export type DevReportFilters = {
   search: string;
@@ -132,12 +154,25 @@ export function memberProductivity(tasks: DevTask[]): DevMemberProductivity[] {
   return Array.from(members.values()).sort((a, b) => b.totalTasks - a.totalTasks || a.name.localeCompare(b.name));
 }
 
-export function monthlyTaskPerformance(tasks: DevTask[], year: number) {
-  return Array.from({ length: 12 }, (_, monthIndex) => {
-    const month = String(monthIndex + 1).padStart(2, "0");
-    const monthTasks = tasks.filter(task => taskDate(task)?.startsWith(`${year}-${month}`));
+export function monthlyTaskPerformance(tasks: DevTask[], startDate: string, endDate: string) {
+  const startMatch = /^(\d{4})-(\d{2})/.exec(startDate);
+  const endMatch = /^(\d{4})-(\d{2})/.exec(endDate);
+  const startYear = Number(startMatch?.[1]) || 2025;
+  const startMonth = Math.min(11, Math.max(0, (Number(startMatch?.[2]) || 1) - 1));
+  const endYear = Number(endMatch?.[1]) || startYear;
+  const endMonth = Math.min(11, Math.max(0, (Number(endMatch?.[2]) || 12) - 1));
+  const monthCount = Math.min(24, Math.max(1, (endYear - startYear) * 12 + endMonth - startMonth + 1));
+
+  return Array.from({ length: monthCount }, (_, offset) => {
+    const date = new Date(Date.UTC(startYear, startMonth + offset, 1));
+    const year = date.getUTCFullYear();
+    const monthIndex = date.getUTCMonth();
+    const monthNumber = String(monthIndex + 1).padStart(2, "0");
+    const key = `${year}-${monthNumber}`;
+    const monthTasks = tasks.filter(task => taskDate(task)?.startsWith(key));
     return {
-      month: new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(year, monthIndex, 1))),
+      key,
+      month: `${new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date)} '${String(year).slice(-2)}`,
       bug: monthTasks.filter(task => task.type === "Bug").length,
       imp: monthTasks.filter(task => task.type === "Imp").length,
     };

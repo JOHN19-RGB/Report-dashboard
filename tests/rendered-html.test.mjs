@@ -57,6 +57,8 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /Хугацаа:/);
   assert.match(masterHtml, /Sprint:/);
   assert.match(masterHtml, /All Sprints/);
+  assert.match(masterHtml, /2025–2026/);
+  assert.match(masterHtml, /All data/);
   assert.match(masterHtml, /Project Team Members Productivity/);
   assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);
   assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
@@ -66,12 +68,13 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {
-  const [page, route, clickUpRoute, devClickUpRoute, devDashboard, layout, packageJson] = await Promise.all([
+  const [page, route, clickUpRoute, devClickUpRoute, devDashboard, devReport, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/summarize/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/clickup/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/clickup/dev/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/components/dev-master-dashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
@@ -86,10 +89,19 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(devClickUpRoute, /B2C Master/);
   assert.match(devClickUpRoute, /include_timl/);
   assert.match(devClickUpRoute, /resolveSprintAssignments/);
+  assert.match(devClickUpRoute, /REPORT_START_YEAR = 2025/);
+  assert.match(devClickUpRoute, /REPORT_END_YEAR = 2026/);
   assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=tasks" : "\/api\/clickup\/dev"/);
   assert.match(devDashboard, /\/api\/clickup\/dev\?refresh=recent-sprints/);
   assert.match(devDashboard, /sprintId/);
-  assert.match(devDashboard, /DEV_REPORT_YEAR = 2025/);
+  assert.match(devDashboard, /DEV_REPORT_START_YEAR = 2025/);
+  assert.match(devDashboard, /DEV_REPORT_END_YEAR = 2026/);
+  assert.match(devReport, /Ariunbileg Garam-Ayush/);
+  assert.match(devReport, /Ulziibayar S/);
+  assert.match(devReport, /maralmaa/);
+  assert.match(devReport, /Erdenejargal/);
+  assert.match(devReport, /Yesugen/);
+  assert.match(devDashboard, /downloadAllDevData/);
   assert.doesNotMatch(devDashboard, /DEV_REPORT_DATA|dev-topbar/);
   assert.match(route, /reasoning_effort: "none"/);
   assert.match(layout, /openGraph/);

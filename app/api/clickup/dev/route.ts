@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { clickUpSnapshots } from "../../../../db/schema";
+import { scopeDevTeamTasks, type DevTask } from "../../../lib/dev-report";
 
 type ClickUpUser = {
   id?: number;
@@ -58,8 +59,9 @@ type ClickUpListLocation = {
 type SnapshotPayload = Record<string, unknown> & { syncedAt: string };
 
 const SNAPSHOT_ID = 2;
-const SNAPSHOT_VERSION = 5;
-const REPORT_YEAR = 2025;
+const SNAPSHOT_VERSION = 6;
+const REPORT_START_YEAR = 2025;
+const REPORT_END_YEAR = 2026;
 
 async function encodeSnapshot(payload: SnapshotPayload) {
   const compressed = new Blob([JSON.stringify(payload)]).stream().pipeThrough(new CompressionStream("gzip"));
@@ -239,13 +241,13 @@ async function resolveB2cWorkspace(workspaceId: string, token: string) {
     list = { id: scored[0].id, name: scored[0].name || "B2C Master" };
   }
 
-  const reportStart = `${REPORT_YEAR}-01-01`;
-  const reportEnd = `${REPORT_YEAR}-12-31`;
+  const reportStart = `${REPORT_START_YEAR}-01-01`;
+  const reportEnd = `${REPORT_END_YEAR}-12-31`;
   const sprintLists = candidates
     .filter(candidate => candidate.id !== list.id && isSprintList(candidate))
     .filter(candidate => !candidate.startDate || !candidate.endDate || (candidate.startDate <= reportEnd && candidate.endDate >= reportStart))
     .sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }))
-    .slice(0, 32);
+    .slice(0, 64);
   return { list, sprintLists };
 }
 
@@ -299,9 +301,10 @@ export async function GET(request: Request) {
     const refreshSprints = refresh === "sprints" || refresh === "recent-sprints" || (!refresh && snapshot && Array.isArray(snapshot.tasks));
     if (refreshSprints && snapshot && Array.isArray(snapshot.tasks)) {
       const discovery = await resolveB2cWorkspace(workspaceId, token);
-      const sprintLists = refresh === "recent-sprints" ? discovery.sprintLists.slice(0, 4) : discovery.sprintLists;
+      const recentOnly = refresh === "recent-sprints" && snapshot.schemaVersion === SNAPSHOT_VERSION;
+      const sprintLists = recentOnly ? discovery.sprintLists.slice(0, 4) : discovery.sprintLists;
       const rawSprintAssignments = await resolveSprintAssignments(sprintLists, token);
-      const snapshotTasks = snapshot.tasks as Array<Record<string, unknown> & { id?: string; sprint?: string; sprintIds?: string[] }>;
+      const snapshotTasks = scopeDevTeamTasks(snapshot.tasks as DevTask[]);
       const masterTaskIds = new Set(snapshotTasks.map(task => safeText(task.id)).filter(Boolean));
       const sprintAssignments = rawSprintAssignments.map(assignment => ({ ...assignment, taskIds: assignment.taskIds.filter(taskId => masterTaskIds.has(taskId)) }));
       const sprintIdsByTaskId = new Map<string, string[]>();
@@ -320,7 +323,7 @@ export async function GET(request: Request) {
         taskCount: taskIds.length,
         partial,
       }));
-      const sprints = [...refreshedSprints, ...previousSprints.filter(sprint => sprint.id && !refreshedSprintIds.has(sprint.id) && (refresh === "recent-sprints" || failedSprintIds.has(sprint.id))).map(sprint => ({
+      const sprints = [...refreshedSprints, ...previousSprints.filter(sprint => sprint.id && !refreshedSprintIds.has(sprint.id) && (recentOnly || failedSprintIds.has(sprint.id))).map(sprint => ({
         id: safeText(sprint.id),
         name: safeText(sprint.name),
         folder: safeText(sprint.folder),
@@ -331,7 +334,7 @@ export async function GET(request: Request) {
       }))].sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }));
       const sprintById = new Map(sprints.map(sprint => [sprint.id, sprint]));
       const tasks = snapshotTasks.map(task => {
-        const previousIds = Array.isArray(task.sprintIds) ? task.sprintIds.filter(id => !refreshedSprintIds.has(id) && (refresh === "recent-sprints" || failedSprintIds.has(id))) : [];
+        const previousIds = Array.isArray(task.sprintIds) ? task.sprintIds.filter(id => !refreshedSprintIds.has(id) && (recentOnly || failedSprintIds.has(id))) : [];
         const sprintIds = Array.from(new Set([...(sprintIdsByTaskId.get(safeText(task.id)) || []), ...previousIds])).sort((a, b) => sprints.findIndex(sprint => sprint.id === a) - sprints.findIndex(sprint => sprint.id === b));
         return { ...task, sprintIds, sprint: sprintById.get(sprintIds[0])?.name || safeText(task.sprint) };
       });
@@ -340,11 +343,13 @@ export async function GET(request: Request) {
         ...snapshot,
         schemaVersion: SNAPSHOT_VERSION,
         list: discovery.list,
-        reportYear: REPORT_YEAR,
+        reportYear: REPORT_END_YEAR,
+        reportYears: [REPORT_START_YEAR, REPORT_END_YEAR],
         tasks,
         sprints,
+        availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
         taskPartial,
-        sprintSyncErrors: rawSprintAssignments.filter(assignment => assignment.failed).length + (refresh === "recent-sprints" ? Number(snapshot.sprintSyncErrors) || 0 : 0),
+        sprintSyncErrors: rawSprintAssignments.filter(assignment => assignment.failed).length + (recentOnly ? Number(snapshot.sprintSyncErrors) || 0 : 0),
         partial: taskPartial || rawSprintAssignments.some(assignment => assignment.partial) || sprints.some(sprint => sprint.partial),
         syncedAt: new Date().toISOString(),
       } satisfies SnapshotPayload;
@@ -366,7 +371,7 @@ export async function GET(request: Request) {
     for (const task of previousTasks) sprintIdsByTaskId.set(safeText(task.id), Array.isArray(task.sprintIds) ? task.sprintIds : []);
     const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
     const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
-    const tasks = rawTasks.filter(task => task.id).map(task => {
+    const tasks = scopeDevTeamTasks(rawTasks.filter(task => task.id).map(task => {
       const fields = customFieldMap(task.custom_fields);
       const statusName = safeText(task.status?.status, "Тодорхойгүй");
       const parentStatus = task.parent ? safeText(rawTasksById.get(task.parent)?.status?.status) : "";
@@ -391,13 +396,14 @@ export async function GET(request: Request) {
         timeEstimateMs: typeof task.time_estimate === "number" ? task.time_estimate : null,
         customFields: fields,
       };
-    });
+    }));
     const workspace = workspaceData.teams?.find(team => team.id === workspaceId) || workspaceData.teams?.[0];
     const payload = {
       schemaVersion: snapshot?.schemaVersion === SNAPSHOT_VERSION ? SNAPSHOT_VERSION : SNAPSHOT_VERSION - 1,
       workspace: { id: workspaceId, name: safeText(workspace?.name, "ClickUp Workspace"), color: safeColor(workspace?.color), memberCount: Array.isArray(workspace?.members) ? workspace.members.length : 0 },
       list,
-      reportYear: REPORT_YEAR,
+      reportYear: REPORT_END_YEAR,
+      reportYears: [REPORT_START_YEAR, REPORT_END_YEAR],
       tasks,
       sprints,
       taskPartial: taskResult.partial,

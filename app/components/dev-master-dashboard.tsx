@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Clock3,
   ClipboardCheck,
+  Download,
   Flag,
   Gauge,
   ListFilter,
@@ -22,19 +23,26 @@ import TeamSidebar from "./team-sidebar";
 import {
   changeRequestRows,
   currentSprint,
+  DEV_TEAM_ASSIGNEES,
   memberProductivity,
   monthlyTaskPerformance,
   reportMetrics,
+  scopeDevTeamTasks,
   selectDevTasks,
+  taskDate,
   taskTypeTotals,
   type DevReportData,
   type DevReportFilters,
+  type DevTask,
 } from "../lib/dev-report";
 
 const TYPE_PALETTE = ["#8bc7ff", "#168df2", "#ffc400", "#30bd63", "#0db9a7", "#7468ff", "#ff7b88", "#64748b"];
-const DEV_REPORT_YEAR = 2025;
-const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: "2025-01-01", endDate: "2025-12-31", taskType: "all", sprintId: "all" };
-type PeriodPreset = "year" | "quarter" | "month" | "last30" | "custom" | "sprint";
+const DEV_REPORT_START_YEAR = 2025;
+const DEV_REPORT_END_YEAR = 2026;
+const DEV_REPORT_START_DATE = `${DEV_REPORT_START_YEAR}-01-01`;
+const DEV_REPORT_END_DATE = `${DEV_REPORT_END_YEAR}-12-31`;
+const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE, taskType: "all", sprintId: "all" };
+type PeriodPreset = "both" | "2025" | "2026" | "last30" | "custom" | "sprint";
 
 function formatDuration(value: number) {
   const totalMinutes = Math.round(value / 60_000);
@@ -54,29 +62,26 @@ function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function periodRange(period: Exclude<PeriodPreset, "custom" | "sprint">, year: number) {
+function periodRange(period: Exclude<PeriodPreset, "custom" | "sprint">) {
+  if (period === "both") return { startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE };
+  if (period === "2025") return { startDate: "2025-01-01", endDate: "2025-12-31" };
+  if (period === "2026") return { startDate: "2026-01-01", endDate: "2026-12-31" };
+
   const todayParts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const todayPart = (type: Intl.DateTimeFormatPartTypes) => Number(todayParts.find(item => item.type === type)?.value || 0);
-  const anchor = todayPart("year") === year ? new Date(Date.UTC(year, todayPart("month") - 1, todayPart("day"))) : new Date(Date.UTC(year, 11, 31));
-  if (period === "year") return { startDate: `${year}-01-01`, endDate: `${year}-12-31` };
-  if (period === "month") {
-    const month = anchor.getUTCMonth();
-    return { startDate: isoDate(new Date(Date.UTC(year, month, 1))), endDate: isoDate(new Date(Date.UTC(year, month + 1, 0))) };
-  }
-  if (period === "quarter") {
-    const startMonth = Math.floor(anchor.getUTCMonth() / 3) * 3;
-    return { startDate: isoDate(new Date(Date.UTC(year, startMonth, 1))), endDate: isoDate(new Date(Date.UTC(year, startMonth + 3, 0))) };
-  }
-  const end = new Date(Date.UTC(year, anchor.getUTCMonth(), anchor.getUTCDate()));
+  const current = new Date(Date.UTC(todayPart("year"), todayPart("month") - 1, todayPart("day")));
+  const minimum = new Date(`${DEV_REPORT_START_DATE}T00:00:00Z`);
+  const maximum = new Date(`${DEV_REPORT_END_DATE}T00:00:00Z`);
+  const end = current < minimum ? minimum : current > maximum ? maximum : current;
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - 29);
-  return { startDate: isoDate(start), endDate: isoDate(end) };
+  return { startDate: isoDate(start < minimum ? minimum : start), endDate: isoDate(end) };
 }
 
-function selectedPeriod(filters: DevReportFilters, year: number): PeriodPreset {
+function selectedPeriod(filters: DevReportFilters): PeriodPreset {
   if (filters.sprintId !== "all") return "sprint";
-  for (const period of ["year", "quarter", "month", "last30"] as const) {
-    const range = periodRange(period, year);
+  for (const period of ["both", "2025", "2026", "last30"] as const) {
+    const range = periodRange(period);
     if (range.startDate === filters.startDate && range.endDate === filters.endDate) return period;
   }
   return "custom";
@@ -85,6 +90,43 @@ function selectedPeriod(filters: DevReportFilters, year: number): PeriodPreset {
 function formatDateRange(startDate: string, endDate: string) {
   const format = (value: string) => value ? value.replaceAll("-", ".") : "—";
   return `${format(startDate)} — ${format(endDate)}`;
+}
+
+function csvCell(value: unknown) {
+  const raw = String(value ?? "");
+  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replaceAll('"', '""')}"`;
+}
+
+function downloadAllDevData(tasks: DevTask[]) {
+  const headers = ["Task ID", "Task Name", "Parent Task", "Project / Website", "Status", "Task Type", "Sprint", "Assignees", "Start Date", "Due Date", "Closed Date", "Task Date", "Time Estimate (hours)", "Position", "Custom Fields", "ClickUp URL"];
+  const rows = tasks.map(task => [
+    task.id,
+    task.name,
+    task.parentName,
+    task.project,
+    task.status.name,
+    task.type,
+    task.sprint,
+    task.assignees.map(assignee => assignee.name).join(", "),
+    task.startDate,
+    task.dueDate,
+    task.closedDate,
+    taskDate(task),
+    task.timeEstimateMs == null ? "" : (task.timeEstimateMs / 3_600_000).toFixed(2),
+    task.position,
+    Object.entries(task.customFields).map(([name, value]) => `${name}: ${value}`).join(" | "),
+    task.url,
+  ]);
+  const csv = `\uFEFF${[headers, ...rows].map(row => row.map(csvCell).join(",")).join("\r\n")}`;
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `Dev-Master-${DEV_REPORT_START_YEAR}-${DEV_REPORT_END_YEAR}-all-data.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export default function DevMasterDashboard() {
@@ -112,14 +154,14 @@ export default function DevMasterDashboard() {
       const normalizedPayload: DevReportData = {
         ...payload,
         sprints: Array.isArray(payload.sprints) ? payload.sprints : [],
-        tasks: payload.tasks.map(task => ({ ...task, sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] })),
+        tasks: scopeDevTeamTasks(payload.tasks.map(task => ({ ...task, sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }))),
       };
       setData(normalizedPayload);
       setFilters(current => ({
         ...current,
-        ...(!refresh ? periodRange("year", payload.reportYear) : {}),
-        taskType: current.taskType === "all" || payload.tasks.some(task => task.type === current.taskType) ? current.taskType : "all",
-        sprintId: current.sprintId === "all" || normalizedPayload.sprints.some(sprint => sprint.id === current.sprintId) ? current.sprintId : "all",
+        ...(!refresh ? periodRange("both") : {}),
+        taskType: current.taskType === "all" || normalizedPayload.tasks.some(task => task.type === current.taskType) ? current.taskType : "all",
+        sprintId: current.sprintId === "all" || normalizedPayload.tasks.some(task => task.sprintIds.includes(current.sprintId)) ? current.sprintId : "all",
       }));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "B2C Master list-ийн мэдээлэл татагдсангүй.");
@@ -129,22 +171,27 @@ export default function DevMasterDashboard() {
   }
 
   const tasks = useMemo(() => data ? selectDevTasks(data, filters) : [], [data, filters]);
-  const reportYear = data?.reportYear || DEV_REPORT_YEAR;
-  const chartYear = Number((filters.startDate || filters.endDate).slice(0, 4)) || reportYear;
+  const allTeamTasks = useMemo(() => data ? selectDevTasks(data, DEFAULT_FILTERS) : [], [data]);
   const typeTotals = useMemo(() => taskTypeTotals(tasks), [tasks]);
   const team = useMemo(() => memberProductivity(tasks), [tasks]);
-  const monthly = useMemo(() => monthlyTaskPerformance(tasks, chartYear), [chartYear, tasks]);
+  const monthly = useMemo(() => monthlyTaskPerformance(tasks, filters.startDate, filters.endDate), [filters.endDate, filters.startDate, tasks]);
   const changes = useMemo(() => changeRequestRows(tasks), [tasks]);
   const metrics = useMemo(() => reportMetrics(tasks), [tasks]);
   const taskTypes = useMemo(() => Array.from(new Set((data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
-  const sprints = data?.sprints || [];
+  const sprints = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const task of data?.tasks || []) {
+      for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
+    }
+    return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 })).filter(sprint => sprint.taskCount > 0);
+  }, [data]);
   const selectedSprint = sprints.find(item => item.id === filters.sprintId) || null;
-  const period = selectedPeriod(filters, reportYear);
+  const period = selectedPeriod(filters);
   const periodLabel = selectedSprint?.name || formatDateRange(filters.startDate, filters.endDate);
   const maxMonthly = Math.max(1, ...monthly.flatMap(item => [item.bug, item.imp]));
   const totalTypeCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
   const sprint = currentSprint(tasks, sprints, filters.sprintId);
-  const hasFilters = JSON.stringify(filters) !== JSON.stringify({ ...DEFAULT_FILTERS, ...periodRange("year", reportYear) });
+  const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
   let donutPosition = 0;
   const donut = typeTotals.map((item, index) => {
     const start = donutPosition;
@@ -162,12 +209,12 @@ export default function DevMasterDashboard() {
 
   function applyPeriod(value: PeriodPreset) {
     if (value === "custom" || value === "sprint") return;
-    setFilters(current => ({ ...current, ...periodRange(value, reportYear), sprintId: "all" }));
+    setFilters(current => ({ ...current, ...periodRange(value), sprintId: "all" }));
   }
 
   function applySprint(sprintId: string) {
     if (sprintId === "all") {
-      setFilters(current => ({ ...current, ...periodRange("year", reportYear), sprintId }));
+      setFilters(current => ({ ...current, ...periodRange("both"), sprintId }));
       return;
     }
     const selected = sprints.find(item => item.id === sprintId);
@@ -176,8 +223,7 @@ export default function DevMasterDashboard() {
   }
 
   function resetFilters() {
-    const year = reportYear;
-    setFilters({ ...DEFAULT_FILTERS, ...periodRange("year", year) });
+    setFilters(DEFAULT_FILTERS);
   }
 
   return <div className="app-shell dev-dashboard">
@@ -187,20 +233,21 @@ export default function DevMasterDashboard() {
         <section className="dev-dashboard-heading">
           <div className="dev-heading-copy">
             <button className="icon-button menu-button" onClick={() => setMobileMenu(true)} aria-label="Цэс нээх"><Menu size={20} /></button>
-            <div><h1>Dev.master</h1><p>{data?.list.name || "B2C Master"} · ClickUp {loading ? "өгөгдөл уншиж байна" : `сүүлд ${formatSyncDate(data?.syncedAt)} шинэчлэгдсэн`}</p></div>
+            <div><h1>Dev.master</h1><p>{data?.list.name || "B2C Master"} · {DEV_REPORT_START_YEAR}–{DEV_REPORT_END_YEAR} · {DEV_TEAM_ASSIGNEES.length} assignee · ClickUp {loading ? "өгөгдөл уншиж байна" : `сүүлд ${formatSyncDate(data?.syncedAt)} шинэчлэгдсэн`}</p></div>
           </div>
           <div className="dev-dashboard-filters" aria-label="Dev тайлангийн шүүлтүүр">
             <label className="dev-filter-search"><Search size={16} /><input value={filters.search} onChange={event => updateFilter("search", event.target.value)} placeholder="Ажил, ажилтан эсвэл төсөл хайх" aria-label="Dev тайлангаас хайх" /></label>
-            <label className="dev-select-filter dev-period-filter"><Clock3 size={17} /><span>Хугацаа:</span><select value={period} onChange={event => applyPeriod(event.target.value as PeriodPreset)} aria-label="Тайлангийн хугацаа"><option value="year">{reportYear} Full Year</option><option value="quarter">Q4 {reportYear}</option><option value="month">Dec {reportYear}</option><option value="last30">Last 30 Days</option>{period === "sprint" && <option value="sprint">Sprint dates</option>}{period === "custom" && <option value="custom">Custom</option>}</select><ChevronDown size={14} /></label>
+            <label className="dev-select-filter dev-period-filter"><Clock3 size={17} /><span>Хугацаа:</span><select value={period} onChange={event => applyPeriod(event.target.value as PeriodPreset)} aria-label="Тайлангийн хугацаа"><option value="both">2025–2026</option><option value="2025">2025</option><option value="2026">2026</option><option value="last30">Last 30 Days</option>{period === "sprint" && <option value="sprint">Sprint dates</option>}{period === "custom" && <option value="custom">Custom</option>}</select><ChevronDown size={14} /></label>
             <div className="dev-date-filter">
               <CalendarDays size={17} />
-              <input type="date" value={filters.startDate} max={filters.endDate} onChange={event => updateDateFilter("startDate", event.target.value)} aria-label="Эхлэх огноо" />
+              <input type="date" value={filters.startDate} min={DEV_REPORT_START_DATE} max={filters.endDate || DEV_REPORT_END_DATE} onChange={event => updateDateFilter("startDate", event.target.value)} aria-label="Эхлэх огноо" />
               <span>—</span>
-              <input type="date" value={filters.endDate} min={filters.startDate} onChange={event => updateDateFilter("endDate", event.target.value)} aria-label="Дуусах огноо" />
+              <input type="date" value={filters.endDate} min={filters.startDate || DEV_REPORT_START_DATE} max={DEV_REPORT_END_DATE} onChange={event => updateDateFilter("endDate", event.target.value)} aria-label="Дуусах огноо" />
             </div>
             <label className="dev-select-filter dev-sprint-filter"><Flag size={17} /><span>Sprint:</span><select value={filters.sprintId} onChange={event => applySprint(event.target.value)} aria-label="ClickUp sprint"><option value="all">All Sprints</option>{!loading && !sprints.length && <option disabled>ClickUp sprint олдсонгүй</option>}{sprints.map(item => <option key={item.id} value={item.id}>{item.name}{item.folder ? ` · ${item.folder}` : ""} ({item.taskCount})</option>)}</select><ChevronDown size={14} /></label>
             <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Task Type:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
             {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
+            <button className="dev-download-filter" type="button" onClick={() => downloadAllDevData(allTeamTasks)} disabled={loading || !allTeamTasks.length} title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны ${DEV_TEAM_ASSIGNEES.length} assignee-ийн бүх өгөгдөл`}><Download size={15} />All data</button>
             <button className="dev-refresh-filter" onClick={() => void loadData(true)} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />{loading ? "Уншиж байна" : "Шинэчлэх"}</button>
           </div>
         </section>
@@ -220,7 +267,7 @@ export default function DevMasterDashboard() {
             <header><div><h2>Task Performance Comparison</h2><p><span className="bug" /> Bug <span className="imp" /> Imp</p></div><span className="dev-period-badge" title={formatDateRange(filters.startDate, filters.endDate)}><CalendarDays size={14} /> {periodLabel}</span></header>
             <div className="dev-bar-chart" role="img" aria-label="Сар бүрийн Bug болон Imp ажлын харьцуулалт">
               <div className="dev-axis-labels"><span>{maxMonthly}</span><span>0</span><span>-{maxMonthly}</span></div><span className="dev-zero-line" />
-              <div className="dev-months">{monthly.map(item => <div className="dev-month" key={item.month} title={`${item.month}: Bug ${item.bug}, Imp ${item.imp}`}><span className="dev-half upper"><i className="bug-bar" style={{ height: `${(item.bug / maxMonthly) * 86}%` }} /></span><span className="dev-half lower"><i className="imp-bar" style={{ height: `${(item.imp / maxMonthly) * 86}%` }} /></span><small>{item.month}</small></div>)}</div>
+              <div className="dev-months" style={{ "--month-count": monthly.length } as CSSProperties}>{monthly.map(item => <div className="dev-month" key={item.key} title={`${item.month}: Bug ${item.bug}, Imp ${item.imp}`}><span className="dev-half upper"><i className="bug-bar" style={{ height: `${(item.bug / maxMonthly) * 86}%` }} /></span><span className="dev-half lower"><i className="imp-bar" style={{ height: `${(item.imp / maxMonthly) * 86}%` }} /></span><small>{item.month}</small></div>)}</div>
             </div>
           </article>
 
@@ -234,7 +281,7 @@ export default function DevMasterDashboard() {
         </section>
 
         <section className="dev-panel dev-table-panel">
-          <header><div><h2>Project Team Members Productivity</h2><p>{tasks.length} ажил · ClickUp assignee бүрээр</p></div></header>
+          <header><div><h2>Project Team Members Productivity</h2><p>{tasks.length} ажил · сонгосон {DEV_TEAM_ASSIGNEES.length} ClickUp assignee</p></div></header>
           <div className="dev-table-wrap"><table><thead><tr><th>Position</th><th>Employee Name</th><th>Completion</th><th>Time Estimate</th><th>Total Tasks</th><th>Done Tasks</th></tr></thead><tbody>{team.map(member => <tr key={member.id}><td><span className="dev-role-dot" />{member.position}</td><td>{member.name}</td><td>{member.completion}%</td><td>{formatDuration(member.estimateMs)}</td><td><span className="dev-count total">{member.totalTasks}</span></td><td><span className={`dev-count done ${member.doneTasks === member.totalTasks && member.totalTasks ? "complete" : ""}`}>{member.doneTasks}</span></td></tr>)}</tbody></table>{!team.length && !loading && <p className="dev-no-results">Тохирох assignee бүхий ажил олдсонгүй.</p>}</div>
         </section>
 
