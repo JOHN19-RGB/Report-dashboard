@@ -89,6 +89,7 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=tasks" : "\/api\/clickup\/dev"/);
   assert.match(devDashboard, /\/api\/clickup\/dev\?refresh=recent-sprints/);
   assert.match(devDashboard, /sprintId/);
+  assert.match(devDashboard, /DEV_REPORT_YEAR = 2025/);
   assert.doesNotMatch(devDashboard, /DEV_REPORT_DATA|dev-topbar/);
   assert.match(route, /reasoning_effort: "none"/);
   assert.match(layout, /openGraph/);

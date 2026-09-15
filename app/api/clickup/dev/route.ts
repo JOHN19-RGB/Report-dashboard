@@ -58,8 +58,8 @@ type ClickUpListLocation = {
 type SnapshotPayload = Record<string, unknown> & { syncedAt: string };
 
 const SNAPSHOT_ID = 2;
-const SNAPSHOT_VERSION = 3;
-const REPORT_YEAR = 2026;
+const SNAPSHOT_VERSION = 4;
+const REPORT_YEAR = 2025;
 
 async function encodeSnapshot(payload: SnapshotPayload) {
   const compressed = new Blob([JSON.stringify(payload)]).stream().pipeThrough(new CompressionStream("gzip"));
@@ -195,9 +195,16 @@ async function discoverWorkspaceLists(workspaceId: string, token: string) {
         if (list.id) candidates.push({ id: list.id, name: safeText(list.name), space: safeText(space.name), folder: safeText(folder.name), startDate: dateToIso(list.start_date), endDate: dateToIso(list.due_date), taskCount: Number(list.task_count) || 0 });
       }
     }
+    const sprintFolders = (foldersData.folders || []).filter(folder => folder.id && /sprints?|спринт/.test(normalize(folder.name)));
+    const archivedLists = await Promise.all(sprintFolders.map(folder => clickUpJson<{ lists?: ClickUpList[] }>(`/folder/${encodeURIComponent(folder.id!)}/list?archived=true`, token).then(data => ({ folder, lists: data.lists || [] })).catch(() => ({ folder, lists: [] as ClickUpList[] }))));
+    for (const result of archivedLists) {
+      for (const list of result.lists) {
+        if (list.id) candidates.push({ id: list.id, name: safeText(list.name), space: safeText(space.name), folder: safeText(result.folder.name), startDate: dateToIso(list.start_date), endDate: dateToIso(list.due_date), taskCount: Number(list.task_count) || 0 });
+      }
+    }
   }));
 
-  return candidates;
+  return Array.from(new Map(candidates.map(candidate => [candidate.id, candidate])).values());
 }
 
 function isSprintList(candidate: ClickUpListLocation) {
@@ -332,6 +339,7 @@ export async function GET(request: Request) {
         ...snapshot,
         schemaVersion: SNAPSHOT_VERSION,
         list: discovery.list,
+        reportYear: REPORT_YEAR,
         tasks,
         sprints,
         taskPartial,

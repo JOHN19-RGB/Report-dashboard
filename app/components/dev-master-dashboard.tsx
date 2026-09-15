@@ -32,7 +32,8 @@ import {
 } from "../lib/dev-report";
 
 const TYPE_PALETTE = ["#8bc7ff", "#168df2", "#ffc400", "#30bd63", "#0db9a7", "#7468ff", "#ff7b88", "#64748b"];
-const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: "2026-01-01", endDate: "2026-12-31", taskType: "all", sprintId: "all" };
+const DEV_REPORT_YEAR = 2025;
+const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: "2025-01-01", endDate: "2025-12-31", taskType: "all", sprintId: "all" };
 type PeriodPreset = "year" | "quarter" | "month" | "last30" | "custom" | "sprint";
 
 function formatDuration(value: number) {
@@ -128,7 +129,8 @@ export default function DevMasterDashboard() {
   }
 
   const tasks = useMemo(() => data ? selectDevTasks(data, filters) : [], [data, filters]);
-  const chartYear = Number((filters.startDate || filters.endDate).slice(0, 4)) || data?.reportYear || 2026;
+  const reportYear = data?.reportYear || DEV_REPORT_YEAR;
+  const chartYear = Number((filters.startDate || filters.endDate).slice(0, 4)) || reportYear;
   const typeTotals = useMemo(() => taskTypeTotals(tasks), [tasks]);
   const team = useMemo(() => memberProductivity(tasks), [tasks]);
   const monthly = useMemo(() => monthlyTaskPerformance(tasks, chartYear), [chartYear, tasks]);
@@ -137,12 +139,12 @@ export default function DevMasterDashboard() {
   const taskTypes = useMemo(() => Array.from(new Set((data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
   const sprints = data?.sprints || [];
   const selectedSprint = sprints.find(item => item.id === filters.sprintId) || null;
-  const period = selectedPeriod(filters, data?.reportYear || 2026);
+  const period = selectedPeriod(filters, reportYear);
   const periodLabel = selectedSprint?.name || formatDateRange(filters.startDate, filters.endDate);
   const maxMonthly = Math.max(1, ...monthly.flatMap(item => [item.bug, item.imp]));
   const totalTypeCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
   const sprint = currentSprint(tasks, sprints, filters.sprintId);
-  const hasFilters = JSON.stringify(filters) !== JSON.stringify({ ...DEFAULT_FILTERS, ...periodRange("year", data?.reportYear || 2026) });
+  const hasFilters = JSON.stringify(filters) !== JSON.stringify({ ...DEFAULT_FILTERS, ...periodRange("year", reportYear) });
   let donutPosition = 0;
   const donut = typeTotals.map((item, index) => {
     const start = donutPosition;
@@ -160,12 +162,12 @@ export default function DevMasterDashboard() {
 
   function applyPeriod(value: PeriodPreset) {
     if (value === "custom" || value === "sprint") return;
-    setFilters(current => ({ ...current, ...periodRange(value, data?.reportYear || 2026), sprintId: "all" }));
+    setFilters(current => ({ ...current, ...periodRange(value, reportYear), sprintId: "all" }));
   }
 
   function applySprint(sprintId: string) {
     if (sprintId === "all") {
-      setFilters(current => ({ ...current, ...periodRange("year", data?.reportYear || 2026), sprintId }));
+      setFilters(current => ({ ...current, ...periodRange("year", reportYear), sprintId }));
       return;
     }
     const selected = sprints.find(item => item.id === sprintId);
@@ -174,7 +176,7 @@ export default function DevMasterDashboard() {
   }
 
   function resetFilters() {
-    const year = data?.reportYear || 2026;
+    const year = reportYear;
     setFilters({ ...DEFAULT_FILTERS, ...periodRange("year", year) });
   }
 
@@ -189,7 +191,7 @@ export default function DevMasterDashboard() {
           </div>
           <div className="dev-dashboard-filters" aria-label="Dev тайлангийн шүүлтүүр">
             <label className="dev-filter-search"><Search size={16} /><input value={filters.search} onChange={event => updateFilter("search", event.target.value)} placeholder="Ажил, ажилтан эсвэл төсөл хайх" aria-label="Dev тайлангаас хайх" /></label>
-            <label className="dev-select-filter dev-period-filter"><Clock3 size={17} /><span>Хугацаа:</span><select value={period} onChange={event => applyPeriod(event.target.value as PeriodPreset)} aria-label="Тайлангийн хугацаа"><option value="year">This Year</option><option value="quarter">This Quarter</option><option value="month">This Month</option><option value="last30">Last 30 Days</option>{period === "sprint" && <option value="sprint">Sprint dates</option>}{period === "custom" && <option value="custom">Custom</option>}</select><ChevronDown size={14} /></label>
+            <label className="dev-select-filter dev-period-filter"><Clock3 size={17} /><span>Хугацаа:</span><select value={period} onChange={event => applyPeriod(event.target.value as PeriodPreset)} aria-label="Тайлангийн хугацаа"><option value="year">{reportYear} Full Year</option><option value="quarter">Q4 {reportYear}</option><option value="month">Dec {reportYear}</option><option value="last30">Last 30 Days</option>{period === "sprint" && <option value="sprint">Sprint dates</option>}{period === "custom" && <option value="custom">Custom</option>}</select><ChevronDown size={14} /></label>
             <div className="dev-date-filter">
               <CalendarDays size={17} />
               <input type="date" value={filters.startDate} max={filters.endDate} onChange={event => updateDateFilter("startDate", event.target.value)} aria-label="Эхлэх огноо" />
