@@ -440,7 +440,7 @@ export async function GET(request: Request) {
     }));
     const workspace = workspaceData.teams?.find(team => team.id === workspaceId) || workspaceData.teams?.[0];
     const payload = {
-      schemaVersion: snapshot?.schemaVersion === SNAPSHOT_VERSION ? SNAPSHOT_VERSION : SNAPSHOT_VERSION - 1,
+      schemaVersion: SNAPSHOT_VERSION,
       workspace: { id: workspaceId, name: safeText(workspace?.name, "ClickUp Workspace"), color: safeColor(workspace?.color), memberCount: Array.isArray(workspace?.members) ? workspace.members.length : 0 },
       list,
       reportYear: DEV_REPORT_END_YEAR,
