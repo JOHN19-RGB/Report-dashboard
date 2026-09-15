@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../../../../db";
+import { getDbOrNull } from "../../../../db";
 import { clickUpSnapshots } from "../../../../db/schema";
 import { DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, type DevTask } from "../../../lib/dev-report";
 
@@ -87,13 +87,17 @@ async function decodeSnapshot(value: string) {
 }
 
 async function readSnapshot() {
-  const [row] = await getDb().select().from(clickUpSnapshots).where(eq(clickUpSnapshots.id, SNAPSHOT_ID)).limit(1);
+  const db = getDbOrNull();
+  if (!db) return null;
+  const [row] = await db.select().from(clickUpSnapshots).where(eq(clickUpSnapshots.id, SNAPSHOT_ID)).limit(1);
   return row ? decodeSnapshot(row.payload) : null;
 }
 
 async function saveSnapshot(payload: SnapshotPayload) {
+  const db = getDbOrNull();
+  if (!db) return;
   const encoded = await encodeSnapshot(payload);
-  await getDb().insert(clickUpSnapshots).values({ id: SNAPSHOT_ID, payload: encoded, syncedAt: payload.syncedAt }).onConflictDoUpdate({
+  await db.insert(clickUpSnapshots).values({ id: SNAPSHOT_ID, payload: encoded, syncedAt: payload.syncedAt }).onConflictDoUpdate({
     target: clickUpSnapshots.id,
     set: { payload: encoded, syncedAt: payload.syncedAt },
   });

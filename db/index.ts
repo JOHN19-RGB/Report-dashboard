@@ -8,13 +8,18 @@ export function setDatabaseBinding(database: D1Database | undefined) {
   (globalThis as RuntimeWithDatabase).__WORK_REPORT_DB__ = database;
 }
 
-export function getDb() {
+export function getDbOrNull() {
   const database = (globalThis as RuntimeWithDatabase).__WORK_REPORT_DB__;
+  return database ? drizzle(database, { schema }) : null;
+}
+
+export function getDb() {
+  const database = getDbOrNull();
   if (!database) {
     throw new Error(
       "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
     );
   }
 
-  return drizzle(database, { schema });
+  return database;
 }

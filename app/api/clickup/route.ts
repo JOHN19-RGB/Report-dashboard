@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../../../db";
+import { getDbOrNull } from "../../../db";
 import { clickUpSnapshots } from "../../../db/schema";
 
 type ClickUpUser = {
@@ -62,7 +62,8 @@ async function decodeSnapshot(value: string) {
 }
 
 async function readSnapshot() {
-  const db = getDb();
+  const db = getDbOrNull();
+  if (!db) return null;
   const [row] = await db
     .select()
     .from(clickUpSnapshots)
@@ -72,7 +73,8 @@ async function readSnapshot() {
 }
 
 async function saveSnapshot(payload: SnapshotPayload) {
-  const db = getDb();
+  const db = getDbOrNull();
+  if (!db) return;
   const encoded = await encodeSnapshot(payload);
   await db
     .insert(clickUpSnapshots)
