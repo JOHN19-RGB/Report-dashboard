@@ -409,7 +409,11 @@ export async function GET(request: Request) {
     for (const task of previousTasks) sprintIdsByTaskId.set(safeText(task.id), Array.isArray(task.sprintIds) ? task.sprintIds : []);
     const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
     const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
-    const customTaskTypes = new Map((customTaskTypeData.custom_items || []).map(item => [String(item.id), safeText(item.name)]).filter(([, name]) => name));
+    const customTaskTypes = new Map<string, string>(
+      (customTaskTypeData.custom_items || [])
+        .map((item): [string, string] => [String(item.id), safeText(item.name)])
+        .filter(([, name]) => Boolean(name)),
+    );
     const tasks = scopeDevReportTasks(rawTasks.filter(task => task.id).map(task => {
       const fields = customFieldMap(task.custom_fields);
       const statusName = safeText(task.status?.status, "Тодорхойгүй");
