@@ -89,13 +89,13 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(devClickUpRoute, /B2C Master/);
   assert.match(devClickUpRoute, /include_timl/);
   assert.match(devClickUpRoute, /resolveSprintAssignments/);
-  assert.match(devClickUpRoute, /REPORT_START_YEAR = 2025/);
-  assert.match(devClickUpRoute, /REPORT_END_YEAR = 2026/);
+  assert.match(devClickUpRoute, /scopeDevReportTasks/);
   assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=tasks" : "\/api\/clickup\/dev"/);
   assert.match(devDashboard, /\/api\/clickup\/dev\?refresh=recent-sprints/);
   assert.match(devDashboard, /sprintId/);
-  assert.match(devDashboard, /DEV_REPORT_START_YEAR = 2025/);
-  assert.match(devDashboard, /DEV_REPORT_END_YEAR = 2026/);
+  assert.match(devReport, /DEV_REPORT_START_YEAR = 2025/);
+  assert.match(devReport, /DEV_REPORT_END_YEAR = 2026/);
+  assert.match(devReport, /scopeDevReportTasks/);
   assert.match(devReport, /Ariunbileg Garam-Ayush/);
   assert.match(devReport, /Ulziibayar S/);
   assert.match(devReport, /maralmaa/);

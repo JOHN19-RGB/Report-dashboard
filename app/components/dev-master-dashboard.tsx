@@ -23,11 +23,15 @@ import TeamSidebar from "./team-sidebar";
 import {
   changeRequestRows,
   currentSprint,
+  DEV_REPORT_END_DATE,
+  DEV_REPORT_END_YEAR,
+  DEV_REPORT_START_DATE,
+  DEV_REPORT_START_YEAR,
   DEV_TEAM_ASSIGNEES,
   memberProductivity,
   monthlyTaskPerformance,
   reportMetrics,
-  scopeDevTeamTasks,
+  scopeDevReportTasks,
   selectDevTasks,
   taskDate,
   taskTypeTotals,
@@ -37,10 +41,6 @@ import {
 } from "../lib/dev-report";
 
 const TYPE_PALETTE = ["#8bc7ff", "#168df2", "#ffc400", "#30bd63", "#0db9a7", "#7468ff", "#ff7b88", "#64748b"];
-const DEV_REPORT_START_YEAR = 2025;
-const DEV_REPORT_END_YEAR = 2026;
-const DEV_REPORT_START_DATE = `${DEV_REPORT_START_YEAR}-01-01`;
-const DEV_REPORT_END_DATE = `${DEV_REPORT_END_YEAR}-12-31`;
 const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE, taskType: "all", sprintId: "all" };
 type PeriodPreset = "both" | "2025" | "2026" | "last30" | "custom" | "sprint";
 
@@ -154,7 +154,7 @@ export default function DevMasterDashboard() {
       const normalizedPayload: DevReportData = {
         ...payload,
         sprints: Array.isArray(payload.sprints) ? payload.sprints : [],
-        tasks: scopeDevTeamTasks(payload.tasks.map(task => ({ ...task, sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }))),
+        tasks: scopeDevReportTasks(payload.tasks.map(task => ({ ...task, sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }))),
       };
       setData(normalizedPayload);
       setFilters(current => ({
@@ -219,7 +219,9 @@ export default function DevMasterDashboard() {
     }
     const selected = sprints.find(item => item.id === sprintId);
     if (!selected) return;
-    setFilters(current => ({ ...current, sprintId, startDate: selected.startDate || "", endDate: selected.endDate || "" }));
+    const startDate = selected.startDate && selected.startDate > DEV_REPORT_START_DATE ? selected.startDate : DEV_REPORT_START_DATE;
+    const endDate = selected.endDate && selected.endDate < DEV_REPORT_END_DATE ? selected.endDate : DEV_REPORT_END_DATE;
+    setFilters(current => ({ ...current, sprintId, startDate, endDate }));
   }
 
   function resetFilters() {

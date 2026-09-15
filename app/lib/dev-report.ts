@@ -52,6 +52,11 @@ export type DevReportData = {
   cacheSource?: "snapshot" | "clickup";
 };
 
+export const DEV_REPORT_START_YEAR = 2025;
+export const DEV_REPORT_END_YEAR = 2026;
+export const DEV_REPORT_START_DATE = `${DEV_REPORT_START_YEAR}-01-01`;
+export const DEV_REPORT_END_DATE = `${DEV_REPORT_END_YEAR}-12-31`;
+
 export const DEV_TEAM_ASSIGNEES = [
   "Ariunbileg Garam-Ayush",
   "Ulziibayar S",
@@ -95,6 +100,13 @@ export type DevMemberProductivity = {
 
 export function taskDate(task: DevTask) {
   return task.dueDate || task.closedDate || task.startDate || task.createdDate;
+}
+
+export function scopeDevReportTasks(tasks: DevTask[]) {
+  return scopeDevTeamTasks(tasks).filter(task => {
+    const date = taskDate(task);
+    return Boolean(date && date >= DEV_REPORT_START_DATE && date <= DEV_REPORT_END_DATE);
+  });
 }
 
 function includesSearch(value: string, search: string) {
