@@ -58,7 +58,7 @@ type ClickUpListLocation = {
 type SnapshotPayload = Record<string, unknown> & { syncedAt: string };
 
 const SNAPSHOT_ID = 2;
-const SNAPSHOT_VERSION = 4;
+const SNAPSHOT_VERSION = 5;
 const REPORT_YEAR = 2025;
 
 async function encodeSnapshot(payload: SnapshotPayload) {
@@ -309,6 +309,7 @@ export async function GET(request: Request) {
         for (const taskId of assignment.taskIds) sprintIdsByTaskId.set(taskId, [...(sprintIdsByTaskId.get(taskId) || []), assignment.sprint.id]);
       }
       const refreshedSprintIds = new Set(sprintAssignments.filter(assignment => !assignment.failed).map(assignment => assignment.sprint.id));
+      const failedSprintIds = new Set(sprintAssignments.filter(assignment => assignment.failed).map(assignment => assignment.sprint.id));
       const previousSprints = Array.isArray(snapshot.sprints) ? snapshot.sprints as Array<{ id?: string; name?: string; folder?: string; startDate?: string | null; endDate?: string | null; taskCount?: number; partial?: boolean }> : [];
       const refreshedSprints = sprintAssignments.filter(assignment => !assignment.failed && assignment.taskIds.length).map(({ sprint, taskIds, partial }) => ({
         id: sprint.id,
@@ -319,7 +320,7 @@ export async function GET(request: Request) {
         taskCount: taskIds.length,
         partial,
       }));
-      const sprints = [...refreshedSprints, ...previousSprints.filter(sprint => sprint.id && !refreshedSprintIds.has(sprint.id)).map(sprint => ({
+      const sprints = [...refreshedSprints, ...previousSprints.filter(sprint => sprint.id && !refreshedSprintIds.has(sprint.id) && (refresh === "recent-sprints" || failedSprintIds.has(sprint.id))).map(sprint => ({
         id: safeText(sprint.id),
         name: safeText(sprint.name),
         folder: safeText(sprint.folder),
@@ -330,7 +331,7 @@ export async function GET(request: Request) {
       }))].sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }));
       const sprintById = new Map(sprints.map(sprint => [sprint.id, sprint]));
       const tasks = snapshotTasks.map(task => {
-        const previousIds = Array.isArray(task.sprintIds) ? task.sprintIds.filter(id => !refreshedSprintIds.has(id)) : [];
+        const previousIds = Array.isArray(task.sprintIds) ? task.sprintIds.filter(id => !refreshedSprintIds.has(id) && (refresh === "recent-sprints" || failedSprintIds.has(id))) : [];
         const sprintIds = Array.from(new Set([...(sprintIdsByTaskId.get(safeText(task.id)) || []), ...previousIds])).sort((a, b) => sprints.findIndex(sprint => sprint.id === a) - sprints.findIndex(sprint => sprint.id === b));
         return { ...task, sprintIds, sprint: sprintById.get(sprintIds[0])?.name || safeText(task.sprint) };
       });
