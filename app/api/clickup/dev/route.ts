@@ -196,8 +196,14 @@ async function discoverWorkspaceLists(workspaceId: string, token: string) {
   await Promise.all((spacesData.spaces || []).map(async space => {
     if (!space.id) return;
     const [foldersData, listsData] = await Promise.all([
-      clickUpJson<{ folders?: Array<{ id?: string; name?: string; lists?: ClickUpList[] }> }>(`/space/${encodeURIComponent(space.id)}/folder?archived=false`, token),
-      clickUpJson<{ lists?: ClickUpList[] }>(`/space/${encodeURIComponent(space.id)}/list?archived=false`, token),
+      clickUpJson<{ folders?: Array<{ id?: string; name?: string; lists?: ClickUpList[] }> }>(`/space/${encodeURIComponent(space.id)}/folder?archived=false`, token).catch((error) => {
+        console.warn(`ClickUp folders are unavailable for space ${space.id}; continuing`, error);
+        return { folders: [] };
+      }),
+      clickUpJson<{ lists?: ClickUpList[] }>(`/space/${encodeURIComponent(space.id)}/list?archived=false`, token).catch((error) => {
+        console.warn(`ClickUp folderless lists are unavailable for space ${space.id}; continuing`, error);
+        return { lists: [] };
+      }),
     ]);
     for (const list of listsData.lists || []) {
       if (list.id) candidates.push({ id: list.id, name: safeText(list.name), space: safeText(space.name), folder: "", startDate: dateToIso(list.start_date), endDate: dateToIso(list.due_date), taskCount: Number(list.task_count) || 0 });
