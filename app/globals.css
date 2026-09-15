@@ -2700,7 +2700,11 @@ button {
 .dev-change-panel table th:nth-child(2) { width: 50%; }
 .dev-change-panel table th:nth-child(3) { width: 26%; text-align: left; }
 .dev-change-panel table td:nth-child(3) { text-align: left; }
+.dev-change-panel tbody tr { height: 43px; }
+.dev-change-panel td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dev-change-panel a { color: #424459; text-decoration: underline; text-underline-offset: 2px; }
+.dev-change-scroll { min-width: 820px; max-height: 253px; overflow-y: auto; scrollbar-gutter: stable; }
+.dev-change-scroll thead th { position: sticky; z-index: 1; top: 0; background: #fff; }
 .dev-no-results { margin: 30px 0 10px; color: #9295a2; font-size: 11px; text-align: center; }
 
 @media (max-width: 1120px) {

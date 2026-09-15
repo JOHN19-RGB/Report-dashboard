@@ -32,12 +32,20 @@ type ClickUpTask = {
   url?: string;
   status?: { status?: string; color?: string; type?: string };
   assignees?: ClickUpUser[];
+  tags?: Array<{ name?: string }>;
+  custom_item_id?: string | number | null;
   due_date?: string | null;
   start_date?: string | null;
   date_created?: string | null;
+  date_updated?: string | null;
   date_closed?: string | null;
   time_estimate?: number | null;
   custom_fields?: ClickUpCustomField[];
+};
+
+type ClickUpCustomTaskType = {
+  id?: string | number;
+  name?: string;
 };
 
 type ClickUpList = {
@@ -59,7 +67,7 @@ type ClickUpListLocation = {
 type SnapshotPayload = Record<string, unknown> & { syncedAt: string };
 
 const SNAPSHOT_ID = 2;
-const SNAPSHOT_VERSION = 7;
+const SNAPSHOT_VERSION = 8;
 
 async function encodeSnapshot(payload: SnapshotPayload) {
   const compressed = new Blob([JSON.stringify(payload)]).stream().pipeThrough(new CompressionStream("gzip"));
@@ -112,6 +120,12 @@ function dateToIso(value: string | null | undefined) {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+function timestampToIso(value: string | null | undefined) {
+  if (!value || !Number.isFinite(Number(value))) return null;
+  const date = new Date(Number(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function mapAssignees(users: ClickUpUser[] | undefined) {
   return (users || []).map(user => ({
     id: user.id == null ? null : String(user.id),
@@ -159,9 +173,33 @@ function knownTaskType(value: string) {
   return "";
 }
 
-function resolveTaskType(fields: Record<string, string>, status: string, parentStatus = "") {
-  const customType = findField(fields, [/^type$/, /^task type$/, /төрөл/]);
-  return knownTaskType(customType) || knownTaskType(status) || knownTaskType(parentStatus) || customType || "Тодорхойгүй";
+function customTaskTypeName(customItemId: ClickUpTask["custom_item_id"], customTaskTypes: Map<string, string>) {
+  if (customItemId == null || String(customItemId) === "0") return "Task";
+  if (String(customItemId) === "1") return "Milestone";
+  return customTaskTypes.get(String(customItemId)) || "";
+}
+
+function resolveTaskType(task: ClickUpTask, fields: Record<string, string>, parent: ClickUpTask | undefined, customTaskTypes: Map<string, string>) {
+  const typeName = customTaskTypeName(task.custom_item_id, customTaskTypes);
+  const customFieldType = findField(fields, [/^type$/, /^task type$/, /төрөл/]);
+  const currentSignals = [typeName, customFieldType, ...(task.tags || []).map(tag => safeText(tag.name)), safeText(task.status?.status)];
+  const currentKnownType = currentSignals.map(knownTaskType).find(Boolean);
+  if (currentKnownType) return currentKnownType;
+  if (typeName && typeName !== "Task") return typeName;
+  if (customFieldType) return customFieldType;
+
+  if (parent) {
+    const parentFields = customFieldMap(parent.custom_fields);
+    const parentTypeName = customTaskTypeName(parent.custom_item_id, customTaskTypes);
+    const parentFieldType = findField(parentFields, [/^type$/, /^task type$/, /төрөл/]);
+    const parentSignals = [parentTypeName, parentFieldType, ...(parent.tags || []).map(tag => safeText(tag.name)), safeText(parent.status?.status)];
+    const inheritedKnownType = parentSignals.map(knownTaskType).find(Boolean);
+    if (inheritedKnownType) return inheritedKnownType;
+    if (parentTypeName && parentTypeName !== "Task") return parentTypeName;
+    if (parentFieldType) return parentFieldType;
+  }
+
+  return typeName || "Task";
 }
 
 async function clickUpFetch(path: string, token: string) {
@@ -296,7 +334,8 @@ export async function GET(request: Request) {
     const workspaceId = process.env.CLICKUP_WORKSPACE_ID;
     if (!token || !workspaceId) return Response.json({ error: "ClickUp API тохиргоо дутуу байна." }, { status: 503 });
 
-    const refreshSprints = refresh === "sprints" || refresh === "recent-sprints" || (!refresh && snapshot && Array.isArray(snapshot.tasks));
+    const needsTaskSchemaRefresh = !refresh && snapshot && snapshot.schemaVersion !== SNAPSHOT_VERSION;
+    const refreshSprints = refresh === "sprints" || refresh === "recent-sprints" || (!refresh && snapshot && Array.isArray(snapshot.tasks) && !needsTaskSchemaRefresh);
     if (refreshSprints && snapshot && Array.isArray(snapshot.tasks)) {
       const discovery = await resolveB2cWorkspace(workspaceId, token);
       const recentOnly = refresh === "recent-sprints" && snapshot.schemaVersion === SNAPSHOT_VERSION;
@@ -356,9 +395,10 @@ export async function GET(request: Request) {
     }
 
     const storedList = snapshot?.list && typeof snapshot.list === "object" ? snapshot.list as { id?: string; name?: string } : null;
-    const [workspaceData, list] = await Promise.all([
+    const [workspaceData, list, customTaskTypeData] = await Promise.all([
       clickUpJson<{ teams?: Array<{ id?: string; name?: string; color?: string; members?: unknown[] }> }>("/team", token),
       storedList?.id ? Promise.resolve({ id: storedList.id, name: safeText(storedList.name, "B2C Master") }) : resolveB2cWorkspace(workspaceId, token).then(result => result.list),
+      clickUpJson<{ custom_items?: ClickUpCustomTaskType[] }>(`/team/${encodeURIComponent(workspaceId)}/custom_item`, token),
     ]);
     const taskResult = await getListTasks(list.id, token);
     const rawTasks = taskResult.tasks;
@@ -369,10 +409,11 @@ export async function GET(request: Request) {
     for (const task of previousTasks) sprintIdsByTaskId.set(safeText(task.id), Array.isArray(task.sprintIds) ? task.sprintIds : []);
     const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
     const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
+    const customTaskTypes = new Map((customTaskTypeData.custom_items || []).map(item => [String(item.id), safeText(item.name)]).filter(([, name]) => name));
     const tasks = scopeDevReportTasks(rawTasks.filter(task => task.id).map(task => {
       const fields = customFieldMap(task.custom_fields);
       const statusName = safeText(task.status?.status, "Тодорхойгүй");
-      const parentStatus = task.parent ? safeText(rawTasksById.get(task.parent)?.status?.status) : "";
+      const parentTask = task.parent ? rawTasksById.get(task.parent) : undefined;
       const sprintIds = sprintIdsByTaskId.get(safeText(task.id)) || [];
       return {
         id: safeText(task.id),
@@ -382,7 +423,8 @@ export async function GET(request: Request) {
         url: safeText(task.url),
         status: { name: statusName, color: safeColor(task.status?.color, "#64748b"), type: safeText(task.status?.type), done: normalize(task.status?.type) === "closed" || /complete|closed|done|дууссан/.test(normalize(statusName)) },
         assignees: mapAssignees(task.assignees),
-        type: resolveTaskType(fields, statusName, parentStatus),
+        tags: (task.tags || []).map(tag => safeText(tag.name)).filter(Boolean),
+        type: resolveTaskType(task, fields, parentTask, customTaskTypes),
         sprint: previousSprintByTaskId.get(safeText(task.id))?.sprint || findField(fields, [/sprint/, /спринт/]),
         sprintIds,
         position: findField(fields, [/position/, /role/, /албан тушаал/]),
@@ -390,6 +432,7 @@ export async function GET(request: Request) {
         dueDate: dateToIso(task.due_date),
         startDate: dateToIso(task.start_date),
         createdDate: dateToIso(task.date_created),
+        updatedAt: timestampToIso(task.date_updated),
         closedDate: dateToIso(task.date_closed),
         timeEstimateMs: typeof task.time_estimate === "number" ? task.time_estimate : null,
         customFields: fields,
@@ -408,6 +451,7 @@ export async function GET(request: Request) {
       sprintSyncErrors: Number(snapshot?.sprintSyncErrors) || 0,
       partial: taskResult.partial || (snapshot?.partial === true && snapshot?.taskPartial !== true),
       availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
+      availableTaskTypes: Array.from(new Set(["Task", "Milestone", ...customTaskTypes.values()])).sort(),
       syncedAt: new Date().toISOString(),
     } satisfies SnapshotPayload;
 

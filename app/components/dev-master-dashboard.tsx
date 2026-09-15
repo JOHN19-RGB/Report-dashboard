@@ -99,7 +99,7 @@ function csvCell(value: unknown) {
 }
 
 function downloadAllDevData(tasks: DevTask[]) {
-  const headers = ["Task ID", "Task Name", "Parent Task", "Project / Website", "Status", "Task Type", "Sprint", "Assignees", "Start Date", "Due Date", "Closed Date", "Task Date", "Time Estimate (hours)", "Position", "Custom Fields", "ClickUp URL"];
+  const headers = ["Task ID", "Task Name", "Parent Task", "Project / Website", "Status", "Task Type", "Tags", "Sprint", "Assignees", "Start Date", "Due Date", "Closed Date", "Updated At", "Task Date", "Time Estimate (hours)", "Position", "Custom Fields", "ClickUp URL"];
   const rows = tasks.map(task => [
     task.id,
     task.name,
@@ -107,11 +107,13 @@ function downloadAllDevData(tasks: DevTask[]) {
     task.project,
     task.status.name,
     task.type,
+    (task.tags || []).join(", "),
     task.sprint,
     task.assignees.map(assignee => assignee.name).join(", "),
     task.startDate,
     task.dueDate,
     task.closedDate,
+    task.updatedAt,
     taskDate(task),
     task.timeEstimateMs == null ? "" : (task.timeEstimateMs / 3_600_000).toFixed(2),
     task.position,
@@ -154,7 +156,7 @@ export default function DevMasterDashboard() {
       const normalizedPayload: DevReportData = {
         ...payload,
         sprints: Array.isArray(payload.sprints) ? payload.sprints : [],
-        tasks: scopeDevReportTasks(payload.tasks.map(task => ({ ...task, sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }))),
+        tasks: scopeDevReportTasks(payload.tasks.map(task => ({ ...task, tags: Array.isArray(task.tags) ? task.tags : [], sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [], updatedAt: task.updatedAt || null }))),
       };
       setData(normalizedPayload);
       setFilters(current => ({
@@ -288,8 +290,8 @@ export default function DevMasterDashboard() {
         </section>
 
         <section className="dev-panel dev-table-panel dev-change-panel">
-          <header><div><h2>Өөрчлөлтийн хүсэлт</h2><p>{changes.length} ажил · B2C Master list</p></div></header>
-          <div className="dev-table-wrap"><table><thead><tr><th>Вэбсайт / Төсөл</th><th>Хийгдсэн ажил</th><th>Хариуцсан ажилтан</th></tr></thead><tbody>{changes.slice(0, 50).map(request => <tr key={request.id}><td><span className="dev-role-dot" />{request.url ? <a href={request.url} target="_blank" rel="noreferrer">{request.website}</a> : request.website}</td><td>{request.request}</td><td>{request.owner}</td></tr>)}</tbody></table>{!changes.length && !loading && <p className="dev-no-results">Тохирох ажил олдсонгүй.</p>}</div>
+          <header><div><h2>Өөрчлөлтийн хүсэлт</h2><p>{changes.length} ажил · хамгийн сүүлийн 5 мөр харагдана, бусдыг гүйлгэж үзнэ</p></div></header>
+          <div className="dev-table-wrap"><div className="dev-change-scroll"><table><thead><tr><th>Вэбсайт / Төсөл</th><th>Хийгдсэн ажил</th><th>Хариуцсан ажилтан</th></tr></thead><tbody>{changes.map(request => <tr key={request.id}><td><span className="dev-role-dot" />{request.url ? <a href={request.url} target="_blank" rel="noreferrer">{request.website}</a> : request.website}</td><td>{request.request}</td><td>{request.owner}</td></tr>)}</tbody></table>{!changes.length && !loading && <p className="dev-no-results">Тохирох ажил олдсонгүй.</p>}</div></div>
         </section>
       </div>
     </main>

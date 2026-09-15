@@ -61,6 +61,7 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /All data/);
   assert.match(masterHtml, /Project Team Members Productivity/);
   assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);
+  assert.match(masterHtml, /хамгийн сүүлийн 5 мөр харагдана/);
   assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
   assert.match(projectsHtml, /Одоогоор өгөгдөл алга/);
   assert.doesNotMatch(masterHtml, /class="kpi-grid|clickup-page-panel/);
@@ -90,6 +91,9 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(devClickUpRoute, /include_timl/);
   assert.match(devClickUpRoute, /resolveSprintAssignments/);
   assert.match(devClickUpRoute, /scopeDevReportTasks/);
+  assert.match(devClickUpRoute, /custom_item_id/);
+  assert.match(devClickUpRoute, /\/custom_item/);
+  assert.match(devClickUpRoute, /task\.tags/);
   assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=tasks" : "\/api\/clickup\/dev"/);
   assert.match(devDashboard, /\/api\/clickup\/dev\?refresh=recent-sprints/);
   assert.match(devDashboard, /sprintId/);
@@ -101,7 +105,10 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(devReport, /maralmaa/);
   assert.match(devReport, /Erdenejargal/);
   assert.match(devReport, /Yesugen/);
+  assert.match(devReport, /parentName\.split\("\|"\)\[0\]/);
   assert.match(devDashboard, /downloadAllDevData/);
+  assert.match(devDashboard, /dev-change-scroll/);
+  assert.doesNotMatch(devDashboard, /changes\.slice\(/);
   assert.doesNotMatch(devDashboard, /DEV_REPORT_DATA|dev-topbar/);
   assert.match(route, /reasoning_effort: "none"/);
   assert.match(layout, /openGraph/);

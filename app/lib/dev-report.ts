@@ -13,6 +13,7 @@ export type DevTask = {
   url: string;
   status: { name: string; color: string; type: string; done: boolean };
   assignees: DevAssignee[];
+  tags: string[];
   type: string;
   sprint: string;
   sprintIds: string[];
@@ -21,6 +22,7 @@ export type DevTask = {
   dueDate: string | null;
   startDate: string | null;
   createdDate: string | null;
+  updatedAt: string | null;
   closedDate: string | null;
   timeEstimateMs: number | null;
   customFields: Record<string, string>;
@@ -45,6 +47,7 @@ export type DevReportData = {
   tasks: DevTask[];
   sprints: DevSprint[];
   availableFields: string[];
+  availableTaskTypes?: string[];
   partial?: boolean;
   taskPartial?: boolean;
   sprintSyncErrors?: number;
@@ -121,7 +124,7 @@ export function selectDevTasks(data: DevReportData, filters: DevReportFilters) {
     const matchesDate = (!hasDateFilter || Boolean(date)) && (!hasDateFilter || !filters.startDate || date! >= filters.startDate) && (!hasDateFilter || !filters.endDate || date! <= filters.endDate);
     const matchesSprint = !hasSprintFilter || (task.sprintIds || []).includes(filters.sprintId);
     const matchesType = filters.taskType === "all" || task.type === filters.taskType;
-    const searchable = [task.id, task.name, task.parentName, task.project, task.type, task.sprint, task.status.name, ...task.assignees.map(person => person.name), ...Object.values(task.customFields)];
+    const searchable = [task.id, task.name, task.parentName, task.project, task.type, task.sprint, task.status.name, ...(task.tags || []), ...task.assignees.map(person => person.name), ...Object.values(task.customFields)];
     const matchesSearch = !filters.search || searchable.some(value => includesSearch(value, filters.search));
     return matchesDate && matchesSprint && matchesType && matchesSearch;
   });
@@ -192,10 +195,13 @@ export function monthlyTaskPerformance(tasks: DevTask[], startDate: string, endD
 }
 
 export function changeRequestRows(tasks: DevTask[]) {
-  const nested = tasks.filter(task => task.parentId || task.parentName || task.project);
-  return (nested.length ? nested : tasks).map(task => ({
+  return tasks.filter(task => task.parentName.trim()).sort((a, b) => {
+    const latestA = a.updatedAt || a.createdDate || a.closedDate || a.dueDate || a.startDate || "";
+    const latestB = b.updatedAt || b.createdDate || b.closedDate || b.dueDate || b.startDate || "";
+    return latestB.localeCompare(latestA);
+  }).map(task => ({
     id: task.id,
-    website: task.project || task.parentName || "B2C Master",
+    website: task.parentName.split("|")[0].trim() || task.parentName,
     request: task.name,
     owner: task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй",
     url: task.url,
