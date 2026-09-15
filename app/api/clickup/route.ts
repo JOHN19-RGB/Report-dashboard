@@ -1,6 +1,4 @@
-import { eq } from "drizzle-orm";
-import { getDbOrNull } from "../../../db";
-import { clickUpSnapshots } from "../../../db/schema";
+import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../db/clickup-snapshot";
 
 type ClickUpUser = {
   id?: number;
@@ -40,49 +38,12 @@ const REPORT_YEAR = 2026;
 const CX_TEAM_MEMBERS = ["Ариунгэрэл", "Байгалмаа", "Мишээл", "Энхбат"];
 const SNAPSHOT_ID = 1;
 
-type SnapshotPayload = Record<string, unknown> & { syncedAt: string };
-
-async function encodeSnapshot(payload: SnapshotPayload) {
-  const compressed = new Blob([JSON.stringify(payload)])
-    .stream()
-    .pipeThrough(new CompressionStream("gzip"));
-  const bytes = new Uint8Array(await new Response(compressed).arrayBuffer());
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 32_768) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
-  }
-  return btoa(binary);
-}
-
-async function decodeSnapshot(value: string) {
-  const binary = atob(value);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  const decompressed = new Response(bytes.buffer).body!.pipeThrough(new DecompressionStream("gzip"));
-  return JSON.parse(await new Response(decompressed).text()) as SnapshotPayload;
-}
-
 async function readSnapshot() {
-  const db = getDbOrNull();
-  if (!db) return null;
-  const [row] = await db
-    .select()
-    .from(clickUpSnapshots)
-    .where(eq(clickUpSnapshots.id, SNAPSHOT_ID))
-    .limit(1);
-  return row ? decodeSnapshot(row.payload) : null;
+  return readClickUpSnapshot(SNAPSHOT_ID);
 }
 
-async function saveSnapshot(payload: SnapshotPayload) {
-  const db = getDbOrNull();
-  if (!db) return;
-  const encoded = await encodeSnapshot(payload);
-  await db
-    .insert(clickUpSnapshots)
-    .values({ id: SNAPSHOT_ID, payload: encoded, syncedAt: payload.syncedAt })
-    .onConflictDoUpdate({
-      target: clickUpSnapshots.id,
-      set: { payload: encoded, syncedAt: payload.syncedAt },
-    });
+async function saveSnapshot(payload: ClickUpSnapshot) {
+  return saveClickUpSnapshot(SNAPSHOT_ID, payload);
 }
 
 function safeColor(value: unknown, fallback = "#64748b") {
@@ -328,7 +289,7 @@ export async function GET(request: Request) {
       dataQuality,
       partial: false,
       syncedAt: new Date().toISOString(),
-    } satisfies SnapshotPayload;
+    } satisfies ClickUpSnapshot;
 
     await saveSnapshot(payload);
 

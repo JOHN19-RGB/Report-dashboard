@@ -1,6 +1,4 @@
-import { eq } from "drizzle-orm";
-import { getDbOrNull } from "../../../../db";
-import { clickUpSnapshots } from "../../../../db/schema";
+import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../../db/clickup-snapshot";
 import { DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, type DevTask } from "../../../lib/dev-report";
 
 type ClickUpUser = {
@@ -64,43 +62,15 @@ type ClickUpListLocation = {
   endDate: string | null;
   taskCount: number;
 };
-type SnapshotPayload = Record<string, unknown> & { syncedAt: string };
-
 const SNAPSHOT_ID = 2;
 const SNAPSHOT_VERSION = 8;
 
-async function encodeSnapshot(payload: SnapshotPayload) {
-  const compressed = new Blob([JSON.stringify(payload)]).stream().pipeThrough(new CompressionStream("gzip"));
-  const bytes = new Uint8Array(await new Response(compressed).arrayBuffer());
-  let binary = "";
-  for (let offset = 0; offset < bytes.length; offset += 32_768) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32_768));
-  }
-  return btoa(binary);
-}
-
-async function decodeSnapshot(value: string) {
-  const binary = atob(value);
-  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
-  const decompressed = new Response(bytes.buffer).body!.pipeThrough(new DecompressionStream("gzip"));
-  return JSON.parse(await new Response(decompressed).text()) as SnapshotPayload;
-}
-
 async function readSnapshot() {
-  const db = getDbOrNull();
-  if (!db) return null;
-  const [row] = await db.select().from(clickUpSnapshots).where(eq(clickUpSnapshots.id, SNAPSHOT_ID)).limit(1);
-  return row ? decodeSnapshot(row.payload) : null;
+  return readClickUpSnapshot(SNAPSHOT_ID);
 }
 
-async function saveSnapshot(payload: SnapshotPayload) {
-  const db = getDbOrNull();
-  if (!db) return;
-  const encoded = await encodeSnapshot(payload);
-  await db.insert(clickUpSnapshots).values({ id: SNAPSHOT_ID, payload: encoded, syncedAt: payload.syncedAt }).onConflictDoUpdate({
-    target: clickUpSnapshots.id,
-    set: { payload: encoded, syncedAt: payload.syncedAt },
-  });
+async function saveSnapshot(payload: ClickUpSnapshot) {
+  return saveClickUpSnapshot(SNAPSHOT_ID, payload);
 }
 
 function safeText(value: unknown, fallback = "") {
@@ -393,7 +363,7 @@ export async function GET(request: Request) {
         sprintSyncErrors: rawSprintAssignments.filter(assignment => assignment.failed).length + (recentOnly ? Number(snapshot.sprintSyncErrors) || 0 : 0),
         partial: taskPartial || rawSprintAssignments.some(assignment => assignment.partial) || sprints.some(sprint => sprint.partial),
         syncedAt: new Date().toISOString(),
-      } satisfies SnapshotPayload;
+      } satisfies ClickUpSnapshot;
       await saveSnapshot(payload);
       return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
     }
@@ -402,7 +372,10 @@ export async function GET(request: Request) {
     const [workspaceData, list, customTaskTypeData] = await Promise.all([
       clickUpJson<{ teams?: Array<{ id?: string; name?: string; color?: string; members?: unknown[] }> }>("/team", token),
       storedList?.id ? Promise.resolve({ id: storedList.id, name: safeText(storedList.name, "B2C Master") }) : resolveB2cWorkspace(workspaceId, token).then(result => result.list),
-      clickUpJson<{ custom_items?: ClickUpCustomTaskType[] }>(`/team/${encodeURIComponent(workspaceId)}/custom_item`, token),
+      clickUpJson<{ custom_items?: ClickUpCustomTaskType[] }>(`/team/${encodeURIComponent(workspaceId)}/custom_item`, token).catch((error) => {
+        console.warn("ClickUp custom task types are unavailable; continuing with task fields", error);
+        return { custom_items: [] };
+      }),
     ]);
     const taskResult = await getListTasks(list.id, token);
     const rawTasks = taskResult.tasks;
@@ -461,7 +434,7 @@ export async function GET(request: Request) {
       availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
       availableTaskTypes: Array.from(new Set(["Task", "Milestone", ...customTaskTypes.values()])).sort(),
       syncedAt: new Date().toISOString(),
-    } satisfies SnapshotPayload;
+    } satisfies ClickUpSnapshot;
 
     await saveSnapshot(payload);
     return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });

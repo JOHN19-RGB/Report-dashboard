@@ -15,6 +15,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@vercel/functions": "^3.9.7",
     "drizzle-orm": "0.45.2",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
