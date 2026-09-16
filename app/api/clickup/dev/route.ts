@@ -259,9 +259,14 @@ async function resolveB2cWorkspace(workspaceId: string, token: string) {
 
   const reportStart = `${DEV_REPORT_START_YEAR}-01-01`;
   const reportEnd = `${DEV_REPORT_END_YEAR}-12-31`;
-  const sprintLists = candidates
+  const sprintCandidates = candidates
     .filter(candidate => candidate.id !== list.id && isSprintList(candidate))
-    .filter(candidate => !candidate.startDate || !candidate.endDate || (candidate.startDate <= reportEnd && candidate.endDate >= reportStart))
+    .filter(candidate => !candidate.startDate || !candidate.endDate || (candidate.startDate <= reportEnd && candidate.endDate >= reportStart));
+  const explicitB2cSprintLists = sprintCandidates.filter(candidate => {
+    const hierarchy = normalize(`${candidate.space} ${candidate.folder} ${candidate.name}`);
+    return /(^|\s)b2c(\s|$)/.test(hierarchy);
+  });
+  const sprintLists = (explicitB2cSprintLists.length ? explicitB2cSprintLists : sprintCandidates)
     .sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }))
     .slice(0, 64);
   return { list, sprintLists };
@@ -318,7 +323,8 @@ export async function GET(request: Request) {
     const refreshSprints = refresh === "sprints" || refresh === "recent-sprints" || (!refresh && snapshot && Array.isArray(snapshot.tasks) && !needsTaskSchemaRefresh);
     if (refreshSprints && snapshot && Array.isArray(snapshot.tasks)) {
       const discovery = await resolveB2cWorkspace(workspaceId, token);
-      const recentOnly = refresh === "recent-sprints" && snapshot.schemaVersion === SNAPSHOT_VERSION;
+      const hasSprintHistory = Array.isArray(snapshot.sprints) && snapshot.sprints.length > 0;
+      const recentOnly = refresh === "recent-sprints" && snapshot.schemaVersion === SNAPSHOT_VERSION && hasSprintHistory;
       const sprintLists = recentOnly ? discovery.sprintLists.slice(0, 4) : discovery.sprintLists;
       const rawSprintAssignments = await resolveSprintAssignments(sprintLists, token);
       const snapshotTasks = scopeDevReportTasks(snapshot.tasks as DevTask[]);
