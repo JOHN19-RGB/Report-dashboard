@@ -6,6 +6,9 @@ import ts from "typescript";
 const source = await readFile(new URL("../app/lib/report.ts", import.meta.url), "utf8");
 const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
+const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
+const { filterDevTasksByMonthKeys, monthlyTaskPerformance } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 const data = {
   list: { id: "list", name: "Team" }, reportYear: 2026, syncedAt: "2026-08-27T00:00:00Z", partial: false,
   people: [{ id: "person", name: "Ажилтан", parentIds: ["parent"] }],
@@ -50,4 +53,17 @@ test("empty and invalid-date exports have finite totals and flag missing fields"
   assert.equal(report.totals.tasks, 1);
   assert.equal(report.monthly.reduce((sum, month) => sum + month.tasks, 0), 0);
   assert.equal(report.quality.find(item => item.name === "Due date оруулаагүй").count, 1);
+});
+
+test("Dev period multi-select keeps exact year-month connections", () => {
+  const devTasks = [
+    { id: "jan-2025", dueDate: "2025-01-10", closedDate: null, startDate: null, createdDate: null, type: "Bug" },
+    { id: "jun-2025", dueDate: "2025-06-10", closedDate: null, startDate: null, createdDate: null, type: "Imp" },
+    { id: "jan-2026", dueDate: "2026-01-10", closedDate: null, startDate: null, createdDate: null, type: "Bug" },
+    { id: "jun-2026", dueDate: "2026-06-10", closedDate: null, startDate: null, createdDate: null, type: "Imp" },
+  ];
+  const selectedKeys = ["2025-01", "2026-06"];
+  const selected = filterDevTasksByMonthKeys(devTasks, selectedKeys);
+  assert.deepEqual(selected.map(task => task.id), ["jan-2025", "jun-2026"]);
+  assert.deepEqual(monthlyTaskPerformance(selected, "2025-01-01", "2026-12-31", selectedKeys).map(month => month.key), selectedKeys);
 });

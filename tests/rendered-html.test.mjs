@@ -58,6 +58,9 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /Sprint:/);
   assert.match(masterHtml, /All Sprints/);
   assert.match(masterHtml, /2025–2026/);
+  assert.match(masterHtml, /Жил/);
+  assert.match(masterHtml, /Сар/);
+  assert.doesNotMatch(masterHtml, /class="dev-date-filter"/);
   assert.match(masterHtml, /All data/);
   assert.match(masterHtml, /Project Team Members Productivity/);
   assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);

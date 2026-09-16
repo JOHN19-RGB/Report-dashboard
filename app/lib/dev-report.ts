@@ -105,6 +105,14 @@ export function taskDate(task: DevTask) {
   return task.dueDate || task.closedDate || task.startDate || task.createdDate;
 }
 
+export function filterDevTasksByMonthKeys(tasks: DevTask[], selectedMonthKeys: string[]) {
+  const allowedMonths = new Set(selectedMonthKeys);
+  return tasks.filter(task => {
+    const date = taskDate(task);
+    return Boolean(date && allowedMonths.has(date.slice(0, 7)));
+  });
+}
+
 export function scopeDevReportTasks(tasks: DevTask[]) {
   return scopeDevTeamTasks(tasks).filter(task => {
     const date = taskDate(task);
@@ -169,7 +177,21 @@ export function memberProductivity(tasks: DevTask[]): DevMemberProductivity[] {
   return Array.from(members.values()).sort((a, b) => b.totalTasks - a.totalTasks || a.name.localeCompare(b.name));
 }
 
-export function monthlyTaskPerformance(tasks: DevTask[], startDate: string, endDate: string) {
+export function monthlyTaskPerformance(tasks: DevTask[], startDate: string, endDate: string, selectedMonthKeys: string[] = []) {
+  if (selectedMonthKeys.length) {
+    return Array.from(new Set(selectedMonthKeys)).sort().slice(0, 24).map(key => {
+      const [year, monthNumber] = key.split("-");
+      const date = new Date(Date.UTC(Number(year), Number(monthNumber) - 1, 1));
+      const monthTasks = tasks.filter(task => taskDate(task)?.startsWith(key));
+      return {
+        key,
+        month: `${new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date)} '${year.slice(-2)}`,
+        bug: monthTasks.filter(task => task.type === "Bug").length,
+        imp: monthTasks.filter(task => task.type === "Imp").length,
+      };
+    });
+  }
+
   const startMatch = /^(\d{4})-(\d{2})/.exec(startDate);
   const endMatch = /^(\d{4})-(\d{2})/.exec(endDate);
   const startYear = Number(startMatch?.[1]) || 2025;
