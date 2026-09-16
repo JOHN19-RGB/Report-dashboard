@@ -145,12 +145,16 @@ export default function DevMasterDashboard() {
         tasks: scopeDevReportTasks(payload.tasks.map(task => ({ ...task, tags: Array.isArray(task.tags) ? task.tags : [], sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [], updatedAt: task.updatedAt || null }))),
       };
       setData(normalizedPayload);
-      setFilters(current => ({
-        ...current,
-        ...(!refresh ? { startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE } : {}),
-        taskType: current.taskType === "all" || normalizedPayload.tasks.some(task => task.type === current.taskType) ? current.taskType : "all",
-        sprintIds: current.sprintIds.filter(id => normalizedPayload.sprints.some(sprint => sprint.id === id)),
-      }));
+      setFilters(current => {
+        const sprintIds = current.sprintIds.filter(id => normalizedPayload.sprints.some(sprint => sprint.id === id));
+        const lostSprintSelection = current.sprintIds.length > 0 && !sprintIds.length;
+        return {
+          ...current,
+          ...(lostSprintSelection ? { startDate: `${periodYears[0]}-01-01`, endDate: `${periodYears.at(-1)}-12-31` } : {}),
+          taskType: current.taskType === "all" || normalizedPayload.tasks.some(task => task.type === current.taskType) ? current.taskType : "all",
+          sprintIds,
+        };
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "B2C Master list-ийн мэдээлэл татагдсангүй.");
     } finally {
@@ -167,7 +171,10 @@ export default function DevMasterDashboard() {
   const allTeamTasks = useMemo(() => data ? selectDevTasks(data, DEFAULT_FILTERS) : [], [data]);
   const typeTotals = useMemo(() => taskTypeTotals(tasks), [tasks]);
   const team = useMemo(() => memberProductivity(tasks), [tasks]);
-  const monthly = useMemo(() => monthlyTaskPerformance(tasks, filters.startDate, filters.endDate, !filters.sprintIds.length ? periodMonthKeys : []), [filters.endDate, filters.sprintIds, filters.startDate, periodMonthKeys, tasks]);
+  const monthly = useMemo(() => {
+    const monthKeys = filters.sprintIds.length ? Array.from(new Set(tasks.map(task => taskDate(task)?.slice(0, 7)).filter((key): key is string => Boolean(key)))).sort() : periodMonthKeys;
+    return monthlyTaskPerformance(tasks, filters.startDate, filters.endDate, monthKeys);
+  }, [filters.endDate, filters.sprintIds, filters.startDate, periodMonthKeys, tasks]);
   const changes = useMemo(() => changeRequestRows(tasks), [tasks]);
   const metrics = useMemo(() => reportMetrics(tasks), [tasks]);
   const taskTypes = useMemo(() => Array.from(new Set((data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
@@ -179,7 +186,7 @@ export default function DevMasterDashboard() {
     return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
   }, [data]);
   const selectedSprints = sprints.filter(item => filters.sprintIds.includes(item.id));
-  const sprintSelectionLabel = !selectedSprints.length ? "All Sprints" : selectedSprints.length <= 2 ? selectedSprints.map(item => shortSprintLabel(item.name)).join(", ") : `${selectedSprints.length} Sprints`;
+  const sprintSelectionLabel = !selectedSprints.length ? "All Sprints" : selectedSprints.length <= 2 ? selectedSprints.map((item, index) => index ? shortSprintLabel(item.name).replace(/^Sprint /, "") : shortSprintLabel(item.name)).join(", ") : `${selectedSprints.length} Sprints`;
   const periodLabel = selectedSprints.length ? sprintSelectionLabel : periodSelectionLabel(periodYears, periodMonths);
   const maxMonthly = Math.max(1, ...monthly.flatMap(item => [item.bug, item.imp]));
   const totalTypeCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
