@@ -282,6 +282,9 @@ export default function DevMasterDashboard() {
             <button className="dev-download-filter" type="button" onClick={() => downloadAllDevData(allTeamTasks)} disabled={loading || !allTeamTasks.length} title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны ${DEV_TEAM_ASSIGNEES.length} assignee-ийн бүх өгөгдөл`}><Download size={15} />All data</button>
             <button className="dev-refresh-filter" onClick={() => void loadData(true)} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />{loading ? "Уншиж байна" : "Шинэчлэх"}</button>
           </div>
+          {selectedSprints.length > 0 && <div className="dev-selected-sprint-dates" role="status" aria-live="polite" aria-label="Сонгосон sprint-ийн огноо">
+            {selectedSprints.map(item => <span className="dev-sprint-date-chip" key={item.id}><CalendarDays size={14} /><b>{shortSprintLabel(item.name)}</b><span>{item.startDate || item.endDate ? formatDateRange(item.startDate || "", item.endDate || "") : "Огноо тодорхойгүй"}</span></span>)}
+          </div>}
         </section>
 
         {error && <div className="clickup-error" role="alert"><span><X size={18} /></span><div><strong>ClickUp өгөгдөл татагдсангүй</strong><p>{error}</p></div><button onClick={() => void loadData(true)}>Дахин оролдох</button></div>}
