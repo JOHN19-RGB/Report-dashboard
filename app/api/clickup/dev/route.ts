@@ -1,6 +1,10 @@
 import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../../db/clickup-snapshot";
 import { proxyClickUpForLocalDevelopment } from "../../../lib/clickup-local-proxy";
-import { DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, type DevTask } from "../../../lib/dev-report";
+import { DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, type DevSprint, type DevTask } from "../../../lib/dev-report";
+import { requestClickUp } from "../../../lib/clickup-request";
+import { mergeSprintMemberships, type SprintAssignment, type SprintSyncState } from "../../../lib/clickup-sprint-sync";
+
+export const maxDuration = 300;
 
 type ClickUpUser = {
   id?: number;
@@ -178,10 +182,7 @@ function resolveTaskType(task: ClickUpTask, fields: Record<string, string>, pare
 }
 
 async function clickUpFetch(path: string, token: string) {
-  return fetch(`https://api.clickup.com/api/v2${path}`, {
-    headers: { Authorization: token, Accept: "application/json" },
-    cache: "no-store",
-  });
+  return requestClickUp(path, token);
 }
 
 async function clickUpJson<T>(path: string, token: string) {
@@ -276,7 +277,7 @@ async function resolveB2cWorkspace(workspaceId: string, token: string) {
 async function getListTasks(listId: string, token: string, options: { includeTiml?: boolean; pageLimit?: number; batchSize?: number } = {}) {
   const tasks: ClickUpTask[] = [];
   const pageLimit = options.pageLimit || 100;
-  const batchSize = options.batchSize || 5;
+  const batchSize = options.batchSize || 2;
   for (let batchStart = 0; batchStart < pageLimit; batchStart += batchSize) {
     const pages = await Promise.all(Array.from({ length: batchSize }, async (_, offset) => {
       const page = batchStart + offset;
@@ -292,8 +293,8 @@ async function getListTasks(listId: string, token: string, options: { includeTim
 }
 
 async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], token: string) {
-  const assignments: Array<{ sprint: ClickUpListLocation; taskIds: string[]; partial: boolean; failed: boolean }> = [];
-  const concurrency = 4;
+  const assignments: SprintAssignment[] = [];
+  const concurrency = 2;
   for (let start = 0; start < sprintLists.length; start += concurrency) {
     const batch = sprintLists.slice(start, start + concurrency);
     const results = await Promise.all(batch.map(async sprint => {
@@ -301,8 +302,8 @@ async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], toke
         const result = await getListTasks(sprint.id, token, { includeTiml: true, pageLimit: 20, batchSize: 1 });
         const taskIds = Array.from(new Set(result.tasks.map(task => safeText(task.id)).filter(Boolean)));
         return { sprint, taskIds, partial: result.partial, failed: false };
-      } catch {
-        return { sprint, taskIds: [], partial: true, failed: true };
+      } catch (error) {
+        return { sprint, taskIds: [], partial: true, failed: true, error: error instanceof Error ? error.message : "ClickUp sprint request failed" };
       }
     }));
     assignments.push(...results);
@@ -329,44 +330,15 @@ export async function GET(request: Request) {
     if (refreshSprints && snapshot && Array.isArray(snapshot.tasks)) {
       const discovery = await resolveB2cWorkspace(workspaceId, token);
       const hasSprintHistory = Array.isArray(snapshot.sprints) && snapshot.sprints.length > 0;
-      const recentOnly = refresh === "recent-sprints" && snapshot.schemaVersion === SNAPSHOT_VERSION && hasSprintHistory;
+      const recentOnly = refresh === "recent-sprints" && snapshot.schemaVersion === SNAPSHOT_VERSION && hasSprintHistory && snapshot.sprintNeedsFullRefresh !== true && !snapshot.sprintSyncErrors;
       const sprintLists = recentOnly ? discovery.sprintLists.slice(0, 4) : discovery.sprintLists;
       const rawSprintAssignments = await resolveSprintAssignments(sprintLists, token);
       const snapshotTasks = scopeDevReportTasks(snapshot.tasks as DevTask[]);
-      const masterTaskIds = new Set(snapshotTasks.map(task => safeText(task.id)).filter(Boolean));
-      const sprintAssignments = rawSprintAssignments.map(assignment => ({ ...assignment, taskIds: assignment.taskIds.filter(taskId => masterTaskIds.has(taskId)) }));
-      const sprintIdsByTaskId = new Map<string, string[]>();
-      for (const assignment of sprintAssignments) {
-        for (const taskId of assignment.taskIds) sprintIdsByTaskId.set(taskId, [...(sprintIdsByTaskId.get(taskId) || []), assignment.sprint.id]);
-      }
-      const refreshedSprintIds = new Set(sprintAssignments.filter(assignment => !assignment.failed).map(assignment => assignment.sprint.id));
-      const failedSprintIds = new Set(sprintAssignments.filter(assignment => assignment.failed).map(assignment => assignment.sprint.id));
-      const previousSprints = Array.isArray(snapshot.sprints) ? snapshot.sprints as Array<{ id?: string; name?: string; folder?: string; startDate?: string | null; endDate?: string | null; taskCount?: number; partial?: boolean }> : [];
-      const refreshedSprints = sprintAssignments.filter(assignment => !assignment.failed && assignment.taskIds.length).map(({ sprint, taskIds, partial }) => ({
-        id: sprint.id,
-        name: sprint.name,
-        folder: sprint.folder,
-        startDate: sprint.startDate,
-        endDate: sprint.endDate,
-        taskCount: taskIds.length,
-        partial,
-      }));
-      const sprints = [...refreshedSprints, ...previousSprints.filter(sprint => sprint.id && !refreshedSprintIds.has(sprint.id) && (recentOnly || failedSprintIds.has(sprint.id))).map(sprint => ({
-        id: safeText(sprint.id),
-        name: safeText(sprint.name),
-        folder: safeText(sprint.folder),
-        startDate: sprint.startDate || null,
-        endDate: sprint.endDate || null,
-        taskCount: Number(sprint.taskCount) || 0,
-        partial: sprint.partial === true,
-      }))].sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }));
-      const sprintById = new Map(sprints.map(sprint => [sprint.id, sprint]));
-      const tasks = snapshotTasks.map(task => {
-        const previousIds = Array.isArray(task.sprintIds) ? task.sprintIds.filter(id => !refreshedSprintIds.has(id) && (recentOnly || failedSprintIds.has(id))) : [];
-        const sprintIds = Array.from(new Set([...(sprintIdsByTaskId.get(safeText(task.id)) || []), ...previousIds])).sort((a, b) => sprints.findIndex(sprint => sprint.id === a) - sprints.findIndex(sprint => sprint.id === b));
-        return { ...task, sprintIds, sprint: sprintById.get(sprintIds[0])?.name || safeText(task.sprint) };
-      });
+      const previousSprints = Array.isArray(snapshot.sprints) ? snapshot.sprints as DevSprint[] : [];
+      const previousState = snapshot.sprintSyncState && typeof snapshot.sprintSyncState === "object" ? snapshot.sprintSyncState as Record<string, SprintSyncState> : {};
+      const { tasks, sprints, state } = mergeSprintMemberships(snapshotTasks, previousSprints, rawSprintAssignments, previousState);
       const taskPartial = snapshot.taskPartial === true;
+      const sprintSyncErrors = Object.values(state).filter(item => item.failed).length;
       const payload = {
         ...snapshot,
         schemaVersion: SNAPSHOT_VERSION,
@@ -377,8 +349,11 @@ export async function GET(request: Request) {
         sprints,
         availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
         taskPartial,
-        sprintSyncErrors: rawSprintAssignments.filter(assignment => assignment.failed).length + (recentOnly ? Number(snapshot.sprintSyncErrors) || 0 : 0),
-        partial: taskPartial || rawSprintAssignments.some(assignment => assignment.partial) || sprints.some(sprint => sprint.partial),
+        sprintSyncState: state,
+        sprintSyncErrors,
+        sprintNeedsFullRefresh: sprintSyncErrors > 0 || Object.values(state).some(item => item.partial),
+        sprintDiscoveryCount: discovery.sprintLists.length,
+        partial: taskPartial || Object.values(state).some(item => item.partial || item.failed),
         syncedAt: new Date().toISOString(),
       } satisfies ClickUpSnapshot;
       await saveSnapshot(payload);
@@ -394,8 +369,8 @@ export async function GET(request: Request) {
         return { custom_items: [] };
       }),
     ]);
-    const taskResult = await getListTasks(list.id, token);
-    const rawTasks = taskResult.tasks;
+    const taskResult = await getListTasks(list.id, token, { includeTiml: true });
+    const rawTasks = Array.from(new Map(taskResult.tasks.filter(task => task.id).map(task => [task.id, task])).values());
     const previousTasks = snapshot && Array.isArray(snapshot.tasks) ? snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : [];
     const previousSprintByTaskId = new Map(previousTasks.map(task => [safeText(task.id), { sprint: safeText(task.sprint), sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }]));
     const sprints = snapshot && Array.isArray(snapshot.sprints) ? snapshot.sprints : [];
@@ -445,6 +420,10 @@ export async function GET(request: Request) {
       reportYears: [DEV_REPORT_START_YEAR, DEV_REPORT_END_YEAR],
       tasks,
       sprints,
+      sprintSyncState: snapshot?.sprintSyncState || {},
+      sprintNeedsFullRefresh: snapshot?.sprintNeedsFullRefresh === true || !snapshot?.masterIncludesTiml || tasks.some(task => !previousSprintByTaskId.has(task.id)),
+      masterIncludesTiml: true,
+      masterFetchedTaskCount: rawTasks.length,
       taskPartial: taskResult.partial,
       sprintSyncErrors: Number(snapshot?.sprintSyncErrors) || 0,
       partial: taskResult.partial || (snapshot?.partial === true && snapshot?.taskPartial !== true),

@@ -86,7 +86,7 @@ export type DevReportFilters = {
   startDate: string;
   endDate: string;
   taskType: string;
-  sprintId: string;
+  sprintIds: string[];
 };
 
 export type DevMemberProductivity = {
@@ -127,10 +127,10 @@ function includesSearch(value: string, search: string) {
 export function selectDevTasks(data: DevReportData, filters: DevReportFilters) {
   return data.tasks.filter(task => {
     const date = taskDate(task);
-    const hasSprintFilter = filters.sprintId !== "all";
+    const hasSprintFilter = filters.sprintIds.length > 0;
     const hasDateFilter = !hasSprintFilter && Boolean(filters.startDate || filters.endDate);
     const matchesDate = (!hasDateFilter || Boolean(date)) && (!hasDateFilter || !filters.startDate || date! >= filters.startDate) && (!hasDateFilter || !filters.endDate || date! <= filters.endDate);
-    const matchesSprint = !hasSprintFilter || (task.sprintIds || []).includes(filters.sprintId);
+    const matchesSprint = !hasSprintFilter || filters.sprintIds.some(id => (task.sprintIds || []).includes(id));
     const matchesType = filters.taskType === "all" || task.type === filters.taskType;
     const searchable = [task.id, task.name, task.parentName, task.project, task.type, task.sprint, task.status.name, ...(task.tags || []), ...task.assignees.map(person => person.name), ...Object.values(task.customFields)];
     const matchesSearch = !filters.search || searchable.some(value => includesSearch(value, filters.search));
@@ -240,8 +240,9 @@ export function reportMetrics(tasks: DevTask[]) {
   return { doneTasks: doneTasks.length, objectiveAchievement, performance, estimateMs };
 }
 
-export function currentSprint(tasks: DevTask[], sprints: DevSprint[] = [], selectedSprintId = "all") {
-  const selected = selectedSprintId === "all" ? null : sprints.find(sprint => sprint.id === selectedSprintId);
+export function currentSprint(tasks: DevTask[], sprints: DevSprint[] = [], selectedSprintIds: string[] = []) {
+  if (selectedSprintIds.length > 1) return `${selectedSprintIds.length} Sprints`;
+  const selected = sprints.find(sprint => sprint.id === selectedSprintIds[0]);
   if (selected) return selected.name;
   const todayParts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const todayPart = (type: Intl.DateTimeFormatPartTypes) => todayParts.find(item => item.type === type)?.value || "";

@@ -42,7 +42,7 @@ import {
 } from "../lib/dev-report";
 
 const TYPE_PALETTE = ["#8bc7ff", "#168df2", "#ffc400", "#30bd63", "#0db9a7", "#7468ff", "#ff7b88", "#64748b"];
-const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE, taskType: "all", sprintId: "all" };
+const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE, taskType: "all", sprintIds: [] };
 const REPORT_YEARS = Array.from({ length: DEV_REPORT_END_YEAR - DEV_REPORT_START_YEAR + 1 }, (_, index) => String(DEV_REPORT_START_YEAR + index));
 const REPORT_MONTHS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
 
@@ -149,7 +149,7 @@ export default function DevMasterDashboard() {
         ...current,
         ...(!refresh ? { startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE } : {}),
         taskType: current.taskType === "all" || normalizedPayload.tasks.some(task => task.type === current.taskType) ? current.taskType : "all",
-        sprintId: current.sprintId === "all" || normalizedPayload.tasks.some(task => task.sprintIds.includes(current.sprintId)) ? current.sprintId : "all",
+        sprintIds: current.sprintIds.filter(id => normalizedPayload.sprints.some(sprint => sprint.id === id)),
       }));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "B2C Master list-ийн мэдээлэл татагдсангүй.");
@@ -161,13 +161,13 @@ export default function DevMasterDashboard() {
   const periodMonthKeys = useMemo(() => periodYears.flatMap(year => periodMonths.map(month => `${year}-${month}`)).sort(), [periodMonths, periodYears]);
   const tasks = useMemo(() => {
     const selectedTasks = data ? selectDevTasks(data, filters) : [];
-    if (filters.sprintId !== "all") return selectedTasks;
+    if (filters.sprintIds.length) return selectedTasks;
     return filterDevTasksByMonthKeys(selectedTasks, periodMonthKeys);
   }, [data, filters, periodMonthKeys]);
   const allTeamTasks = useMemo(() => data ? selectDevTasks(data, DEFAULT_FILTERS) : [], [data]);
   const typeTotals = useMemo(() => taskTypeTotals(tasks), [tasks]);
   const team = useMemo(() => memberProductivity(tasks), [tasks]);
-  const monthly = useMemo(() => monthlyTaskPerformance(tasks, filters.startDate, filters.endDate, filters.sprintId === "all" ? periodMonthKeys : []), [filters.endDate, filters.sprintId, filters.startDate, periodMonthKeys, tasks]);
+  const monthly = useMemo(() => monthlyTaskPerformance(tasks, filters.startDate, filters.endDate, !filters.sprintIds.length ? periodMonthKeys : []), [filters.endDate, filters.sprintIds, filters.startDate, periodMonthKeys, tasks]);
   const changes = useMemo(() => changeRequestRows(tasks), [tasks]);
   const metrics = useMemo(() => reportMetrics(tasks), [tasks]);
   const taskTypes = useMemo(() => Array.from(new Set((data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
@@ -176,13 +176,14 @@ export default function DevMasterDashboard() {
     for (const task of data?.tasks || []) {
       for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
     }
-    return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 })).filter(sprint => sprint.taskCount > 0);
+    return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
   }, [data]);
-  const selectedSprint = sprints.find(item => item.id === filters.sprintId) || null;
-  const periodLabel = selectedSprint?.name || periodSelectionLabel(periodYears, periodMonths);
+  const selectedSprints = sprints.filter(item => filters.sprintIds.includes(item.id));
+  const sprintSelectionLabel = !selectedSprints.length ? "All Sprints" : selectedSprints.length <= 2 ? selectedSprints.map(item => shortSprintLabel(item.name)).join(", ") : `${selectedSprints.length} Sprints`;
+  const periodLabel = selectedSprints.length ? sprintSelectionLabel : periodSelectionLabel(periodYears, periodMonths);
   const maxMonthly = Math.max(1, ...monthly.flatMap(item => [item.bug, item.imp]));
   const totalTypeCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
-  const sprint = currentSprint(tasks, sprints, filters.sprintId);
+  const sprint = currentSprint(tasks, sprints, filters.sprintIds);
   const hasPeriodFilter = periodYears.length !== REPORT_YEARS.length || periodMonths.length !== REPORT_MONTHS.length;
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) || hasPeriodFilter;
   let donutPosition = 0;
@@ -206,7 +207,7 @@ export default function DevMasterDashboard() {
       ...current,
       startDate: `${sortedYears[0]}-01-01`,
       endDate: `${sortedYears.at(-1)}-12-31`,
-      sprintId: "all",
+      sprintIds: [],
     }));
   }
 
@@ -220,16 +221,21 @@ export default function DevMasterDashboard() {
     applyPeriodSelection(periodYears, next);
   }
 
-  function applySprint(sprintId: string) {
-    if (sprintId === "all") {
-      setFilters(current => ({ ...current, startDate: `${periodYears[0]}-01-01`, endDate: `${periodYears.at(-1)}-12-31`, sprintId }));
+  function applySprints(sprintIds: string[]) {
+    if (!sprintIds.length) {
+      setFilters(current => ({ ...current, startDate: `${periodYears[0]}-01-01`, endDate: `${periodYears.at(-1)}-12-31`, sprintIds: [] }));
       return;
     }
-    const selected = sprints.find(item => item.id === sprintId);
-    if (!selected) return;
-    const startDate = selected.startDate && selected.startDate > DEV_REPORT_START_DATE ? selected.startDate : DEV_REPORT_START_DATE;
-    const endDate = selected.endDate && selected.endDate < DEV_REPORT_END_DATE ? selected.endDate : DEV_REPORT_END_DATE;
-    setFilters(current => ({ ...current, sprintId, startDate, endDate }));
+    const selected = sprints.filter(item => sprintIds.includes(item.id));
+    const starts = selected.map(item => item.startDate || DEV_REPORT_START_DATE).sort();
+    const ends = selected.map(item => item.endDate || DEV_REPORT_END_DATE).sort();
+    const startDate = starts[0] > DEV_REPORT_START_DATE ? starts[0] : DEV_REPORT_START_DATE;
+    const endDate = ends.at(-1)! < DEV_REPORT_END_DATE ? ends.at(-1)! : DEV_REPORT_END_DATE;
+    setFilters(current => ({ ...current, sprintIds, startDate, endDate }));
+  }
+
+  function toggleSprint(id: string) {
+    applySprints(filters.sprintIds.includes(id) ? filters.sprintIds.filter(item => item !== id) : [...filters.sprintIds, id]);
   }
 
   function resetFilters() {
@@ -256,7 +262,14 @@ export default function DevMasterDashboard() {
                 <fieldset><legend><span>Сар</span><button type="button" onClick={() => applyPeriodSelection(periodYears, REPORT_MONTHS)}>Бүгд</button></legend><div className="dev-period-months">{REPORT_MONTHS.map(month => <label key={month}><input type="checkbox" checked={periodMonths.includes(month)} disabled={periodMonths.length === 1 && periodMonths.includes(month)} onChange={() => togglePeriodMonth(month)} /><span>{Number(month)} сар</span></label>)}</div></fieldset>
               </div>
             </details>
-            <label className="dev-select-filter dev-sprint-filter"><Flag size={17} /><span>Sprint:</span><select value={filters.sprintId} onChange={event => applySprint(event.target.value)} aria-label="ClickUp sprint"><option value="all">All Sprints</option>{!loading && !sprints.length && <option disabled>ClickUp sprint олдсонгүй</option>}{sprints.map(item => <option key={item.id} value={item.id}>{shortSprintLabel(item.name)}</option>)}</select><ChevronDown size={14} /></label>
+            <details className="dev-select-filter dev-sprint-filter dev-period-multiselect">
+              <summary><Flag size={17} /><span>Sprint:</span><b>{sprintSelectionLabel}</b><ChevronDown size={14} /></summary>
+              <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint олон сонголт">
+                <label><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All Sprints</span></label>
+                <div className="dev-sprint-options">{sprints.map(item => <label key={item.id} title={`${item.taskCount} тайлангийн ажил`}><input type="checkbox" checked={filters.sprintIds.includes(item.id)} onChange={() => toggleSprint(item.id)} /><span>{shortSprintLabel(item.name)}</span></label>)}</div>
+                {!loading && !sprints.length && <p>ClickUp sprint олдсонгүй</p>}
+              </div>
+            </details>
             <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Task Type:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
             {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
             <button className="dev-download-filter" type="button" onClick={() => downloadAllDevData(allTeamTasks)} disabled={loading || !allTeamTasks.length} title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны ${DEV_TEAM_ASSIGNEES.length} assignee-ийн бүх өгөгдөл`}><Download size={15} />All data</button>

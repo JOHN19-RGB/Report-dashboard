@@ -8,7 +8,14 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { filterDevTasksByMonthKeys, monthlyTaskPerformance } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { filterDevTasksByMonthKeys, monthlyTaskPerformance, selectDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+async function importTypescriptLibrary(path) {
+  const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
+  const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
+  return import(`data:text/javascript;base64,${Buffer.from(libraryOutput).toString("base64")}`);
+}
+const { mergeSprintMemberships } = await importTypescriptLibrary("../app/lib/clickup-sprint-sync.ts");
+const { requestClickUp, clickUpRetryDelay } = await importTypescriptLibrary("../app/lib/clickup-request.ts");
 const data = {
   list: { id: "list", name: "Team" }, reportYear: 2026, syncedAt: "2026-08-27T00:00:00Z", partial: false,
   people: [{ id: "person", name: "Ажилтан", parentIds: ["parent"] }],
@@ -66,4 +73,42 @@ test("Dev period multi-select keeps exact year-month connections", () => {
   const selected = filterDevTasksByMonthKeys(devTasks, selectedKeys);
   assert.deepEqual(selected.map(task => task.id), ["jan-2025", "jun-2026"]);
   assert.deepEqual(monthlyTaskPerformance(selected, "2025-01-01", "2026-12-31", selectedKeys).map(month => month.key), selectedKeys);
+});
+
+test("multiple sprint choices use a unique union and do not use task dates as membership", () => {
+  const tasks = [
+    { id: "one", dueDate: "2025-01-01", sprintIds: ["s1"] },
+    { id: "shared", dueDate: "2026-02-01", sprintIds: ["s1", "s2"] },
+    { id: "two", dueDate: "2026-03-01", sprintIds: ["s2"] },
+    { id: "other", dueDate: "2026-03-01", sprintIds: ["s3"] },
+  ].map(task => ({ ...task, type: "Bug", name: task.id, parentName: "", project: "", sprint: "", status: { name: "complete" }, assignees: [], customFields: {} }));
+  const selected = selectDevTasks({ tasks }, { search: "", startDate: "2026-03-01", endDate: "2026-03-31", taskType: "all", sprintIds: ["s1", "s2"] });
+  assert.deepEqual(selected.map(task => task.id), ["one", "shared", "two"]);
+});
+
+test("failed or partial sprint responses preserve links; complete responses are authoritative", () => {
+  const sprint = { id: "s1", name: "Sprint 1", folder: "B2C Sprint List", startDate: null, endDate: null, taskCount: 1 };
+  const tasks = [{ id: "old", sprintIds: ["s1"] }, { id: "new", sprintIds: [] }];
+  const partial = mergeSprintMemberships(tasks, [sprint], [{ sprint, taskIds: ["new", "unrelated", "new"], failed: false, partial: true }]);
+  assert.equal(partial.sprints[0].taskCount, 2);
+  assert.deepEqual(partial.tasks.map(task => task.sprintIds), [["s1"], ["s1"]]);
+  const failed = mergeSprintMemberships(partial.tasks, partial.sprints, [{ sprint, taskIds: [], failed: true, partial: true }]);
+  assert.equal(failed.sprints[0].taskCount, 2);
+  const complete = mergeSprintMemberships(failed.tasks, failed.sprints, [{ sprint, taskIds: ["new"], failed: false, partial: false }]);
+  assert.deepEqual(complete.tasks.map(task => task.sprintIds), [[], ["s1"]]);
+  const empty = mergeSprintMemberships(complete.tasks, complete.sprints, [{ sprint, taskIds: [], failed: false, partial: false }]);
+  assert.equal(empty.sprints.length, 1);
+  assert.equal(empty.sprints[0].taskCount, 0);
+});
+
+test("ClickUp 429 waits for the documented reset header and retries", async () => {
+  const now = Date.now();
+  const limited = new Response("limited", { status: 429, headers: { "X-RateLimit-Reset": String(Math.ceil(now / 1000) + 5) } });
+  assert.ok(clickUpRetryDelay(limited, 0, now) >= 5000);
+  let calls = 0;
+  const waits = [];
+  const response = await requestClickUp("/list/test/task", "test-token", async () => ++calls === 1 ? limited : Response.json({ tasks: [] }), async milliseconds => { waits.push(milliseconds); });
+  assert.equal(response.status, 200);
+  assert.equal(calls, 2);
+  assert.equal(waits.length, 1);
 });
