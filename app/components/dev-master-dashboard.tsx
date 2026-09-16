@@ -29,6 +29,7 @@ import {
   DEV_REPORT_START_YEAR,
   DEV_TEAM_ASSIGNEES,
   filterDevTasksByMonthKeys,
+  formatSprintDateRange,
   memberProductivity,
   monthlyTaskPerformance,
   reportMetrics,
@@ -282,9 +283,6 @@ export default function DevMasterDashboard() {
             <button className="dev-download-filter" type="button" onClick={() => downloadAllDevData(allTeamTasks)} disabled={loading || !allTeamTasks.length} title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны ${DEV_TEAM_ASSIGNEES.length} assignee-ийн бүх өгөгдөл`}><Download size={15} />All data</button>
             <button className="dev-refresh-filter" onClick={() => void loadData(true)} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />{loading ? "Уншиж байна" : "Шинэчлэх"}</button>
           </div>
-          {selectedSprints.length > 0 && <div className="dev-selected-sprint-dates" role="status" aria-live="polite" aria-label="Сонгосон sprint-ийн огноо">
-            {selectedSprints.map(item => <span className="dev-sprint-date-chip" key={item.id}><CalendarDays size={14} /><b>{shortSprintLabel(item.name)}</b><span>{item.startDate || item.endDate ? formatDateRange(item.startDate || "", item.endDate || "") : "Огноо тодорхойгүй"}</span></span>)}
-          </div>}
         </section>
 
         {error && <div className="clickup-error" role="alert"><span><X size={18} /></span><div><strong>ClickUp өгөгдөл татагдсангүй</strong><p>{error}</p></div><button onClick={() => void loadData(true)}>Дахин оролдох</button></div>}
@@ -294,7 +292,9 @@ export default function DevMasterDashboard() {
           <article className="dev-kpi-card"><div><strong>{loading ? "—" : tasks.length}</strong><span>Total Tasks</span><small><CheckCircle2 size={12} /> {metrics.doneTasks} completed</small></div><span className="dev-kpi-art coral"><ClipboardCheck size={31} /></span></article>
           <article className="dev-kpi-card"><div><strong>{loading ? "—" : `${metrics.objectiveAchievement}%`}</strong><span>Project Objectives<br />Achievement</span><small><CheckCircle2 size={12} /> Completion rate</small></div><span className="dev-progress-ring" style={{ "--progress": `${metrics.objectiveAchievement * 3.6}deg` } as CSSProperties}><b>{metrics.objectiveAchievement}%</b></span></article>
           <article className="dev-kpi-card"><div><strong>{loading ? "—" : `${metrics.performance}%`}</strong><span>Project Performance · On-time</span><small><i /> completed by due date</small><span className="dev-kpi-progress"><i style={{ width: `${metrics.performance}%` }} /></span></div><span className="dev-kpi-art violet"><Gauge size={31} /></span></article>
-          <article className="dev-kpi-card"><div><strong>{loading ? "—" : sprint}</strong><span>Sprint</span><small>{formatDuration(metrics.estimateMs)} estimate</small></div><span className="dev-kpi-art amber"><TimerReset size={31} /></span></article>
+          <article className="dev-kpi-card dev-sprint-card"><div><strong>{loading ? "—" : selectedSprints.length === 1 ? <>{shortSprintLabel(selectedSprints[0].name)}<span className="dev-sprint-card-date" title={formatDateRange(selectedSprints[0].startDate || "", selectedSprints[0].endDate || "")}>({formatSprintDateRange(selectedSprints[0].startDate, selectedSprints[0].endDate)})</span></> : sprint}</strong><span>Sprint</span>
+            {!loading && selectedSprints.length > 1 && <div className="dev-sprint-card-ranges" aria-label="Сонгосон sprint-ийн огноо">{selectedSprints.map(item => <div className="dev-sprint-card-range" key={item.id} title={formatDateRange(item.startDate || "", item.endDate || "")}><b>{shortSprintLabel(item.name)}</b><span>{formatSprintDateRange(item.startDate, item.endDate)}</span></div>)}</div>}
+            <small>{formatDuration(metrics.estimateMs)} estimate</small></div><span className="dev-kpi-art amber"><TimerReset size={31} /></span></article>
         </section>
 
         <section className="dev-chart-grid">

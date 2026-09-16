@@ -240,6 +240,17 @@ export function reportMetrics(tasks: DevTask[]) {
   return { doneTasks: doneTasks.length, objectiveAchievement, performance, estimateMs };
 }
 
+export function formatSprintDateRange(startDate: string | null, endDate: string | null) {
+  if (!startDate && !endDate) return "Огноо тодорхойгүй";
+  const includeYear = Boolean(startDate && endDate && startDate.slice(0, 4) !== endDate.slice(0, 4));
+  const format = (value: string | null) => {
+    if (!value) return "—";
+    const [year, month, day] = value.split("-");
+    return `${includeYear ? `${year}/` : ""}${Number(month)}/${Number(day)}`;
+  };
+  return `${format(startDate)} - ${format(endDate)}`;
+}
+
 export function currentSprint(tasks: DevTask[], sprints: DevSprint[] = [], selectedSprintIds: string[] = []) {
   if (selectedSprintIds.length > 1) return `${selectedSprintIds.length} Sprints`;
   const selected = sprints.find(sprint => sprint.id === selectedSprintIds[0]);

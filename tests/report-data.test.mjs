@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { filterDevTasksByMonthKeys, monthlyTaskPerformance, selectDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { filterDevTasksByMonthKeys, formatSprintDateRange, monthlyTaskPerformance, selectDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -84,6 +84,14 @@ test("multiple sprint choices use a unique union and do not use task dates as me
   ].map(task => ({ ...task, type: "Bug", name: task.id, parentName: "", project: "", sprint: "", status: { name: "complete" }, assignees: [], customFields: {} }));
   const selected = selectDevTasks({ tasks }, { search: "", startDate: "2026-03-01", endDate: "2026-03-31", taskType: "all", sprintIds: ["s1", "s2"] });
   assert.deepEqual(selected.map(task => task.id), ["one", "shared", "two"]);
+});
+
+test("Sprint card dates use each list's dates and keep cross-year ranges unambiguous", () => {
+  assert.equal(formatSprintDateRange("2026-07-27", "2026-08-09"), "7/27 - 8/9");
+  assert.equal(formatSprintDateRange("2026-07-13", "2026-07-26"), "7/13 - 7/26");
+  assert.equal(formatSprintDateRange("2025-12-29", "2026-01-11"), "2025/12/29 - 2026/1/11");
+  assert.equal(formatSprintDateRange(null, "2026-08-09"), "— - 8/9");
+  assert.equal(formatSprintDateRange(null, null), "Огноо тодорхойгүй");
 });
 
 test("failed or partial sprint responses preserve links; complete responses are authoritative", () => {
