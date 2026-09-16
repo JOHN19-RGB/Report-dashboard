@@ -1,4 +1,5 @@
 import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../db/clickup-snapshot";
+import { proxyClickUpForLocalDevelopment } from "../../lib/clickup-local-proxy";
 
 type ClickUpUser = {
   id?: number;
@@ -133,6 +134,8 @@ export async function GET(request: Request) {
 
     const token = process.env.CLICKUP_API_TOKEN;
     if (!token) {
+      const proxyResponse = await proxyClickUpForLocalDevelopment(request, "/api/clickup");
+      if (proxyResponse) return proxyResponse;
       return Response.json({ error: "ClickUp API тохиргоо хийгдээгүй байна." }, { status: 503 });
     }
 

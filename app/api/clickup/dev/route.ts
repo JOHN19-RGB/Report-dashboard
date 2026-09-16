@@ -1,4 +1,5 @@
 import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../../db/clickup-snapshot";
+import { proxyClickUpForLocalDevelopment } from "../../../lib/clickup-local-proxy";
 import { DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, type DevTask } from "../../../lib/dev-report";
 
 type ClickUpUser = {
@@ -317,7 +318,11 @@ export async function GET(request: Request) {
 
     const token = process.env.CLICKUP_API_TOKEN;
     const workspaceId = process.env.CLICKUP_WORKSPACE_ID;
-    if (!token || !workspaceId) return Response.json({ error: "ClickUp API тохиргоо дутуу байна." }, { status: 503 });
+    if (!token || !workspaceId) {
+      const proxyResponse = await proxyClickUpForLocalDevelopment(request, "/api/clickup/dev");
+      if (proxyResponse) return proxyResponse;
+      return Response.json({ error: "ClickUp API тохиргоо дутуу байна." }, { status: 503 });
+    }
 
     const needsTaskSchemaRefresh = !refresh && snapshot && snapshot.schemaVersion !== SNAPSHOT_VERSION;
     const refreshSprints = refresh === "sprints" || refresh === "recent-sprints" || (!refresh && snapshot && Array.isArray(snapshot.tasks) && !needsTaskSchemaRefresh);
