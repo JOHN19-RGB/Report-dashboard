@@ -38,6 +38,91 @@ export type DevSprint = {
   partial?: boolean;
 };
 
+export type DevSprintPeriodMode = "segment" | "sprint";
+
+export type DevSprintPeriod = {
+  id: string;
+  label: string;
+  mode: DevSprintPeriodMode;
+  firstNumber: number;
+  lastNumber: number;
+  sprintIds: string[];
+  startDate: string | null;
+  endDate: string | null;
+  complete: boolean;
+  missingNumbers: number[];
+  partial: boolean;
+};
+
+/** A logical sprint can have multiple ClickUp list IDs (for example Sprint 32). */
+export function buildSprintPeriods(sprints: DevSprint[], mode: DevSprintPeriodMode): DevSprintPeriod[] {
+  const groups = new Map<number, DevSprint[]>();
+  for (const sprint of sprints) {
+    const match = /\bsprint\s*(\d+)\b/i.exec(sprint.name);
+    if (!match) continue;
+    const number = Number(match[1]);
+    if (mode === "segment" && number < 11) continue;
+    const firstNumber = mode === "segment" ? 11 + Math.floor((number - 11) / 2) * 2 : number;
+    const group = groups.get(firstNumber) || [];
+    group.push(sprint);
+    groups.set(firstNumber, group);
+  }
+  return Array.from(groups, ([firstNumber, lists]) => {
+    const lastNumber = mode === "segment" ? firstNumber + 1 : firstNumber;
+    const numbers = new Set(lists.map(list => Number(/\bsprint\s*(\d+)\b/i.exec(list.name)![1])));
+    const listNumber = (list: DevSprint) => Number(/\bsprint\s*(\d+)\b/i.exec(list.name)![1]);
+    const starts = lists.filter(list => listNumber(list) === firstNumber).map(list => list.startDate).filter((date): date is string => Boolean(date)).sort();
+    const ends = lists.filter(list => listNumber(list) === lastNumber).map(list => list.endDate).filter((date): date is string => Boolean(date)).sort();
+    const missingNumbers = Array.from({ length: lastNumber - firstNumber + 1 }, (_, index) => firstNumber + index).filter(number => !numbers.has(number));
+    return {
+      id: `${mode}-${firstNumber}`,
+      label: `Sprint ${firstNumber}${mode === "segment" ? `–${lastNumber}` : ""}`,
+      mode,
+      firstNumber,
+      lastNumber,
+      sprintIds: Array.from(new Set(lists.map(list => list.id))),
+      startDate: starts[0] || null,
+      endDate: ends.at(-1) || null,
+      complete: missingNumbers.length === 0,
+      missingNumbers,
+      partial: lists.some(list => list.partial === true),
+    };
+  }).sort((a, b) => b.firstNumber - a.firstNumber);
+}
+
+/** Compare with an equally sized block immediately before the earliest selection, never overlapping it. */
+export function previousSprintPeriods(periods: DevSprintPeriod[], selectedIds: string[]) {
+  const selected = periods.filter(period => selectedIds.includes(period.id));
+  if (!selected.length) return { periods: [] as DevSprintPeriod[], available: false, reason: "" };
+  if (selected.length !== new Set(selectedIds).size || selected.some(period => !period.complete || period.partial || period.mode !== selected[0].mode)) {
+    return { periods: [] as DevSprintPeriod[], available: false, reason: "Сонгосон sprint-ийн өгөгдөл дутуу" };
+  }
+  const mode = selected[0].mode;
+  const width = mode === "segment" ? 2 : 1;
+  const earliest = Math.min(...selected.map(period => period.firstNumber));
+  const previous = Array.from({ length: selected.length }, (_, index) => periods.find(period => period.mode === mode && period.firstNumber === earliest - width * (index + 1)));
+  if (previous.some(period => !period || !period.complete || period.partial)) {
+    return { periods: [] as DevSprintPeriod[], available: false, reason: `Харьцуулах өмнөх ${mode === "segment" ? "segment" : "sprint"}-ийн өгөгдөл алга эсвэл дутуу` };
+  }
+  return { periods: previous as DevSprintPeriod[], available: true, reason: "" };
+}
+
+/** An unweighted average of the five configured people; no assigned tasks contributes 0%. */
+export function teamCompletionAverage(tasks: DevTask[]) {
+  const members = DEV_TEAM_ASSIGNEES.map(name => {
+    const assigned = tasks.filter(task => task.assignees.some(assignee => normalizeAssigneeName(assignee.name) === normalizeAssigneeName(name)));
+    const doneTasks = assigned.filter(task => task.status.done).length;
+    return { name, totalTasks: assigned.length, doneTasks, completion: assigned.length ? doneTasks / assigned.length * 100 : 0 };
+  });
+  return { members, average: members.reduce((sum, member) => sum + member.completion, 0) / DEV_TEAM_ASSIGNEES.length };
+}
+
+/** Null means a new, nonzero value with no nonzero baseline, not an infinite percentage. */
+export function metricPercentChange(current: number, previous: number): number | null {
+  if (!previous) return current ? null : 0;
+  return (current - previous) / previous * 100;
+}
+
 export type DevReportData = {
   schemaVersion?: number;
   workspace: { id: string; name: string; color: string; memberCount: number };
@@ -100,6 +185,12 @@ export type DevMemberProductivity = {
   estimateMs: number;
   completion: number;
 };
+
+/** Shares use the exact Total Tasks column; multi-assignee tasks contribute to each person's total. */
+export function memberTaskDistribution(members: DevMemberProductivity[]) {
+  const total = members.reduce((sum, member) => sum + member.totalTasks, 0);
+  return { total, members: members.map(member => ({ ...member, share: total ? member.totalTasks / total * 100 : 0 })) };
+}
 
 export function taskDate(task: DevTask) {
   return task.dueDate || task.closedDate || task.startDate || task.createdDate;

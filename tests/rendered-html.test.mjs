@@ -53,22 +53,70 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   const [masterHtml, projectsHtml] = await Promise.all([masterResponse.text(), projectsResponse.text()]);
   assert.match(masterHtml, /Dev\.Master/);
   assert.match(projectsHtml, /Dev\.All project/);
-  assert.match(masterHtml, /Task Performance Comparison/);
+  assert.match(masterHtml, /Task Performance Comparison|Таск гүйцэтгэлийн харьцуулалт/);
   assert.match(masterHtml, /Хугацаа:/);
-  assert.match(masterHtml, /Sprint:/);
-  assert.match(masterHtml, /All Sprints/);
+  assert.match(masterHtml, /Segment:/);
+  assert.match(masterHtml, /All Segments/);
+  assert.match(masterHtml, /aria-label="Sprint эсвэл segment"/);
+  assert.match(masterHtml, />Sprints<\/button>/);
+  assert.match(masterHtml, /11–12, 13–14/);
+  assert.match(masterHtml, /data-kpi="completion"/);
+  assert.match(masterHtml, /data-kpi="team-average"/);
+  assert.match(masterHtml, /Team Average|Багийн гишүүдийн/);
+  assert.match(masterHtml, /5 assignee average/);
+  assert.match(masterHtml, /class="chart-area dev-cx-chart"/);
+  assert.match(masterHtml, /class="dev-panel dev-performance-panel" data-task-type="Bug"/);
+  assert.doesNotMatch(masterHtml, /dev-bar-tooltip|dev-bar-cap/);
+  assert.match(masterHtml, />Bug<\/button>/);
+  assert.match(masterHtml, />Improvement<\/button>/);
+  assert.doesNotMatch(masterHtml, /completed by due date|Project Performance · On-time|dev-zero-line/);
   assert.match(masterHtml, /2025–2026/);
   assert.match(masterHtml, /Жил/);
   assert.match(masterHtml, /Сар/);
   assert.doesNotMatch(masterHtml, /class="dev-date-filter"/);
   assert.match(masterHtml, /All data/);
+  assert.match(masterHtml, /<header class="topbar">/);
+  assert.match(masterHtml, /class="hero dev-dashboard-hero"/);
+  assert.match(masterHtml, /<h1>Dev\.Master<span>\.<\/span><\/h1>/);
+  assert.match(masterHtml, /class="dev-dashboard-heading-top"/);
+  assert.match(masterHtml, /class="dev-dashboard-actions" role="group"/);
+  const navigation = masterHtml.match(/<header class="topbar">[\s\S]*?<\/header>/)?.[0];
+  assert.ok(navigation);
+  assert.doesNotMatch(navigation, /dev-dashboard-actions|dev-download-filter|dev-refresh-filter/);
+  assert.match(masterHtml, /class="dev-dashboard-filters"[\s\S]*?class="dev-select-filter dev-type-filter"[\s\S]*?class="dev-dashboard-actions"/);
+  assert.match(masterHtml, /aria-label="Таск төрлийн тайлбар"/);
+  assert.match(masterHtml, /class="icon-button dev-download-filter"[^>]*aria-label="All data татах"/);
+  assert.match(masterHtml, /class="icon-button dev-refresh-filter"[^>]*aria-label="Өгөгдөл уншиж байна"/);
+  assert.doesNotMatch(masterHtml, />All data<|>Шинэчлэх<|dev-heading-copy/);
   assert.match(masterHtml, /Project Team Members Productivity/);
+  assert.match(masterHtml, /aria-label="Productivity харагдац"/);
+  assert.match(masterHtml, />List<\/button>/);
+  assert.match(masterHtml, />Card<\/button>/);
+  assert.match(masterHtml, /Total Tasks · Team Distribution/);
+  assert.match(masterHtml, /CX &amp; Dev · Bug \/ IMP дүгнэлт/);
+  assert.match(masterHtml, /CX Dev дүгнэлтийн сар/);
   assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);
   assert.match(masterHtml, /хамгийн сүүлийн 5 мөр харагдана/);
   assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
   assert.match(projectsHtml, /Одоогоор өгөгдөл алга/);
   assert.doesNotMatch(masterHtml, /class="kpi-grid|clickup-page-panel/);
   assert.doesNotMatch(projectsHtml, /class="kpi-grid|clickup-page-panel/);
+});
+
+test("keeps Dev bar counts hover-only with CX-style bars and accessible labels", async () => {
+  const [dashboard, css] = await Promise.all([
+    readFile(new URL("../app/components/dev-master-dashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+  assert.match(dashboard, /className="bar-value" aria-hidden="true">\{item.count\}/);
+  assert.match(dashboard, /data-comparison=\{selectedPeriods.length && !item.selected \? "previous" : "current"\}/);
+  assert.match(dashboard, /aria-label=\{`\$\{item.label\}: \$\{item.count\}/);
+  assert.doesNotMatch(dashboard, /dev-bar-tooltip|dev-bar-cap/);
+  assert.match(css, /\.dev-cx-chart \.bar-group \.bar-value \{[^}]*color: transparent;/);
+  assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-value,[\s\S]*?\.dev-cx-chart \.bar-group:focus-visible \.bar-value \{ color: var\(--ink\); \}/);
+  assert.doesNotMatch(css, /\.dev-cx-chart \.bar-group\.active \.bar-value/);
+  assert.match(css, /\.dev-performance-panel \{ --series-color: #dc4856;/);
+  assert.match(css, /\.dev-performance-panel\[data-task-type="Imp"\] \{ --series-color: #2676e8;/);
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {

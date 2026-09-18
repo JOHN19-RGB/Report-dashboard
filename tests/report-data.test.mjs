@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { filterDevTasksByMonthKeys, formatSprintDateRange, monthlyTaskPerformance, selectDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { buildSprintPeriods, filterDevTasksByMonthKeys, formatSprintDateRange, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, previousSprintPeriods, selectDevTasks, teamCompletionAverage } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -75,6 +75,24 @@ test("Dev period multi-select keeps exact year-month connections", () => {
   assert.deepEqual(monthlyTaskPerformance(selected, "2025-01-01", "2026-12-31", selectedKeys).map(month => month.key), selectedKeys);
 });
 
+test("productivity pie shares use the exact Total Tasks column, including multiple assignees", () => {
+  const person = (id, name) => ({ id, name, avatar: null, color: "" });
+  const tasks = [
+    { id: "shared", assignees: [person("one", "One"), person("two", "Two")], status: { done: true }, timeEstimateMs: 60_000, position: "Development" },
+    { id: "only-one", assignees: [person("one", "One")], status: { done: false }, timeEstimateMs: 120_000, position: "Development" },
+  ];
+  const team = memberProductivity(tasks);
+  const distribution = memberTaskDistribution(team);
+  assert.equal(distribution.total, 3);
+  assert.deepEqual(distribution.members.map(member => member.totalTasks), [2, 1]);
+  assert.deepEqual(distribution.members.map(member => member.doneTasks), [1, 1]);
+  assert.equal(distribution.members[0].completion, 50);
+  assert.ok(Math.abs(distribution.members.reduce((sum, member) => sum + member.share, 0) - 100) < 1e-9);
+  assert.deepEqual(memberTaskDistribution([{ ...team[0], totalTasks: 0 }]).members.map(member => member.share), [0]);
+  assert.deepEqual(memberTaskDistribution([]), { total: 0, members: [] });
+  assert.equal(memberTaskDistribution([team[0]]).members[0].share, 100);
+});
+
 test("multiple sprint choices use a unique union and do not use task dates as membership", () => {
   const tasks = [
     { id: "one", dueDate: "2025-01-01", sprintIds: ["s1"] },
@@ -92,6 +110,96 @@ test("Sprint card dates use each list's dates and keep cross-year ranges unambig
   assert.equal(formatSprintDateRange("2025-12-29", "2026-01-11"), "2025/12/29 - 2026/1/11");
   assert.equal(formatSprintDateRange(null, "2026-08-09"), "— - 8/9");
   assert.equal(formatSprintDateRange(null, null), "Огноо тодорхойгүй");
+});
+
+const sprintList = (number, id = `s${number}`, extra = {}) => ({ id, name: `Sprint ${number}`, folder: "B2C Sprint List", startDate: "2026-01-01", endDate: "2026-01-14", taskCount: 0, ...extra });
+
+test("segments start at 11–12, retain duplicate list IDs, and flag incomplete pairs", () => {
+  const periods = buildSprintPeriods([sprintList(10), sprintList(11), sprintList(12), sprintList(13), sprintList(14), sprintList(31), sprintList(32, "32a"), sprintList(32, "32b"), sprintList(53)], "segment");
+  assert.deepEqual(periods.map(period => period.label), ["Sprint 53–54", "Sprint 31–32", "Sprint 13–14", "Sprint 11–12"]);
+  assert.deepEqual(periods[1].sprintIds, ["s31", "32a", "32b"]);
+  assert.equal(periods[1].complete, true);
+  assert.equal(periods[0].complete, false);
+  assert.deepEqual(periods[0].missingNumbers, [54]);
+  assert.equal(periods[0].endDate, null);
+  const singles = buildSprintPeriods([sprintList(32, "32a"), sprintList(32, "32b")], "sprint");
+  assert.equal(singles.length, 1);
+  assert.deepEqual(singles[0].sprintIds, ["32a", "32b"]);
+});
+
+test("segment dates come from the boundary sprints, not an inner sprint with missing dates", () => {
+  const [period] = buildSprintPeriods([sprintList(11, "s11", { startDate: "2024-12-30", endDate: "2025-01-12" }), sprintList(12, "s12", { startDate: "2025-01-13", endDate: "2025-01-26" })], "segment");
+  assert.equal(period.startDate, "2024-12-30");
+  assert.equal(period.endDate, "2025-01-26");
+  const [missingEnd] = buildSprintPeriods([sprintList(11), sprintList(12, "s12", { endDate: null })], "segment");
+  assert.equal(missingEnd.endDate, null);
+});
+
+test("Sprint 11–12 and Sprint 13–14 options select exact list-ID unions without duplicate tasks", () => {
+  const lists = [sprintList(11), sprintList(12), sprintList(13), sprintList(14)];
+  const periods = buildSprintPeriods(lists, "segment");
+  const task = (id, sprintIds) => ({ id, sprintIds, dueDate: "2026-06-01", type: "Bug", name: id, parentName: "", project: "", sprint: "", status: { name: "done" }, assignees: [], tags: [], customFields: {} });
+  const tasks = [task("eleven", ["s11"]), task("twelve", ["s12"]), task("shared", ["s11", "s12"]), task("thirteen", ["s13"]), task("fourteen", ["s14"]), task("outside", ["s15"])];
+  const filters = { search: "", taskType: "all", startDate: "2025-01-01", endDate: "2025-01-31", sprintIds: [] };
+  const first = periods.find(period => period.id === "segment-11");
+  const second = periods.find(period => period.id === "segment-13");
+  assert.equal(first.label, "Sprint 11–12");
+  assert.equal(second.label, "Sprint 13–14");
+  assert.deepEqual(selectDevTasks({ tasks }, { ...filters, sprintIds: first.sprintIds }).map(task => task.id), ["eleven", "twelve", "shared"]);
+  assert.deepEqual(selectDevTasks({ tasks }, { ...filters, sprintIds: second.sprintIds }).map(task => task.id), ["thirteen", "fourteen"]);
+  assert.deepEqual(selectDevTasks({ tasks }, { ...filters, sprintIds: [...first.sprintIds, ...second.sprintIds] }).map(task => task.id), ["eleven", "twelve", "shared", "thirteen", "fourteen"]);
+});
+
+test("single and multiple period comparisons use equally sized, non-overlapping previous blocks", () => {
+  const lists = Array.from({ length: 12 }, (_, index) => sprintList(11 + index));
+  const segments = buildSprintPeriods(lists, "segment");
+  assert.deepEqual(previousSprintPeriods(segments, ["segment-15"]).periods.map(period => period.id), ["segment-13"]);
+  const multi = previousSprintPeriods(segments, ["segment-19", "segment-21"]);
+  assert.equal(multi.available, true);
+  assert.deepEqual(multi.periods.map(period => period.id), ["segment-17", "segment-15"]);
+  const singles = buildSprintPeriods(lists, "sprint");
+  assert.deepEqual(previousSprintPeriods(singles, ["sprint-15"]).periods.map(period => period.id), ["sprint-14"]);
+  assert.deepEqual(previousSprintPeriods(singles, ["sprint-15", "sprint-16"]).periods.map(period => period.id), ["sprint-14", "sprint-13"]);
+});
+
+test("missing or partial prior periods never silently skip to an older baseline", () => {
+  const missing = buildSprintPeriods([sprintList(11), sprintList(12), sprintList(15), sprintList(16)], "segment");
+  assert.equal(previousSprintPeriods(missing, ["segment-15"]).available, false);
+  assert.equal(previousSprintPeriods(missing, ["segment-11"]).available, false);
+  const partial = buildSprintPeriods([sprintList(13, "s13", { partial: true }), sprintList(14), sprintList(15), sprintList(16)], "segment");
+  assert.equal(previousSprintPeriods(partial, ["segment-15"]).available, false);
+  assert.equal(previousSprintPeriods(partial, ["segment-13"]).available, false);
+  assert.equal(previousSprintPeriods(partial, ["segment-unknown"]).available, false);
+});
+
+test("team completion is an unweighted five-person average, with zero-task people at zero", () => {
+  const names = ["Ariunbileg Garam-Ayush", "Ulziibayar S", "maralmaa", "Erdenejargal", "Yesugen"];
+  const assigned = (name, done) => ({ assignees: [{ name }], status: { done } });
+  const tasks = [assigned(names[0], true), ...Array.from({ length: 9 }, () => assigned(names[0], false)), assigned(names[1], true), assigned(names[2], true), assigned(names[3], false)];
+  const result = teamCompletionAverage(tasks);
+  assert.equal(result.members.length, 5);
+  assert.equal(result.average, 42); // (10 + 100 + 100 + 0 + 0) / 5, not 3 / 13.
+  assert.equal(result.members[4].totalTasks, 0);
+  assert.equal(teamCompletionAverage([]).average, 0);
+  const shared = teamCompletionAverage([{ assignees: [{ name: names[0] }, { name: names[1] }, { name: names[1] }], status: { done: true } }]);
+  assert.equal(shared.average, 40);
+  assert.equal(shared.members[1].totalTasks, 1);
+});
+
+test("metric comparisons handle increases, decreases, and zero baselines without Infinity", () => {
+  assert.equal(metricPercentChange(109, 197).toFixed(1), "-44.7");
+  assert.equal(metricPercentChange(64, 45).toFixed(1), "42.2");
+  assert.equal(metricPercentChange(0, 20), -100);
+  assert.equal(metricPercentChange(20, 0), null);
+  assert.equal(metricPercentChange(0, 0), 0);
+});
+
+test("current and previous sprint cohorts keep the same search/type filters but ignore task-date boundaries", () => {
+  const task = (id, sprintIds, type, name) => ({ id, sprintIds, type, name, dueDate: "2025-01-01", parentName: "", project: "", sprint: "", status: { name: "done", done: true }, assignees: [], tags: [], customFields: {} });
+  const tasks = [task("current", ["s15", "s16"], "Bug", "checkout"), task("prior", ["s13"], "Bug", "checkout"), task("wrong-type", ["s14"], "Imp", "checkout"), task("wrong-search", ["s14"], "Bug", "catalog")];
+  const filters = { search: "checkout", taskType: "Bug", startDate: "2026-06-01", endDate: "2026-06-30", sprintIds: ["s15", "s16"] };
+  assert.deepEqual(selectDevTasks({ tasks }, filters).map(task => task.id), ["current"]);
+  assert.deepEqual(selectDevTasks({ tasks }, { ...filters, sprintIds: ["s13", "s14"] }).map(task => task.id), ["prior"]);
 });
 
 test("failed or partial sprint responses preserve links; complete responses are authoritative", () => {

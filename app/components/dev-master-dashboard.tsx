@@ -1,6 +1,9 @@
 "use client";
 
 import {
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -16,13 +19,16 @@ import {
   RotateCcw,
   Search,
   TimerReset,
+  Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import TeamSidebar from "./team-sidebar";
+import DevTeamProductivity from "./dev-team-productivity";
+import DevTeamComparison from "./dev-team-comparison";
 import {
   changeRequestRows,
-  currentSprint,
+  buildSprintPeriods,
   DEV_REPORT_END_DATE,
   DEV_REPORT_END_YEAR,
   DEV_REPORT_START_DATE,
@@ -31,18 +37,28 @@ import {
   filterDevTasksByMonthKeys,
   formatSprintDateRange,
   memberProductivity,
+  metricPercentChange,
   monthlyTaskPerformance,
+  previousSprintPeriods,
   reportMetrics,
   scopeDevReportTasks,
   selectDevTasks,
   taskDate,
   taskTypeTotals,
+  teamCompletionAverage,
   type DevReportData,
   type DevReportFilters,
+  type DevSprintPeriodMode,
   type DevTask,
 } from "../lib/dev-report";
 
 const TYPE_PALETTE = ["#8bc7ff", "#168df2", "#ffc400", "#30bd63", "#0db9a7", "#7468ff", "#ff7b88", "#64748b"];
+const TASK_TYPE_COLORS: Record<string, string> = { Bug: "#dc4856", Imp: "#2676e8" };
+
+function taskTypeColor(type: string, index: number) {
+  return TASK_TYPE_COLORS[type] || TYPE_PALETTE[index % TYPE_PALETTE.length];
+}
+
 const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE, taskType: "all", sprintIds: [] };
 const REPORT_YEARS = Array.from({ length: DEV_REPORT_END_YEAR - DEV_REPORT_START_YEAR + 1 }, (_, index) => String(DEV_REPORT_START_YEAR + index));
 const REPORT_MONTHS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
@@ -67,14 +83,19 @@ function periodSelectionLabel(years: string[], months: string[]) {
   return `${yearLabel} · ${monthLabel}`;
 }
 
-function shortSprintLabel(value: string) {
-  const number = /sprint\s*([0-9]+)/i.exec(value)?.[1];
-  return number ? `Sprint ${number}` : "Sprint";
-}
-
 function formatDateRange(startDate: string, endDate: string) {
   const format = (value: string) => value ? value.replaceAll("-", ".") : "—";
   return `${format(startDate)} — ${format(endDate)}`;
+}
+
+function MetricComparison({ current, previous, label, reason }: { current: number; previous: number | null; label: string; reason: string }) {
+  if (previous === null) return <div className="dev-kpi-comparison unavailable" title={reason}>{reason}</div>;
+  const change = metricPercentChange(current, previous);
+  const direction = change === null || change > 0 ? "positive" : change < 0 ? "negative" : "neutral";
+  const Icon = direction === "negative" ? ArrowDownRight : ArrowUpRight;
+  return <div className="dev-kpi-comparison" data-current={current} data-previous={previous} data-change={change ?? "new"} title={`${label}: ${previous.toFixed(1)} → ${current.toFixed(1)}. Одоогийн ClickUp status; sprint төгсөх үеийн архив биш.`}>
+    <span className={`delta ${direction}`}>{direction !== "neutral" && <Icon size={11} />}{change === null ? "Шинэ" : `${change > 0 ? "+" : ""}${change.toFixed(1)}%`}</span><span>{label}</span>
+  </div>;
 }
 
 function csvCell(value: unknown) {
@@ -124,10 +145,11 @@ export default function DevMasterDashboard() {
   const [filters, setFilters] = useState<DevReportFilters>(DEFAULT_FILTERS);
   const [periodYears, setPeriodYears] = useState(REPORT_YEARS);
   const [periodMonths, setPeriodMonths] = useState(REPORT_MONTHS);
+  const [periodMode, setPeriodMode] = useState<DevSprintPeriodMode>("segment");
+  const [chartType, setChartType] = useState<"Bug" | "Imp">("Bug");
+  const periodRangeRef = useRef({ startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE });
 
-  useEffect(() => { void loadData(false); }, []);
-
-  async function loadData(refresh: boolean) {
+  const loadData = useCallback(async (refresh: boolean) => {
     setLoading(true);
     setError("");
     try {
@@ -147,11 +169,12 @@ export default function DevMasterDashboard() {
       };
       setData(normalizedPayload);
       setFilters(current => {
-        const sprintIds = current.sprintIds.filter(id => normalizedPayload.sprints.some(sprint => sprint.id === id));
+        const survivingIds = current.sprintIds.filter(id => normalizedPayload.sprints.some(sprint => sprint.id === id));
+        const sprintIds = Array.from(new Set([...survivingIds, ...buildSprintPeriods(normalizedPayload.sprints, "sprint").filter(period => period.sprintIds.some(id => survivingIds.includes(id))).flatMap(period => period.sprintIds)]));
         const lostSprintSelection = current.sprintIds.length > 0 && !sprintIds.length;
         return {
           ...current,
-          ...(lostSprintSelection ? { startDate: `${periodYears[0]}-01-01`, endDate: `${periodYears.at(-1)}-12-31` } : {}),
+          ...(lostSprintSelection ? periodRangeRef.current : {}),
           taskType: current.taskType === "all" || normalizedPayload.tasks.some(task => task.type === current.taskType) ? current.taskType : "all",
           sprintIds,
         };
@@ -161,7 +184,13 @@ export default function DevMasterDashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => { if (active) void loadData(false); });
+    return () => { active = false; };
+  }, [loadData]);
 
   const periodMonthKeys = useMemo(() => periodYears.flatMap(year => periodMonths.map(month => `${year}-${month}`)).sort(), [periodMonths, periodYears]);
   const tasks = useMemo(() => {
@@ -171,13 +200,20 @@ export default function DevMasterDashboard() {
   }, [data, filters, periodMonthKeys]);
   const allTeamTasks = useMemo(() => data ? selectDevTasks(data, DEFAULT_FILTERS) : [], [data]);
   const typeTotals = useMemo(() => taskTypeTotals(tasks), [tasks]);
-  const team = useMemo(() => memberProductivity(tasks), [tasks]);
+  const team = useMemo(() => {
+    const members = memberProductivity(tasks);
+    for (const name of DEV_TEAM_ASSIGNEES) {
+      if (!members.some(member => member.name.trim().toLowerCase() === name.toLowerCase())) members.push({ id: name, name, color: "", avatar: null, position: "Development", totalTasks: 0, doneTasks: 0, estimateMs: 0, completion: 0 });
+    }
+    return members;
+  }, [tasks]);
   const monthly = useMemo(() => {
     const monthKeys = filters.sprintIds.length ? Array.from(new Set(tasks.map(task => taskDate(task)?.slice(0, 7)).filter((key): key is string => Boolean(key)))).sort() : periodMonthKeys;
     return monthlyTaskPerformance(tasks, filters.startDate, filters.endDate, monthKeys);
   }, [filters.endDate, filters.sprintIds, filters.startDate, periodMonthKeys, tasks]);
   const changes = useMemo(() => changeRequestRows(tasks), [tasks]);
   const metrics = useMemo(() => reportMetrics(tasks), [tasks]);
+  const teamAverage = useMemo(() => teamCompletionAverage(tasks), [tasks]);
   const taskTypes = useMemo(() => Array.from(new Set((data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
   const sprints = useMemo(() => {
     const counts = new Map<string, number>();
@@ -186,19 +222,42 @@ export default function DevMasterDashboard() {
     }
     return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
   }, [data]);
-  const selectedSprints = sprints.filter(item => filters.sprintIds.includes(item.id));
-  const sprintSelectionLabel = !selectedSprints.length ? "All Sprints" : selectedSprints.length <= 2 ? selectedSprints.map((item, index) => index ? shortSprintLabel(item.name).replace(/^Sprint /, "") : shortSprintLabel(item.name)).join(", ") : `${selectedSprints.length} Sprints`;
-  const periodLabel = selectedSprints.length ? sprintSelectionLabel : periodSelectionLabel(periodYears, periodMonths);
-  const maxMonthly = Math.max(1, ...monthly.flatMap(item => [item.bug, item.imp]));
+  const periods = useMemo(() => buildSprintPeriods(sprints, periodMode), [periodMode, sprints]);
+  const selectedPeriods = useMemo(() => periods.filter(period => period.sprintIds.every(id => filters.sprintIds.includes(id))), [filters.sprintIds, periods]);
+  const selectionLabel = !selectedPeriods.length ? `All ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}`;
+  const periodCardLabel = selectedPeriods.length > 1 ? `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectionLabel;
+  const periodLabel = selectedPeriods.length ? `${periodMode === "segment" ? "Segment" : "Sprint"} ${selectionLabel}` : periodSelectionLabel(periodYears, periodMonths);
+  const comparison = useMemo(() => {
+    const result = previousSprintPeriods(periods, selectedPeriods.map(period => period.id));
+    return data?.taskPartial ? { ...result, available: false, reason: "Master task-ийн өгөгдөл дутуу тул харьцуулах боломжгүй" } : result;
+  }, [data?.taskPartial, periods, selectedPeriods]);
+  const previousTasks = useMemo(() => data && comparison.available ? selectDevTasks(data, { ...filters, sprintIds: comparison.periods.flatMap(period => period.sprintIds) }) : [], [comparison, data, filters]);
+  const previousMetrics = useMemo(() => reportMetrics(previousTasks), [previousTasks]);
+  const previousAverage = useMemo(() => teamCompletionAverage(previousTasks), [previousTasks]);
+  const completionRate = tasks.length ? metrics.doneTasks / tasks.length * 100 : 0;
+  const previousCompletionRate = previousTasks.length ? previousMetrics.doneTasks / previousTasks.length * 100 : 0;
+  const comparisonLabel = `өмнөх ${selectedPeriods.length > 1 ? `${selectedPeriods.length} ` : ""}${periodMode === "segment" ? "segment" : "sprint"}-ээс`;
+  const previousLabel = comparison.periods.map(period => period.label).join(", ");
+  const chartItems = useMemo(() => {
+    if (!selectedPeriods.length) return monthly.map(item => ({ key: item.key, label: item.month, short: item.month, count: chartType === "Bug" ? item.bug : item.imp, selected: false, sprintIds: [] as string[] }));
+    const visible = [...selectedPeriods, ...(comparison.available ? comparison.periods : [])].sort((a, b) => a.firstNumber - b.firstNumber);
+    return visible.map(period => {
+      const periodTasks = data ? selectDevTasks(data, { ...filters, sprintIds: period.sprintIds }) : [];
+      return { key: period.id, label: period.label, short: period.label.replace(/^Sprint /, ""), count: periodTasks.filter(task => task.type === chartType).length, selected: selectedPeriods.some(selected => selected.id === period.id), sprintIds: period.sprintIds };
+    });
+  }, [chartType, comparison, data, filters, monthly, selectedPeriods]);
+  const chartPeak = Math.max(1, ...chartItems.map(item => item.count));
+  const chartStep = chartPeak <= 20 ? 4 : chartPeak <= 100 ? 20 : 100;
+  const chartMax = Math.ceil(chartPeak / chartStep) * chartStep;
+  const chartTotal = tasks.filter(task => task.type === chartType).length;
   const totalTypeCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
-  const sprint = currentSprint(tasks, sprints, filters.sprintIds);
   const hasPeriodFilter = periodYears.length !== REPORT_YEARS.length || periodMonths.length !== REPORT_MONTHS.length;
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) || hasPeriodFilter;
   let donutPosition = 0;
   const donut = typeTotals.map((item, index) => {
     const start = donutPosition;
     donutPosition += totalTypeCount ? (item.count / totalTypeCount) * 100 : 0;
-    return `${TYPE_PALETTE[index % TYPE_PALETTE.length]} ${start}% ${donutPosition}%`;
+    return `${taskTypeColor(item.type, index)} ${start}% ${donutPosition}%`;
   }).join(", ");
 
   function updateFilter<Key extends keyof DevReportFilters>(key: Key, value: DevReportFilters[Key]) {
@@ -211,6 +270,7 @@ export default function DevMasterDashboard() {
     const sortedMonths = [...months].sort();
     setPeriodYears(sortedYears);
     setPeriodMonths(sortedMonths);
+    periodRangeRef.current = { startDate: `${sortedYears[0]}-01-01`, endDate: `${sortedYears.at(-1)}-12-31` };
     setFilters(current => ({
       ...current,
       startDate: `${sortedYears[0]}-01-01`,
@@ -242,28 +302,50 @@ export default function DevMasterDashboard() {
     setFilters(current => ({ ...current, sprintIds, startDate, endDate }));
   }
 
-  function toggleSprint(id: string) {
-    applySprints(filters.sprintIds.includes(id) ? filters.sprintIds.filter(item => item !== id) : [...filters.sprintIds, id]);
+  function toggleSprintPeriod(id: string) {
+    const selectedIds = selectedPeriods.map(period => period.id);
+    const next = selectedIds.includes(id) ? selectedIds.filter(item => item !== id) : [...selectedIds, id];
+    applySprints(periods.filter(period => next.includes(period.id)).flatMap(period => period.sprintIds));
+  }
+
+  function changePeriodMode(mode: DevSprintPeriodMode) {
+    if (mode === periodMode) return;
+    applySprints([]);
+    setPeriodMode(mode);
+  }
+
+  function selectChartItem(item: typeof chartItems[number]) {
+    if (item.sprintIds.length) applySprints(item.sprintIds);
+    else {
+      const [year, month] = item.key.split("-");
+      applyPeriodSelection([year], [month]);
+    }
   }
 
   function resetFilters() {
     setPeriodYears(REPORT_YEARS);
     setPeriodMonths(REPORT_MONTHS);
+    periodRangeRef.current = { startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE };
     setFilters(DEFAULT_FILTERS);
   }
 
   return <div className="app-shell dev-dashboard">
     <TeamSidebar section="dev" page="master" open={mobileMenu} onClose={() => setMobileMenu(false)} />
     <main className="main-content">
+      <header className="topbar">
+        <div className="topbar-left">
+          <button className="icon-button menu-button" onClick={() => setMobileMenu(true)} aria-label="Цэс нээх"><Menu size={20} /></button>
+          <div className="breadcrumb"><span>Dev</span><ArrowRight size={14} /><strong>Dev.Master</strong></div>
+        </div>
+      </header>
       <div className="content-wrap dev-dashboard-wrap">
         <section className="dev-dashboard-heading">
-          <div className="dev-heading-copy">
-            <button className="icon-button menu-button" onClick={() => setMobileMenu(true)} aria-label="Цэс нээх"><Menu size={20} /></button>
-            <div><h1>Dev.master</h1><p>{data?.list.name || "B2C Master"} · {DEV_REPORT_START_YEAR}–{DEV_REPORT_END_YEAR} · {DEV_TEAM_ASSIGNEES.length} assignee · ClickUp {loading ? "өгөгдөл уншиж байна" : `сүүлд ${formatSyncDate(data?.syncedAt)} шинэчлэгдсэн`}</p></div>
+          <div className="dev-dashboard-heading-top">
+            <div className="hero dev-dashboard-hero"><div className="eyebrow"><span /> DEV TEAM</div><h1>Dev.Master<span>.</span></h1><p>{data?.list.name || "B2C Master"} · {DEV_REPORT_START_YEAR}–{DEV_REPORT_END_YEAR} · {DEV_TEAM_ASSIGNEES.length} assignee · ClickUp {loading ? "өгөгдөл уншиж байна" : `сүүлд ${formatSyncDate(data?.syncedAt)} шинэчлэгдсэн`}</p></div>
           </div>
           <div className="dev-dashboard-filters" aria-label="Dev тайлангийн шүүлтүүр">
             <label className="dev-filter-search"><Search size={16} /><input value={filters.search} onChange={event => updateFilter("search", event.target.value)} placeholder="Ажил, ажилтан эсвэл төсөл хайх" aria-label="Dev тайлангаас хайх" /></label>
-            <details className="dev-select-filter dev-period-filter dev-period-multiselect">
+            <details className="dev-select-filter dev-period-filter dev-period-multiselect" title={filters.sprintIds.length ? "Sprint/segment сонгосон үед жил/сар үйлчлэхгүй. Жил эсвэл сар соливол sprint/segment сонголтыг цэвэрлэнэ." : undefined}>
               <summary><Clock3 size={17} /><span>Хугацаа:</span><b>{periodSelectionLabel(periodYears, periodMonths)}</b><ChevronDown size={14} /></summary>
               <div className="dev-period-menu">
                 <fieldset><legend><span>Жил</span><button type="button" onClick={() => applyPeriodSelection(REPORT_YEARS, periodMonths)}>Бүгд</button></legend><div className="dev-period-years">{REPORT_YEARS.map(year => <label key={year}><input type="checkbox" checked={periodYears.includes(year)} disabled={periodYears.length === 1 && periodYears.includes(year)} onChange={() => togglePeriodYear(year)} /><span>{year}</span></label>)}</div></fieldset>
@@ -271,17 +353,21 @@ export default function DevMasterDashboard() {
               </div>
             </details>
             <details className="dev-select-filter dev-sprint-filter dev-period-multiselect">
-              <summary><Flag size={17} /><span>Sprint:</span><b>{sprintSelectionLabel}</b><ChevronDown size={14} /></summary>
-              <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint олон сонголт">
-                <label><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All Sprints</span></label>
-                <div className="dev-sprint-options">{sprints.map(item => <label key={item.id} title={`${item.taskCount} тайлангийн ажил`}><input type="checkbox" checked={filters.sprintIds.includes(item.id)} onChange={() => toggleSprint(item.id)} /><span>{shortSprintLabel(item.name)}</span></label>)}</div>
+              <summary><Flag size={17} /><span>{periodMode === "segment" ? "Segment:" : "Sprint:"}</span><b>{selectionLabel}</b><ChevronDown size={14} /></summary>
+              <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint болон segment олон сонголт">
+                <div className="dev-period-mode" role="group" aria-label="Sprint эсвэл segment"><button type="button" aria-pressed={periodMode === "segment"} onClick={() => changePeriodMode("segment")}>Segments</button><button type="button" aria-pressed={periodMode === "sprint"} onClick={() => changePeriodMode("sprint")}>Sprints</button></div>
+                <label title="Sprint/segment-ийн шүүлтүүргүй. Sprint холбогдоогүй Master ажлууд мөн багтана."><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All {periodMode === "segment" ? "Segments" : "Sprints"}</span></label>
+                <div className="dev-sprint-options">{periods.map(item => <label key={item.id} title={item.complete ? `${item.label} · ${formatDateRange(item.startDate || "", item.endDate || "")}` : `Sprint ${item.missingNumbers.join(", ")} хараахан байхгүй — segment бүрдэхийг хүлээж байна`}><input type="checkbox" value={item.id} checked={selectedPeriods.some(period => period.id === item.id)} disabled={!item.complete} onChange={() => toggleSprintPeriod(item.id)} /><span>{item.label}{!item.complete && <small>Хүлээгдэж байна</small>}</span></label>)}</div>
+                {periodMode === "segment" && <p>2 sprint = 1 segment · 11–12, 13–14, …</p>}
                 {!loading && !sprints.length && <p>ClickUp sprint олдсонгүй</p>}
               </div>
             </details>
-            <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Task Type:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
+            <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Таск төрөл:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
             {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
-            <button className="dev-download-filter" type="button" onClick={() => downloadAllDevData(allTeamTasks)} disabled={loading || !allTeamTasks.length} title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны ${DEV_TEAM_ASSIGNEES.length} assignee-ийн бүх өгөгдөл`}><Download size={15} />All data</button>
-            <button className="dev-refresh-filter" onClick={() => void loadData(true)} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />{loading ? "Уншиж байна" : "Шинэчлэх"}</button>
+            <div className="dev-dashboard-actions" role="group" aria-label="Dev тайлангийн үйлдлүүд">
+              <button className="icon-button dev-download-filter" type="button" onClick={() => downloadAllDevData(allTeamTasks)} disabled={loading || !allTeamTasks.length} aria-label="All data татах" title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны ${DEV_TEAM_ASSIGNEES.length} assignee-ийн бүх өгөгдөл татах`}><Download size={18} /></button>
+              <button className="icon-button dev-refresh-filter" type="button" onClick={() => void loadData(true)} disabled={loading} aria-label={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"} aria-busy={loading} title={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"}><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
+            </div>
           </div>
         </section>
 
@@ -289,36 +375,48 @@ export default function DevMasterDashboard() {
         {data?.partial && <div className="dev-data-warning" role="status">{data.taskPartial ? "ClickUp-ийн B2C Master хариу 10,000 ажлын хязгаарт хүрсэн тул хамгийн сүүлийн ажлуудыг харуулж байна." : data.sprintSyncErrors ? `${data.sprintSyncErrors} sprint-ийн мэдээлэл түр шинэчлэгдсэнгүй. Бусад ClickUp өгөгдлийг хэвийн харуулж байна.` : "Зарим sprint 2,000-аас олон ажилтай тул тухайн sprint-ийн хамгийн сүүлийн ажлуудыг харуулж байна."}</div>}
 
         <section className="dev-kpi-grid" aria-label="Dev төслийн гол үзүүлэлтүүд">
-          <article className="dev-kpi-card"><div><strong>{loading ? "—" : tasks.length}</strong><span>Total Tasks</span><small><CheckCircle2 size={12} /> {metrics.doneTasks} completed</small></div><span className="dev-kpi-art coral"><ClipboardCheck size={31} /></span></article>
-          <article className="dev-kpi-card"><div><strong>{loading ? "—" : `${metrics.objectiveAchievement}%`}</strong><span>Project Objectives<br />Achievement</span><small><CheckCircle2 size={12} /> Completion rate</small></div><span className="dev-progress-ring" style={{ "--progress": `${metrics.objectiveAchievement * 3.6}deg` } as CSSProperties}><b>{metrics.objectiveAchievement}%</b></span></article>
-          <article className="dev-kpi-card"><div><strong>{loading ? "—" : `${metrics.performance}%`}</strong><span>Project Performance · On-time</span><small><i /> completed by due date</small><span className="dev-kpi-progress"><i style={{ width: `${metrics.performance}%` }} /></span></div><span className="dev-kpi-art violet"><Gauge size={31} /></span></article>
-          <article className="dev-kpi-card dev-sprint-card"><div><strong>{loading ? "—" : selectedSprints.length === 1 ? <>{shortSprintLabel(selectedSprints[0].name)}<span className="dev-sprint-card-date" title={formatDateRange(selectedSprints[0].startDate || "", selectedSprints[0].endDate || "")}>({formatSprintDateRange(selectedSprints[0].startDate, selectedSprints[0].endDate)})</span></> : sprint}</strong><span>Sprint</span>
-            {!loading && selectedSprints.length > 1 && <div className="dev-sprint-card-ranges" aria-label="Сонгосон sprint-ийн огноо">{selectedSprints.map(item => <div className="dev-sprint-card-range" key={item.id} title={formatDateRange(item.startDate || "", item.endDate || "")}><b>{shortSprintLabel(item.name)}</b><span>{formatSprintDateRange(item.startDate, item.endDate)}</span></div>)}</div>}
+          <article className="dev-kpi-card" data-kpi="total"><div><strong>{loading ? "—" : tasks.length}</strong><span>Нийт таск</span><small><CheckCircle2 size={12} /> {metrics.doneTasks} гүйцэтгэсэн</small>
+            {!loading && selectedPeriods.length > 0 && <MetricComparison current={tasks.length} previous={comparison.available ? previousTasks.length : null} label={comparisonLabel} reason={comparison.reason} />}
+          </div><span className="dev-kpi-art coral"><ClipboardCheck size={31} /></span></article>
+          <article className="dev-kpi-card" data-kpi="completion"><div><strong>{loading ? "—" : `${metrics.objectiveAchievement}%`}</strong><span>Таск гүйцэтгэл<br /></span><small><CheckCircle2 size={12} /> {metrics.doneTasks} / {tasks.length} гүйцэтгэсэн</small>
+            {!loading && selectedPeriods.length > 0 && <MetricComparison current={completionRate} previous={comparison.available ? previousCompletionRate : null} label={comparisonLabel} reason={comparison.reason} />}
+          </div><span className="dev-progress-ring" style={{ "--progress": `${completionRate * 3.6}deg` } as CSSProperties}><b>{metrics.objectiveAchievement}%</b></span></article>
+          <article className="dev-kpi-card" data-kpi="team-average"><div><strong>{loading ? "—" : `${Math.round(teamAverage.average)}%`}</strong><span>Багийн гишүүдийн<br />гүйцэтгэл</span><small title={teamAverage.members.map(member => `${member.name}: ${member.doneTasks}/${member.totalTasks} (${member.completion.toFixed(1)}%)`).join("\n") + "\nАжилгүй гишүүнийг 0% гэж тооцно; 5 гишүүний энгийн дундаж."}><Users size={12} /> 5 assignee average</small><span className="dev-kpi-progress"><i style={{ width: `${teamAverage.average}%` }} /></span>
+            {!loading && selectedPeriods.length > 0 && <MetricComparison current={teamAverage.average} previous={comparison.available ? previousAverage.average : null} label={comparisonLabel} reason={comparison.reason} />}
+          </div><span className="dev-kpi-art violet"><Gauge size={31} /></span></article>
+          <article className="dev-kpi-card dev-sprint-card" data-kpi="period"><div><strong>{loading ? "—" : selectedPeriods.length === 1 ? <>{periodMode === "segment" ? `Segment ${selectedPeriods[0].firstNumber}–${selectedPeriods[0].lastNumber}` : selectedPeriods[0].label}<span className="dev-sprint-card-date" title={formatDateRange(selectedPeriods[0].startDate || "", selectedPeriods[0].endDate || "")}>({formatSprintDateRange(selectedPeriods[0].startDate, selectedPeriods[0].endDate)})</span></> : periodCardLabel}</strong><span>{periodMode === "segment" ? "Segment" : "Sprint"}</span>
+            {!loading && selectedPeriods.length > 1 && <div className="dev-sprint-card-ranges" aria-label="Сонгосон sprint-ийн огноо">{selectedPeriods.map(item => <div className="dev-sprint-card-range" key={item.id} title={formatDateRange(item.startDate || "", item.endDate || "")}><b>{item.label}</b><span>{formatSprintDateRange(item.startDate, item.endDate)}</span></div>)}</div>}
             <small>{formatDuration(metrics.estimateMs)} estimate</small></div><span className="dev-kpi-art amber"><TimerReset size={31} /></span></article>
         </section>
 
         <section className="dev-chart-grid">
-          <article className="dev-panel dev-performance-panel">
-            <header><div><h2>Task Performance Comparison</h2><p><span className="bug" /> Bug <span className="imp" /> Imp</p></div><span className="dev-period-badge" title={formatDateRange(filters.startDate, filters.endDate)}><CalendarDays size={14} /> {periodLabel}</span></header>
-            <div className="dev-bar-chart" role="img" aria-label="Сар бүрийн Bug болон Imp ажлын харьцуулалт">
-              <div className="dev-axis-labels"><span>{maxMonthly}</span><span>0</span><span>-{maxMonthly}</span></div><span className="dev-zero-line" />
-              <div className="dev-months" style={{ "--month-count": monthly.length } as CSSProperties}>{monthly.map(item => <div className="dev-month" key={item.key} title={`${item.month}: Bug ${item.bug}, Imp ${item.imp}`}><span className="dev-half upper"><i className="bug-bar" style={{ height: `${(item.bug / maxMonthly) * 86}%` }} /></span><span className="dev-half lower"><i className="imp-bar" style={{ height: `${(item.imp / maxMonthly) * 86}%` }} /></span><small>{item.month}</small></div>)}</div>
+          <article className="dev-panel dev-performance-panel" data-task-type={chartType}>
+            <header><div><h2>Таск гүйцэтгэлийн харьцуулалт</h2><p>{selectedPeriods.length ? "Сонгосон болон өмнөх үеийн ажлын тоо" : "Сар бүрийн ажлын тоо"}</p></div><div className="dev-chart-type" role="group" aria-label="Графикийн ажлын төрөл"><button type="button" aria-pressed={chartType === "Bug"} onClick={() => setChartType("Bug")}>Bug</button><button type="button" aria-pressed={chartType === "Imp"} onClick={() => setChartType("Imp")}>Improvement</button></div></header>
+            <div className="dev-chart-context"><span className="dev-period-badge" title={formatDateRange(filters.startDate, filters.endDate)}><CalendarDays size={14} /> {periodLabel}</span>{comparison.available && <span title={previousLabel}>Өмнөх: {previousLabel}</span>}</div>
+            <div className="dev-cx-chart-scroll">
+              <div className="chart-area dev-cx-chart" style={{ minWidth: `${Math.max(280, chartItems.length * 46 + 42)}px` }} role="group" aria-label={`${chartType === "Bug" ? "Bug" : "Improvement"} ажлын тоо`}>
+                <div className="y-labels"><span>{chartMax}</span><span>{Math.round(chartMax * .75)}</span><span>{Math.round(chartMax * .5)}</span><span>{Math.round(chartMax * .25)}</span><span>0</span></div>
+                <div className="chart-grid-lines"><i /><i /><i /><i /><i /></div>
+                <div className="bars">{chartItems.map((item, index) => <button type="button" key={item.key} className={`bar-group ${item.selected ? "active" : ""}`} data-period={item.key} data-count={item.count} data-comparison={selectedPeriods.length && !item.selected ? "previous" : "current"} onClick={() => selectChartItem(item)} aria-label={`${item.label}: ${item.count} ${chartType === "Bug" ? "Bug" : "Improvement"} ажил · ${item.selected ? "Сонгосон үе" : selectedPeriods.length ? "Өмнөх үе" : "Сар"}`} aria-pressed={item.selected}>
+                  <span className="bar-value" aria-hidden="true">{item.count}</span><span className="bar-track"><span className="bar-fill" style={{ height: `${item.count / chartMax * 100}%`, minHeight: 0, animationDelay: `${index * 35}ms` }} /></span><span className="bar-label">{item.short}</span>
+                </button>)}</div>
+              </div>
             </div>
+            <div className="chart-summary"><span className="legend-dot" /><strong>{chartTotal} {chartType === "Bug" ? "Bug" : "Improvement"}</strong><span>· {selectedPeriods.length ? "Сонгосон үе" : "Сонгосон хугацаа"}</span>{comparison.available && <span>· Саарал: өмнөх үе</span>}</div>
           </article>
 
           <article className="dev-panel dev-type-panel">
             <header><h2>Task Type</h2><button aria-label="Task Type нэмэлт цэс"><MoreVertical size={18} /></button></header>
             <div className="dev-donut-layout">
               <div className="dev-donut" style={{ background: totalTypeCount ? `conic-gradient(${donut})` : "#edf1f6" }}><span><strong>{totalTypeCount}</strong><small>tasks</small></span></div>
-              <ul>{typeTotals.map((item, index) => <li key={item.type}><span style={{ background: TYPE_PALETTE[index % TYPE_PALETTE.length] }} /><b>{item.type}</b><strong>{item.count}</strong></li>)}</ul>
+              <ul aria-label="Таск төрлийн тайлбар">{typeTotals.map((item, index) => <li key={item.type}><span style={{ background: taskTypeColor(item.type, index) }} /><b>{item.type}</b><strong>{item.count}</strong></li>)}</ul>
             </div>
           </article>
         </section>
 
-        <section className="dev-panel dev-table-panel">
-          <header><div><h2>Project Team Members Productivity</h2><p>{tasks.length} ажил · сонгосон {DEV_TEAM_ASSIGNEES.length} ClickUp assignee</p></div></header>
-          <div className="dev-table-wrap"><table><thead><tr><th>Position</th><th>Employee Name</th><th>Completion</th><th>Time Estimate</th><th>Total Tasks</th><th>Done Tasks</th></tr></thead><tbody>{team.map(member => <tr key={member.id}><td><span className="dev-role-dot" />{member.position}</td><td>{member.name}</td><td>{member.completion}%</td><td>{formatDuration(member.estimateMs)}</td><td><span className="dev-count total">{member.totalTasks}</span></td><td><span className={`dev-count done ${member.doneTasks === member.totalTasks && member.totalTasks ? "complete" : ""}`}>{member.doneTasks}</span></td></tr>)}</tbody></table>{!team.length && !loading && <p className="dev-no-results">Тохирох assignee бүхий ажил олдсонгүй.</p>}</div>
-        </section>
+        <DevTeamProductivity team={team} taskCount={tasks.length} loading={loading} />
+
+        <DevTeamComparison data={data} />
 
         <section className="dev-panel dev-table-panel dev-change-panel">
           <header><div><h2>Өөрчлөлтийн хүсэлт</h2><p>{changes.length} ажил · хамгийн сүүлийн 5 мөр харагдана, бусдыг гүйлгэж үзнэ</p></div></header>
