@@ -115,8 +115,11 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
   assert.match(css, /\.dev-cx-chart \.bar-group \.bar-value \{[^}]*color: transparent;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-value,[\s\S]*?\.dev-cx-chart \.bar-group:focus-visible \.bar-value \{ color: var\(--ink\); \}/);
   assert.doesNotMatch(css, /\.dev-cx-chart \.bar-group\.active \.bar-value/);
-  assert.match(css, /\.dev-performance-panel \{ --series-color: #dc4856;/);
-  assert.match(css, /\.dev-performance-panel\[data-task-type="Imp"\] \{ --series-color: #2676e8;/);
+  assert.match(css, /\.dev-performance-panel \{ --series-color: #ff876d;/);
+  assert.match(css, /\.dev-performance-panel\[data-task-type="Imp"\] \{ --series-color: #6d9eff;/);
+  assert.match(dashboard, /Bug: "#ff876d", Imp: "#6d9eff"/);
+  assert.match(css, /\.dev-cx-chart \.bar-fill \{ background: #dfe3e9;/);
+  assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-fill,[\s\S]*?background: var\(--series-color\)/);
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {

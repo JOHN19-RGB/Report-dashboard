@@ -34,6 +34,7 @@ import {
   DEV_REPORT_START_DATE,
   DEV_REPORT_START_YEAR,
   DEV_TEAM_ASSIGNEES,
+  devTeamPosition,
   filterDevTasksByMonthKeys,
   formatSprintDateRange,
   memberProductivity,
@@ -53,7 +54,7 @@ import {
 } from "../lib/dev-report";
 
 const TYPE_PALETTE = ["#8bc7ff", "#168df2", "#ffc400", "#30bd63", "#0db9a7", "#7468ff", "#ff7b88", "#64748b"];
-const TASK_TYPE_COLORS: Record<string, string> = { Bug: "#dc4856", Imp: "#2676e8" };
+const TASK_TYPE_COLORS: Record<string, string> = { Bug: "#ff876d", Imp: "#6d9eff" };
 
 function taskTypeColor(type: string, index: number) {
   return TASK_TYPE_COLORS[type] || TYPE_PALETTE[index % TYPE_PALETTE.length];
@@ -147,6 +148,7 @@ export default function DevMasterDashboard() {
   const [periodMonths, setPeriodMonths] = useState(REPORT_MONTHS);
   const [periodMode, setPeriodMode] = useState<DevSprintPeriodMode>("segment");
   const [chartType, setChartType] = useState<"Bug" | "Imp">("Bug");
+  const filterBarRef = useRef<HTMLDivElement>(null);
   const periodRangeRef = useRef({ startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE });
 
   const loadData = useCallback(async (refresh: boolean) => {
@@ -192,6 +194,30 @@ export default function DevMasterDashboard() {
     return () => { active = false; };
   }, [loadData]);
 
+  useEffect(() => {
+    const closeFilterMenus = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const clickedMenu = target instanceof Element ? target.closest("details") : null;
+      const clickedInsideFilters = Boolean(filterBarRef.current?.contains(target));
+      filterBarRef.current?.querySelectorAll<HTMLDetailsElement>("details[open]").forEach(menu => {
+        if (!clickedInsideFilters || menu !== clickedMenu) menu.open = false;
+      });
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      filterBarRef.current?.querySelectorAll<HTMLDetailsElement>("details[open]").forEach(menu => { menu.open = false; });
+    };
+    document.addEventListener("pointerdown", closeFilterMenus);
+    document.addEventListener("focusin", closeFilterMenus);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeFilterMenus);
+      document.removeEventListener("focusin", closeFilterMenus);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+
   const periodMonthKeys = useMemo(() => periodYears.flatMap(year => periodMonths.map(month => `${year}-${month}`)).sort(), [periodMonths, periodYears]);
   const tasks = useMemo(() => {
     const selectedTasks = data ? selectDevTasks(data, filters) : [];
@@ -203,7 +229,7 @@ export default function DevMasterDashboard() {
   const team = useMemo(() => {
     const members = memberProductivity(tasks);
     for (const name of DEV_TEAM_ASSIGNEES) {
-      if (!members.some(member => member.name.trim().toLowerCase() === name.toLowerCase())) members.push({ id: name, name, color: "", avatar: null, position: "Development", totalTasks: 0, doneTasks: 0, estimateMs: 0, completion: 0 });
+      if (!members.some(member => member.name.trim().toLowerCase() === name.toLowerCase())) members.push({ id: name, name, color: "", avatar: null, position: devTeamPosition(name), totalTasks: 0, doneTasks: 0, estimateMs: 0, completion: 0 });
     }
     return members;
   }, [tasks]);
@@ -343,7 +369,7 @@ export default function DevMasterDashboard() {
           <div className="dev-dashboard-heading-top">
             <div className="hero dev-dashboard-hero"><div className="eyebrow"><span /> DEV TEAM</div><h1>Dev.Master<span>.</span></h1><p>{data?.list.name || "B2C Master"} · {DEV_REPORT_START_YEAR}–{DEV_REPORT_END_YEAR} · {DEV_TEAM_ASSIGNEES.length} assignee · ClickUp {loading ? "өгөгдөл уншиж байна" : `сүүлд ${formatSyncDate(data?.syncedAt)} шинэчлэгдсэн`}</p></div>
           </div>
-          <div className="dev-dashboard-filters" aria-label="Dev тайлангийн шүүлтүүр">
+          <div className="dev-dashboard-filters" ref={filterBarRef} aria-label="Dev тайлангийн шүүлтүүр">
             <label className="dev-filter-search"><Search size={16} /><input value={filters.search} onChange={event => updateFilter("search", event.target.value)} placeholder="Ажил, ажилтан эсвэл төсөл хайх" aria-label="Dev тайлангаас хайх" /></label>
             <details className="dev-select-filter dev-period-filter dev-period-multiselect" title={filters.sprintIds.length ? "Sprint/segment сонгосон үед жил/сар үйлчлэхгүй. Жил эсвэл сар соливол sprint/segment сонголтыг цэвэрлэнэ." : undefined}>
               <summary><Clock3 size={17} /><span>Хугацаа:</span><b>{periodSelectionLabel(periodYears, periodMonths)}</b><ChevronDown size={14} /></summary>

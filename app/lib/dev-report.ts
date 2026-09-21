@@ -157,6 +157,10 @@ function normalizeAssigneeName(value: string) {
   return value.trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
 }
 
+export function devTeamPosition(name: string, fallback = "Development") {
+  return normalizeAssigneeName(name) === "yesugen" ? "Designer" : fallback;
+}
+
 const DEV_TEAM_ASSIGNEE_NAMES = new Set(DEV_TEAM_ASSIGNEES.map(normalizeAssigneeName));
 
 export function scopeDevTeamTasks(tasks: DevTask[]) {
@@ -251,7 +255,7 @@ export function memberProductivity(tasks: DevTask[]): DevMemberProductivity[] {
         name: assignee.name,
         color: assignee.color,
         avatar: assignee.avatar,
-        position: task.position || "Development",
+        position: devTeamPosition(assignee.name, task.position || "Development"),
         totalTasks: 0,
         doneTasks: 0,
         estimateMs: 0,
@@ -260,7 +264,7 @@ export function memberProductivity(tasks: DevTask[]): DevMemberProductivity[] {
       current.totalTasks += 1;
       current.doneTasks += task.status.done ? 1 : 0;
       current.estimateMs += task.timeEstimateMs || 0;
-      if (task.position && current.position === "Development") current.position = task.position;
+      if (task.position && current.position === "Development") current.position = devTeamPosition(assignee.name, task.position);
       current.completion = Math.round((current.doneTasks / current.totalTasks) * 100);
       members.set(id, current);
     }
@@ -276,7 +280,7 @@ export function monthlyTaskPerformance(tasks: DevTask[], startDate: string, endD
       const monthTasks = tasks.filter(task => taskDate(task)?.startsWith(key));
       return {
         key,
-        month: `${new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date)} '${year.slice(-2)}`,
+        month: new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date),
         bug: monthTasks.filter(task => task.type === "Bug").length,
         imp: monthTasks.filter(task => task.type === "Imp").length,
       };
@@ -300,7 +304,7 @@ export function monthlyTaskPerformance(tasks: DevTask[], startDate: string, endD
     const monthTasks = tasks.filter(task => taskDate(task)?.startsWith(key));
     return {
       key,
-      month: `${new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date)} '${String(year).slice(-2)}`,
+      month: new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date),
       bug: monthTasks.filter(task => task.type === "Bug").length,
       imp: monthTasks.filter(task => task.type === "Imp").length,
     };
