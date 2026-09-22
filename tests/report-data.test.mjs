@@ -125,6 +125,8 @@ test("All Project assigns every ClickUp task to one of the five requested status
   assert.equal(project.tasks.length, tasks.length);
   assert.equal(Object.values(project.statuses).reduce((sum, count) => sum + count, 0), tasks.length);
   assert.deepEqual(Object.keys(project.statuses), DEV_PROJECT_STATUSES.map(status => status.key));
+  const [allProjectListRow] = groupDevProjectTasks([task("Gadget.mn 2.0", "to do", "open", false, "")].map(item => ({ ...item, name: "Gadget.mn 2.0", project: "Project" })));
+  assert.equal(allProjectListRow.name, "Gadget.mn 2.0");
 });
 
 test("All Project source selects the named ClickUp list and never falls back to Master", () => {

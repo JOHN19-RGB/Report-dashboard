@@ -250,7 +250,9 @@ export function devProjectStatus(task: DevTask): DevProjectStatusKey {
 
 /** Prefer ClickUp's project field, then the parent/root task prefix used by B2C Master. */
 export function devProjectName(task: DevTask) {
-  const source = task.project.trim() || task.parentName.trim() || task.name.trim();
+  const project = task.project.trim();
+  const genericProjectValue = /^(?:b2c\s+)?all\s+projects?$|^projects?$/.test(project.toLocaleLowerCase("en-US").replace(/[._-]+/g, " ").replace(/\s+/g, " "));
+  const source = (genericProjectValue ? "" : project) || task.parentName.trim() || task.name.trim();
   return source.split("|")[0].trim() || "Төсөл тодорхойгүй";
 }
 

@@ -321,7 +321,7 @@ function mapClickUpTasks(rawTasks: ClickUpTask[], customTaskTypes: Map<string, s
       sprint: previousSprint?.sprint || findField(fields, [/sprint/, /спринт/]),
       sprintIds: previousSprint?.sprintIds || [],
       position: findField(fields, [/position/, /role/, /албан тушаал/]),
-      project: findField(fields, [/project/, /website/, /domain/, /site/, /төсөл/, /вэб/]),
+      project: findField(fields, [/^project(?: name)?$/, /^website(?: name)?$/, /^domain(?: name)?$/, /^site(?: name)?$/, /^төсөл$/, /^вэб(?: сайт)?$/]),
       dueDate: dateToIso(task.due_date),
       startDate: dateToIso(task.start_date),
       createdDate: dateToIso(task.date_created),
