@@ -89,6 +89,7 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /class="icon-button dev-refresh-filter"[^>]*aria-label="Өгөгдөл уншиж байна"/);
   assert.doesNotMatch(masterHtml, />All data<|>Шинэчлэх<|dev-heading-copy/);
   assert.match(masterHtml, /Ажилчдын гүйцэтгэлийн тайлан/);
+  assert.match(masterHtml, /<p>0(?:<!-- -->)? таск<\/p>/);
   assert.match(masterHtml, /aria-label="Productivity харагдац"/);
   assert.match(masterHtml, />List<\/button>/);
   assert.match(masterHtml, />Card<\/button>/);
@@ -99,7 +100,27 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /Хамгийн сүүлийн 5 хүсэлт харагдана/);
   assert.match(masterHtml, /class="dev-change-count"/);
   assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
-  assert.match(projectsHtml, /Одоогоор өгөгдөл алга/);
+  assert.match(projectsHtml, /Dev\.All Project/);
+  assert.match(projectsHtml, /Төслийн таскуудын төлөв/);
+  assert.match(projectsHtml, /Төслүүдийн жагсаалт/);
+  assert.match(projectsHtml, /Шинэ төслийн төлөвлөгөө/);
+  assert.match(projectsHtml, />To do</);
+  assert.match(projectsHtml, />In Progress</);
+  assert.match(projectsHtml, />QA test</);
+  assert.match(projectsHtml, />Hold</);
+  assert.match(projectsHtml, />Done</);
+  assert.match(projectsHtml, /Dev All Project тайлангийн шүүлтүүр/);
+  assert.match(projectsHtml, /data-sort-key="project"/);
+  assert.match(projectsHtml, /data-sort-key="status"/);
+  assert.match(projectsHtml, /data-sort-key="tasks"/);
+  assert.match(projectsHtml, /data-sort-key="completion"/);
+  assert.match(projectsHtml, /data-sort-key="updated"/);
+  assert.match(projectsHtml, /Шинэчлэгдсэн/);
+  assert.doesNotMatch(projectsHtml, /Төслийн нэрээр эрэмбэлэх|Өсөх · A–Я|Буурах · Я–A/);
+  assert.match(projectsHtml, /class="dev-view-toggle" data-view="list" role="group" aria-label="Төслийн харагдац"/);
+  assert.match(projectsHtml, />List<\/button>/);
+  assert.match(projectsHtml, />Card<\/button>/);
+  assert.doesNotMatch(projectsHtml, /Одоогоор өгөгдөл алга/);
   assert.doesNotMatch(masterHtml, /class="kpi-grid|clickup-page-panel/);
   assert.doesNotMatch(projectsHtml, /class="kpi-grid|clickup-page-panel/);
 });
@@ -121,6 +142,8 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
   assert.match(dashboard, /Bug: "#ff876d", Imp: "#6d9eff"/);
   assert.match(css, /\.dev-cx-chart \.bar-fill \{ background: #dfe3e9;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-fill,[\s\S]*?background: var\(--series-color\)/);
+  assert.match(css, /\.all-project-list-scroll \{ max-height: 310px; overflow-y: auto;/);
+  assert.match(css, /\.all-project-cards \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {

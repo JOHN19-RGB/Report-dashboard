@@ -51,6 +51,7 @@ import {
   taskDate,
   taskTypeTotals,
   teamCompletionAverage,
+  topLevelDevTasks,
   type DevReportData,
   type DevReportFilters,
   type DevSprintPeriodMode,
@@ -180,7 +181,7 @@ export default function DevMasterDashboard() {
         return {
           ...current,
           ...(lostSprintSelection ? periodRangeRef.current : {}),
-          taskType: current.taskType === "all" || normalizedPayload.tasks.some(task => task.type === current.taskType) ? current.taskType : "all",
+          taskType: current.taskType === "all" || topLevelDevTasks(normalizedPayload.tasks).some(task => task.type === current.taskType) ? current.taskType : "all",
           sprintIds,
         };
       });
@@ -238,12 +239,13 @@ export default function DevMasterDashboard() {
   }, []);
 
   const periodMonthKeys = useMemo(() => periodYears.flatMap(year => periodMonths.map(month => `${year}-${month}`)).sort(), [periodMonths, periodYears]);
-  const tasks = useMemo(() => {
+  const taskRecords = useMemo(() => {
     const selectedTasks = data ? selectDevTasks(data, filters) : [];
     if (filters.sprintIds.length) return selectedTasks;
     return filterDevTasksByMonthKeys(selectedTasks, periodMonthKeys);
   }, [data, filters, periodMonthKeys]);
-  const allTeamTasks = useMemo(() => data ? selectDevTasks(data, DEFAULT_FILTERS) : [], [data]);
+  const tasks = useMemo(() => topLevelDevTasks(taskRecords), [taskRecords]);
+  const allTeamTasks = useMemo(() => data ? topLevelDevTasks(selectDevTasks(data, DEFAULT_FILTERS)) : [], [data]);
   const typeTotals = useMemo(() => taskTypeTotals(tasks), [tasks]);
   const team = useMemo(() => {
     const members = memberProductivity(tasks);
@@ -256,13 +258,13 @@ export default function DevMasterDashboard() {
     const monthKeys = filters.sprintIds.length ? Array.from(new Set(tasks.map(task => taskDate(task)?.slice(0, 7)).filter((key): key is string => Boolean(key)))).sort() : periodMonthKeys;
     return monthlyTaskPerformance(tasks, filters.startDate, filters.endDate, monthKeys);
   }, [filters.endDate, filters.sprintIds, filters.startDate, periodMonthKeys, tasks]);
-  const changes = useMemo(() => changeRequestRows(tasks), [tasks]);
+  const changes = useMemo(() => changeRequestRows(taskRecords), [taskRecords]);
   const metrics = useMemo(() => reportMetrics(tasks), [tasks]);
   const teamAverage = useMemo(() => teamCompletionAverage(tasks), [tasks]);
-  const taskTypes = useMemo(() => Array.from(new Set((data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
+  const taskTypes = useMemo(() => Array.from(new Set(topLevelDevTasks(data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
   const sprints = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const task of data?.tasks || []) {
+    for (const task of topLevelDevTasks(data?.tasks || [])) {
       for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
     }
     return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
@@ -278,7 +280,7 @@ export default function DevMasterDashboard() {
   }, [data?.taskPartial, periods, selectedPeriods]);
   const showPreviousComparison = selectedPeriods.length === 1 && comparison.available;
   const showPercentageComparison = selectedPeriods.length >= 2;
-  const previousTasks = useMemo(() => data && comparison.available ? selectDevTasks(data, { ...filters, sprintIds: comparison.periods.flatMap(period => period.sprintIds) }) : [], [comparison, data, filters]);
+  const previousTasks = useMemo(() => data && comparison.available ? topLevelDevTasks(selectDevTasks(data, { ...filters, sprintIds: comparison.periods.flatMap(period => period.sprintIds) })) : [], [comparison, data, filters]);
   const previousMetrics = useMemo(() => reportMetrics(previousTasks), [previousTasks]);
   const previousAverage = useMemo(() => teamCompletionAverage(previousTasks), [previousTasks]);
   const completionRate = tasks.length ? metrics.doneTasks / tasks.length * 100 : 0;
@@ -288,7 +290,7 @@ export default function DevMasterDashboard() {
     if (!selectedPeriods.length) return monthly.map(item => ({ key: item.key, label: item.month, short: item.month, count: chartType === "Bug" ? item.bug : item.imp, selected: false, sprintIds: [] as string[] }));
     const visible = [...selectedPeriods, ...(showPreviousComparison ? comparison.periods : [])].sort((a, b) => a.firstNumber - b.firstNumber);
     return visible.map(period => {
-      const periodTasks = data ? selectDevTasks(data, { ...filters, sprintIds: period.sprintIds }) : [];
+      const periodTasks = data ? topLevelDevTasks(selectDevTasks(data, { ...filters, sprintIds: period.sprintIds })) : [];
       return { key: period.id, label: period.label, short: period.label.replace(/^Sprint /, ""), count: periodTasks.filter(task => task.type === chartType).length, selected: selectedPeriods.some(selected => selected.id === period.id), sprintIds: period.sprintIds };
     });
   }, [chartType, comparison, data, filters, monthly, selectedPeriods, showPreviousComparison]);
@@ -296,7 +298,7 @@ export default function DevMasterDashboard() {
   const chartStep = chartPeak <= 20 ? 4 : chartPeak <= 100 ? 20 : 100;
   const chartMax = Math.ceil(chartPeak / chartStep) * chartStep;
   const chartTotal = tasks.filter(task => task.type === chartType).length;
-  const selectedChartCounts = useMemo(() => [...selectedPeriods].sort((a, b) => a.firstNumber - b.firstNumber).map(period => data ? selectDevTasks(data, { ...filters, sprintIds: period.sprintIds }).filter(task => task.type === chartType).length : 0), [chartType, data, filters, selectedPeriods]);
+  const selectedChartCounts = useMemo(() => [...selectedPeriods].sort((a, b) => a.firstNumber - b.firstNumber).map(period => data ? topLevelDevTasks(selectDevTasks(data, { ...filters, sprintIds: period.sprintIds })).filter(task => task.type === chartType).length : 0), [chartType, data, filters, selectedPeriods]);
   const previousChartTotal = showPercentageComparison ? selectedChartCounts[0] : null;
   const selectedChartTotal = showPercentageComparison ? selectedChartCounts.at(-1)! : chartTotal;
   const chartChange = previousChartTotal === null ? null : previousChartTotal === 0 ? (selectedChartTotal ? null : 0) : ((selectedChartTotal - previousChartTotal) / previousChartTotal) * 100;

@@ -1,6 +1,6 @@
 import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../../db/clickup-snapshot";
 import { proxyClickUpForLocalDevelopment } from "../../../lib/clickup-local-proxy";
-import { DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, type DevSprint, type DevTask } from "../../../lib/dev-report";
+import { DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, selectDevAllProjectList, type DevSprint, type DevTask } from "../../../lib/dev-report";
 import { requestClickUp } from "../../../lib/clickup-request";
 import { mergeClickUpTaskSnapshot, readClickUpTaskPages } from "../../../lib/clickup-pagination";
 import { mergeSprintMemberships, type SprintAssignment, type SprintSyncState } from "../../../lib/clickup-sprint-sync";
@@ -69,7 +69,7 @@ type ClickUpListLocation = {
   taskCount: number;
 };
 const SNAPSHOT_ID = 2;
-const SNAPSHOT_VERSION = 8;
+const SNAPSHOT_VERSION = 9;
 const reportDateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" });
 
 async function readSnapshot() {
@@ -267,10 +267,22 @@ async function resolveB2cWorkspace(workspaceId: string, token: string) {
     list = { id: scored[0].id, name: scored[0].name || "B2C Master" };
   }
 
+  const configuredAllProjectListId = process.env.CLICKUP_ALL_PROJECT_LIST_ID || process.env.CLICKUP_ALL_PROJECTS_LIST_ID;
+  let allProjectList = selectDevAllProjectList(candidates);
+  if (configuredAllProjectListId) {
+    const discovered = candidates.find(candidate => candidate.id === configuredAllProjectListId);
+    if (discovered) {
+      allProjectList = discovered;
+    } else {
+      const configured = await clickUpJson<ClickUpList>(`/list/${encodeURIComponent(configuredAllProjectListId)}`, token);
+      allProjectList = configured.id ? { id: configured.id, name: safeText(configured.name, "All Projects"), space: "", folder: "", startDate: dateToIso(configured.start_date), endDate: dateToIso(configured.due_date), taskCount: Number(configured.task_count) || 0 } : null;
+    }
+  }
+
   const reportStart = `${DEV_REPORT_START_YEAR}-01-01`;
   const reportEnd = `${DEV_REPORT_END_YEAR}-12-31`;
   const sprintCandidates = candidates
-    .filter(candidate => candidate.id !== list.id && isSprintList(candidate))
+    .filter(candidate => candidate.id !== list.id && candidate.id !== allProjectList?.id && isSprintList(candidate))
     .filter(candidate => !candidate.startDate || !candidate.endDate || (candidate.startDate <= reportEnd && candidate.endDate >= reportStart));
   const explicitB2cSprintLists = sprintCandidates.filter(candidate => {
     const hierarchy = normalize(`${candidate.space} ${candidate.folder} ${candidate.name}`);
@@ -278,7 +290,7 @@ async function resolveB2cWorkspace(workspaceId: string, token: string) {
   });
   const sprintLists = (explicitB2cSprintLists.length ? explicitB2cSprintLists : sprintCandidates)
     .sort((a, b) => (b.startDate || b.endDate || "").localeCompare(a.startDate || a.endDate || "") || b.name.localeCompare(a.name, undefined, { numeric: true }));
-  return { list, sprintLists, partial };
+  return { list, allProjectList: allProjectList ? { id: allProjectList.id, name: allProjectList.name || "All Projects" } : null, sprintLists, partial };
 }
 
 async function getListTasks(listId: string, token: string, options: { includeTiml?: boolean; pageLimit?: number; batchSize?: number } = {}) {
@@ -286,6 +298,39 @@ async function getListTasks(listId: string, token: string, options: { includeTim
       const query = new URLSearchParams({ archived: "false", include_closed: "true", subtasks: "true", include_timl: options.includeTiml ? "true" : "false", page: String(page), order_by: "due_date", reverse: "true" });
       return clickUpJson<{ tasks?: ClickUpTask[]; last_page?: boolean }>(`/list/${encodeURIComponent(listId)}/task?${query}`, token);
   }, options);
+}
+
+function mapClickUpTasks(rawTasks: ClickUpTask[], customTaskTypes: Map<string, string>, previousSprintByTaskId: Map<string, { sprint: string; sprintIds: string[] }>) {
+  const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
+  const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
+  return rawTasks.filter(task => task.id).map((task): DevTask => {
+    const fields = customFieldMap(task.custom_fields);
+    const statusName = safeText(task.status?.status, "Тодорхойгүй");
+    const parentTask = task.parent ? rawTasksById.get(task.parent) : undefined;
+    const previousSprint = previousSprintByTaskId.get(safeText(task.id));
+    return {
+      id: safeText(task.id),
+      name: safeText(task.name, "Нэргүй ажил"),
+      parentId: safeText(task.parent) || null,
+      parentName: task.parent ? namesById.get(task.parent) || "" : "",
+      url: safeText(task.url),
+      status: { name: statusName, color: safeColor(task.status?.color, "#64748b"), type: safeText(task.status?.type), done: normalize(task.status?.type) === "closed" || /complete|closed|done|дууссан/.test(normalize(statusName)) },
+      assignees: mapAssignees(task.assignees),
+      tags: (task.tags || []).map(tag => safeText(tag.name)).filter(Boolean),
+      type: resolveTaskType(task, fields, parentTask, customTaskTypes),
+      sprint: previousSprint?.sprint || findField(fields, [/sprint/, /спринт/]),
+      sprintIds: previousSprint?.sprintIds || [],
+      position: findField(fields, [/position/, /role/, /албан тушаал/]),
+      project: findField(fields, [/project/, /website/, /domain/, /site/, /төсөл/, /вэб/]),
+      dueDate: dateToIso(task.due_date),
+      startDate: dateToIso(task.start_date),
+      createdDate: dateToIso(task.date_created),
+      updatedAt: timestampToIso(task.date_updated),
+      closedDate: dateToIso(task.date_closed),
+      timeEstimateMs: typeof task.time_estimate === "number" ? task.time_estimate : null,
+      customFields: fields,
+    };
+  });
 }
 
 async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], token: string) {
@@ -311,7 +356,8 @@ export async function GET(request: Request) {
   try {
     const refresh = new URL(request.url).searchParams.get("refresh") || "";
     const snapshot = await readSnapshot();
-    if (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION) return Response.json({ ...snapshot, partial: Boolean(snapshot.partial || snapshot.sprintNeedsFullRefresh || !Array.isArray(snapshot.sprints) || !snapshot.sprints.length), cacheSource: "snapshot" }, { headers: { "Cache-Control": "private, no-store" } });
+    const hasAllProjectSnapshot = Boolean(snapshot?.allProjectList && Array.isArray(snapshot.allProjectTasks));
+    if (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION && hasAllProjectSnapshot) return Response.json({ ...snapshot, partial: Boolean(snapshot.partial || snapshot.sprintNeedsFullRefresh || !Array.isArray(snapshot.sprints) || !snapshot.sprints.length), cacheSource: "snapshot" }, { headers: { "Cache-Control": "private, no-store" } });
 
     const token = process.env.CLICKUP_API_TOKEN;
     const workspaceId = process.env.CLICKUP_WORKSPACE_ID;
@@ -321,7 +367,7 @@ export async function GET(request: Request) {
       return Response.json({ error: "ClickUp API тохиргоо дутуу байна." }, { status: 503 });
     }
 
-    const needsTaskSchemaRefresh = !refresh && snapshot && snapshot.schemaVersion !== SNAPSHOT_VERSION;
+    const needsTaskSchemaRefresh = !refresh && snapshot && (snapshot.schemaVersion !== SNAPSHOT_VERSION || !hasAllProjectSnapshot);
     const refreshSprints = refresh === "sprints" || refresh === "recent-sprints" || (!refresh && snapshot && Array.isArray(snapshot.tasks) && !needsTaskSchemaRefresh);
     if (refreshSprints && snapshot && Array.isArray(snapshot.tasks)) {
       const discovery = await resolveB2cWorkspace(workspaceId, token);
@@ -334,12 +380,19 @@ export async function GET(request: Request) {
       const snapshotTasks = scopeDevReportTasks(snapshot.tasks as DevTask[]);
       const previousSprints = Array.isArray(snapshot.sprints) ? snapshot.sprints as DevSprint[] : [];
       const { tasks, sprints, state } = mergeSprintMemberships(snapshotTasks, previousSprints, rawSprintAssignments, previousState);
+      const sprintMembershipByTaskId = new Map(tasks.map(task => [task.id, { sprint: task.sprint, sprintIds: task.sprintIds }]));
+      const allProjectTasks = (Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : []).map(task => {
+        const membership = sprintMembershipByTaskId.get(task.id);
+        return membership ? { ...task, sprint: membership.sprint, sprintIds: membership.sprintIds } : task;
+      });
       const taskPartial = snapshot.taskPartial === true;
       const sprintSyncErrors = Object.values(state).filter(item => item.failed).length;
       const payload = {
         ...snapshot,
         schemaVersion: SNAPSHOT_VERSION,
         list: discovery.list,
+        allProjectList: discovery.allProjectList || snapshot.allProjectList || null,
+        allProjectTasks,
         reportYear: DEV_REPORT_END_YEAR,
         reportYears: [DEV_REPORT_START_YEAR, DEV_REPORT_END_YEAR],
         tasks,
@@ -353,6 +406,7 @@ export async function GET(request: Request) {
         sprintDiscoveryCount: discovery.sprintLists.length,
         partial: taskPartial || discovery.partial || Object.values(state).some(item => item.partial || item.failed),
         taskSyncedAt: snapshot.taskSyncedAt || snapshot.syncedAt,
+        allProjectTaskSyncedAt: snapshot.allProjectTaskSyncedAt || snapshot.taskSyncedAt || snapshot.syncedAt,
         sprintSyncedAt: new Date().toISOString(),
         syncedAt: snapshot.taskSyncedAt as string || snapshot.syncedAt,
       } satisfies ClickUpSnapshot;
@@ -360,63 +414,46 @@ export async function GET(request: Request) {
       return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
     }
 
-    const storedList = snapshot?.list && typeof snapshot.list === "object" ? snapshot.list as { id?: string; name?: string } : null;
-    const [workspaceData, list, customTaskTypeData] = await Promise.all([
+    const [workspaceData, discovery, customTaskTypeData] = await Promise.all([
       clickUpJson<{ teams?: Array<{ id?: string; name?: string; color?: string; members?: unknown[] }> }>("/team", token),
-      storedList?.id ? Promise.resolve({ id: storedList.id, name: safeText(storedList.name, "B2C Master") }) : resolveB2cWorkspace(workspaceId, token).then(result => result.list),
+      resolveB2cWorkspace(workspaceId, token),
       clickUpJson<{ custom_items?: ClickUpCustomTaskType[] }>(`/team/${encodeURIComponent(workspaceId)}/custom_item`, token).catch((error) => {
         if (Array.isArray(snapshot?.customTaskTypeDefinitions)) return { custom_items: snapshot.customTaskTypeDefinitions as ClickUpCustomTaskType[] };
         throw error;
       }),
     ]);
-    const taskResult = await getListTasks(list.id, token, { includeTiml: true });
+    const list = discovery.list;
+    const [taskResult, allProjectTaskResult] = await Promise.all([
+      getListTasks(list.id, token, { includeTiml: true }),
+      discovery.allProjectList ? getListTasks(discovery.allProjectList.id, token, { includeTiml: true }) : Promise.resolve(null),
+    ]);
     const rawTasks = Array.from(new Map(taskResult.tasks.filter(task => task.id).map(task => [task.id, task])).values());
-    const previousTasks = snapshot && Array.isArray(snapshot.tasks) ? snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : [];
+    const rawAllProjectTasks = Array.from(new Map((allProjectTaskResult?.tasks || []).filter(task => task.id).map(task => [task.id, task])).values());
+    const previousTasks = [
+      ...(snapshot && Array.isArray(snapshot.tasks) ? snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : []),
+      ...(snapshot && Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : []),
+    ];
     const previousSprintByTaskId = new Map(previousTasks.map(task => [safeText(task.id), { sprint: safeText(task.sprint), sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }]));
     const sprints = snapshot && Array.isArray(snapshot.sprints) ? snapshot.sprints : [];
-    const sprintIdsByTaskId = new Map<string, string[]>();
-    for (const task of previousTasks) sprintIdsByTaskId.set(safeText(task.id), Array.isArray(task.sprintIds) ? task.sprintIds : []);
-    const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
-    const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
     const customTaskTypes = new Map<string, string>(
       (customTaskTypeData.custom_items || [])
         .map((item): [string, string] => [String(item.id), safeText(item.name)])
         .filter(([, name]) => Boolean(name)),
     );
-    const mappedTasks: DevTask[] = rawTasks.filter(task => task.id).map(task => {
-      const fields = customFieldMap(task.custom_fields);
-      const statusName = safeText(task.status?.status, "Тодорхойгүй");
-      const parentTask = task.parent ? rawTasksById.get(task.parent) : undefined;
-      const sprintIds = sprintIdsByTaskId.get(safeText(task.id)) || [];
-      return {
-        id: safeText(task.id),
-        name: safeText(task.name, "Нэргүй ажил"),
-        parentId: safeText(task.parent) || null,
-        parentName: task.parent ? namesById.get(task.parent) || "" : "",
-        url: safeText(task.url),
-        status: { name: statusName, color: safeColor(task.status?.color, "#64748b"), type: safeText(task.status?.type), done: normalize(task.status?.type) === "closed" || /complete|closed|done|дууссан/.test(normalize(statusName)) },
-        assignees: mapAssignees(task.assignees),
-        tags: (task.tags || []).map(tag => safeText(tag.name)).filter(Boolean),
-        type: resolveTaskType(task, fields, parentTask, customTaskTypes),
-        sprint: previousSprintByTaskId.get(safeText(task.id))?.sprint || findField(fields, [/sprint/, /спринт/]),
-        sprintIds,
-        position: findField(fields, [/position/, /role/, /албан тушаал/]),
-        project: findField(fields, [/project/, /website/, /domain/, /site/, /төсөл/, /вэб/]),
-        dueDate: dateToIso(task.due_date),
-        startDate: dateToIso(task.start_date),
-        createdDate: dateToIso(task.date_created),
-        updatedAt: timestampToIso(task.date_updated),
-        closedDate: dateToIso(task.date_closed),
-        timeEstimateMs: typeof task.time_estimate === "number" ? task.time_estimate : null,
-        customFields: fields,
-      };
-    });
+    const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId);
+    const mappedAllProjectTasks = mapClickUpTasks(rawAllProjectTasks, customTaskTypes, previousSprintByTaskId);
     const tasks = scopeDevReportTasks(mergeClickUpTaskSnapshot(Array.isArray(snapshot?.tasks) ? snapshot.tasks as DevTask[] : [], mappedTasks, taskResult.partial));
+    const allProjectTasks = mergeClickUpTaskSnapshot(Array.isArray(snapshot?.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [], mappedAllProjectTasks, allProjectTaskResult?.partial === true);
+    const allProjectPartial = discovery.allProjectList ? allProjectTaskResult?.partial === true : true;
     const workspace = workspaceData.teams?.find(team => team.id === workspaceId) || workspaceData.teams?.[0];
+    const syncedAt = new Date().toISOString();
     const payload = {
       schemaVersion: SNAPSHOT_VERSION,
       workspace: { id: workspaceId, name: safeText(workspace?.name, "ClickUp Workspace"), color: safeColor(workspace?.color), memberCount: Array.isArray(workspace?.members) ? workspace.members.length : 0 },
       list,
+      allProjectList: discovery.allProjectList,
+      allProjectTasks,
+      allProjectPartial,
       reportYear: DEV_REPORT_END_YEAR,
       reportYears: [DEV_REPORT_START_YEAR, DEV_REPORT_END_YEAR],
       tasks,
@@ -426,22 +463,24 @@ export async function GET(request: Request) {
       sprintNeedsFullRefresh: snapshot?.sprintNeedsFullRefresh === true || !snapshot?.masterIncludesTiml || tasks.some(task => !previousSprintByTaskId.has(task.id)),
       masterIncludesTiml: true,
       masterFetchedTaskCount: rawTasks.length,
+      allProjectFetchedTaskCount: rawAllProjectTasks.length,
       taskPartial: taskResult.partial,
       sprintSyncErrors: Number(snapshot?.sprintSyncErrors) || 0,
-      partial: taskResult.partial || !sprints.length || (snapshot?.partial === true && snapshot?.taskPartial !== true),
+      partial: taskResult.partial || allProjectPartial || !sprints.length || (snapshot?.partial === true && snapshot?.taskPartial !== true),
       availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
       availableTaskTypes: Array.from(new Set(["Task", "Milestone", ...customTaskTypes.values()])).sort(),
       customTaskTypeDefinitions: customTaskTypeData.custom_items || [],
-      taskSyncedAt: new Date().toISOString(),
+      taskSyncedAt: syncedAt,
+      allProjectTaskSyncedAt: discovery.allProjectList ? syncedAt : snapshot?.allProjectTaskSyncedAt,
       sprintSyncedAt: snapshot?.sprintSyncedAt || (sprints.length ? snapshot?.syncedAt : null),
-      syncedAt: new Date().toISOString(),
+      syncedAt,
     } satisfies ClickUpSnapshot;
 
     await saveSnapshot(payload);
     return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Dev ClickUp refresh failed", error);
-    const message = error instanceof Error && error.message === "B2C Master list олдсонгүй." ? error.message : "B2C Master list-ийн ClickUp мэдээллийг татаж чадсангүй.";
+    const message = error instanceof Error && error.message === "B2C Master list олдсонгүй." ? error.message : "ClickUp-ийн Dev мэдээллийг татаж чадсангүй.";
     return Response.json({ error: message }, { status: 502 });
   }
 }

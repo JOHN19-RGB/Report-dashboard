@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { buildSprintPeriods, filterDevTasksByMonthKeys, formatSprintDateRange, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, previousSprintPeriods, selectDevTasks, teamCompletionAverage } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { buildSprintPeriods, DEV_PROJECT_STATUSES, devProjectStatus, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, selectDevAllProjectList, selectDevTasks, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -75,6 +75,17 @@ test("Dev period multi-select keeps exact year-month connections", () => {
   assert.deepEqual(monthlyTaskPerformance(selected, "2025-01-01", "2026-12-31", selectedKeys).map(month => month.key), selectedKeys);
 });
 
+test("Dev counts each parent task once and never counts its subtasks", () => {
+  const tasks = [
+    { id: "parent-one", parentId: null },
+    { id: "child-one", parentId: "parent-one" },
+    { id: "child-two", parentId: "parent-one" },
+    { id: "parent-two", parentId: null },
+    { id: "child-three", parentId: "parent-two" },
+  ];
+  assert.deepEqual(topLevelDevTasks(tasks).map(task => task.id), ["parent-one", "parent-two"]);
+});
+
 test("productivity pie shares use the exact Total Tasks column, including multiple assignees", () => {
   const person = (id, name) => ({ id, name, avatar: null, color: "" });
   const tasks = [
@@ -91,6 +102,46 @@ test("productivity pie shares use the exact Total Tasks column, including multip
   assert.deepEqual(memberTaskDistribution([{ ...team[0], totalTasks: 0 }]).members.map(member => member.share), [0]);
   assert.deepEqual(memberTaskDistribution([]), { total: 0, members: [] });
   assert.equal(memberTaskDistribution([team[0]]).members[0].share, 100);
+});
+
+test("All Project assigns every ClickUp task to one of the five requested status lanes", () => {
+  const task = (id, name, type, done = false, parentName = "Store.mn | Development") => ({
+    id, name: id, project: "", parentName, status: { name, type, done }, updatedAt: null,
+    dueDate: "2026-01-01", closedDate: null, startDate: null, createdDate: null,
+  });
+  const tasks = [
+    task("todo", "to do", "open"),
+    task("other-open", "improvements", "open"),
+    task("progress", "in progress", "custom"),
+    task("qa", "qa test", "done"),
+    task("deploy", "need to deploy", "done"),
+    task("hold", "hold", "unstarted"),
+    task("complete", "complete", "closed", true),
+    task("review", "review", "done"),
+  ];
+  assert.deepEqual(tasks.map(devProjectStatus), ["todo", "todo", "inProgress", "qa", "qa", "hold", "done", "qa"]);
+  const [project] = groupDevProjectTasks(tasks);
+  assert.equal(project.name, "Store.mn");
+  assert.equal(project.tasks.length, tasks.length);
+  assert.equal(Object.values(project.statuses).reduce((sum, count) => sum + count, 0), tasks.length);
+  assert.deepEqual(Object.keys(project.statuses), DEV_PROJECT_STATUSES.map(status => status.key));
+});
+
+test("All Project source selects the named ClickUp list and never falls back to Master", () => {
+  const lists = [
+    { id: "master", name: "Master list - B2C", space: "Dev", folder: "B2C" },
+    { id: "sprint", name: "Sprint 53", space: "Dev", folder: "B2C Sprints" },
+    { id: "projects", name: "All Projects", space: "Dev", folder: "Project" },
+  ];
+  assert.equal(selectDevAllProjectList(lists)?.id, "projects");
+  assert.equal(selectDevAllProjectList(lists.slice(0, 2)), null);
+});
+
+test("New Project Plan uses only top-level To do tasks from the All Projects source", () => {
+  const task = (id, status, parentId = null) => ({ id, parentId, status: { name: status, type: "open", done: false } });
+  const allProjectTasks = [task("new-project", "to do"), task("new-project-child", "to do", "new-project"), task("active-project", "in progress")];
+  const planningTasks = topLevelDevTasks(allProjectTasks).filter(item => devProjectStatus(item) === "todo");
+  assert.deepEqual(planningTasks.map(item => item.id), ["new-project"]);
 });
 
 test("multiple sprint choices use a unique union and do not use task dates as membership", () => {
@@ -195,6 +246,22 @@ test("metric comparisons handle increases, decreases, and zero baselines without
   assert.equal(metricPercentChange(0, 20), -100);
   assert.equal(metricPercentChange(20, 0), null);
   assert.equal(metricPercentChange(0, 0), 0);
+});
+
+test("All Project columns cycle through first order, reverse order, and default", () => {
+  let updated = nextDevProjectSort(null, "updated");
+  assert.deepEqual(updated, { key: "updated", direction: "desc" });
+  updated = nextDevProjectSort(updated, "updated");
+  assert.deepEqual(updated, { key: "updated", direction: "asc" });
+  assert.equal(nextDevProjectSort(updated, "updated"), null);
+
+  let project = nextDevProjectSort(null, "project");
+  assert.deepEqual(project, { key: "project", direction: "asc" });
+  project = nextDevProjectSort(project, "project");
+  assert.deepEqual(project, { key: "project", direction: "desc" });
+  assert.equal(nextDevProjectSort(project, "project"), null);
+
+  assert.deepEqual(nextDevProjectSort({ key: "tasks", direction: "asc" }, "completion"), { key: "completion", direction: "desc" });
 });
 
 test("current and previous sprint cohorts keep the same search/type filters but ignore task-date boundaries", () => {

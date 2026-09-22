@@ -37,6 +37,7 @@ export function buildTeamComparison(cx: ReportData, dev: { tasks: DevTask[]; tas
     }
   }
   for (const task of dev.tasks) {
+    if (task.parentId) continue;
     const type = comparisonTaskType(task.type);
     if (task.id && !seenDev.has(task.id) && task.dueDate?.slice(0, 7) === monthKey && task.status.done && type) {
       seenDev.add(task.id);

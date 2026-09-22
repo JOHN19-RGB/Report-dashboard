@@ -136,6 +136,10 @@ export type DevReportData = {
   schemaVersion?: number;
   workspace: { id: string; name: string; color: string; memberCount: number };
   list: { id: string; name: string };
+  allProjectList?: { id: string; name: string } | null;
+  allProjectTasks?: DevTask[];
+  allProjectPartial?: boolean;
+  allProjectTaskSyncedAt?: string;
   reportYear: number;
   reportYears?: number[];
   tasks: DevTask[];
@@ -196,6 +200,82 @@ export type DevReportFilters = {
   sprintIds: string[];
 };
 
+export type DevProjectStatusKey = "todo" | "inProgress" | "qa" | "hold" | "done";
+export type DevProjectSortKey = "project" | "status" | "tasks" | "completion" | "updated";
+export type DevProjectSort = { key: DevProjectSortKey; direction: "asc" | "desc" } | null;
+
+type DevListCandidate = { id: string; name: string; space?: string; folder?: string };
+
+/** Select the explicitly named All Project(s) list; never substitute the B2C master list. */
+export function selectDevAllProjectList<Candidate extends DevListCandidate>(candidates: Candidate[]): Candidate | null {
+  const ranked = candidates.map(candidate => {
+    const name = candidate.name.trim().toLocaleLowerCase("en-US").replace(/[._-]+/g, " ").replace(/\s+/g, " ");
+    const hierarchy = `${candidate.space || ""} ${candidate.folder || ""} ${candidate.name}`.trim().toLocaleLowerCase("en-US").replace(/[._-]+/g, " ").replace(/\s+/g, " ");
+    const exact = /^(?:dev\s+)?all\s+projects?$/.test(name) || /^(?:бүх|нийт)\s+төслүүд?$/.test(name);
+    const named = /\ball\s+projects?\b/.test(name) || /(?:бүх|нийт)\s+төслүүд?/.test(name);
+    const score = (exact ? 200 : 0) + (named ? 100 : 0) + (/\bdev\b|development|b2c/.test(hierarchy) ? 12 : 0);
+    return { candidate, score };
+  }).sort((a, b) => b.score - a.score || a.candidate.name.localeCompare(b.candidate.name, "mn"));
+  return ranked[0]?.score >= 100 ? ranked[0].candidate : null;
+}
+
+export const DEV_PROJECT_STATUSES: Array<{ key: DevProjectStatusKey; label: string; color: string }> = [
+  { key: "todo", label: "To do", color: "#94a3b8" },
+  { key: "inProgress", label: "In Progress", color: "#6d9eff" },
+  { key: "qa", label: "QA test", color: "#8b79ff" },
+  { key: "hold", label: "Hold", color: "#f3a21b" },
+  { key: "done", label: "Done", color: "#2dbb7f" },
+];
+
+const DEV_PROJECT_SORT_FIRST_DIRECTION: Record<DevProjectSortKey, "asc" | "desc"> = { project: "asc", status: "asc", tasks: "desc", completion: "desc", updated: "desc" };
+
+/** Column sorting cycles first order → reverse order → the original ClickUp/default order. */
+export function nextDevProjectSort(current: DevProjectSort, key: DevProjectSortKey): DevProjectSort {
+  const firstDirection = DEV_PROJECT_SORT_FIRST_DIRECTION[key];
+  if (!current || current.key !== key) return { key, direction: firstDirection };
+  if (current.direction === firstDirection) return { key, direction: firstDirection === "asc" ? "desc" : "asc" };
+  return null;
+}
+
+/** Collapse ClickUp's workspace-specific statuses into the five All Project lanes. */
+export function devProjectStatus(task: DevTask): DevProjectStatusKey {
+  const status = task.status.name.trim().toLocaleLowerCase("en-US").replace(/[._-]+/g, " ").replace(/\s+/g, " ");
+  const type = task.status.type.trim().toLocaleLowerCase("en-US");
+  if (/\bqa\s*test\b|quality assurance|\breview\b|need to deploy/.test(status)) return "qa";
+  if (/\bhold\b|blocked|waiting|хүлээлт/.test(status)) return "hold";
+  if (/\bin\s*progress\b|^progress$|^doing$/.test(status)) return "inProgress";
+  if (task.status.done || type === "done" || type === "closed") return "done";
+  return "todo";
+}
+
+/** Prefer ClickUp's project field, then the parent/root task prefix used by B2C Master. */
+export function devProjectName(task: DevTask) {
+  const source = task.project.trim() || task.parentName.trim() || task.name.trim();
+  return source.split("|")[0].trim() || "Төсөл тодорхойгүй";
+}
+
+export function groupDevProjectTasks(tasks: DevTask[]) {
+  const groups = new Map<string, { name: string; tasks: DevTask[] }>();
+  for (const task of tasks) {
+    const name = devProjectName(task);
+    const key = name.toLocaleLowerCase("mn-MN").replace(/\s+/g, " ");
+    const group = groups.get(key) || { name, tasks: [] };
+    group.tasks.push(task);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values()).map(group => {
+    const statuses = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
+    for (const task of group.tasks) statuses[devProjectStatus(task)] += 1;
+    return {
+      ...group,
+      statuses,
+      done: statuses.done,
+      completion: group.tasks.length ? Math.round(statuses.done / group.tasks.length * 100) : 0,
+      latestDate: group.tasks.map(task => task.updatedAt || taskDate(task) || "").sort().at(-1) || "",
+    };
+  }).sort((a, b) => b.tasks.length - a.tasks.length || a.name.localeCompare(b.name, "mn"));
+}
+
 export type DevMemberProductivity = {
   id: string;
   name: string;
@@ -224,6 +304,11 @@ export function filterDevTasksByMonthKeys(tasks: DevTask[], selectedMonthKeys: s
     const date = taskDate(task);
     return Boolean(date && allowedMonths.has(date.slice(0, 7)));
   });
+}
+
+/** Count ClickUp parent tasks only; any number of subtasks still represents one task. */
+export function topLevelDevTasks(tasks: DevTask[]) {
+  return tasks.filter(task => !task.parentId);
 }
 
 export function scopeDevReportTasks(tasks: DevTask[]) {
