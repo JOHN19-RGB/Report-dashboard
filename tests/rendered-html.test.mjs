@@ -96,7 +96,8 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /CX &amp; Dev · Bug \/ IMP дүгнэлт/);
   assert.match(masterHtml, /CX Dev дүгнэлтийн сар/);
   assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);
-  assert.match(masterHtml, /хамгийн сүүлийн 5 мөр харагдана/);
+  assert.match(masterHtml, /Хамгийн сүүлийн 5 хүсэлт харагдана/);
+  assert.match(masterHtml, /class="dev-change-count"/);
   assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
   assert.match(projectsHtml, /Одоогоор өгөгдөл алга/);
   assert.doesNotMatch(masterHtml, /class="kpi-grid|clickup-page-panel/);
@@ -139,7 +140,8 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.doesNotMatch(page, /GROQ_API_KEY|CLICKUP_API_TOKEN|api\.groq\.com|pk_[A-Za-z0-9_]+/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);
   assert.match(clickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
-  assert.match(clickUpRoute, /api\.clickup\.com\/api\/v2/);
+  assert.match(clickUpRoute, /requestClickUp/);
+  assert.match(clickUpRoute, /readClickUpTaskPages/);
   assert.match(devClickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
   assert.match(devClickUpRoute, /B2C Master/);
   assert.match(devClickUpRoute, /include_timl/);
@@ -148,7 +150,8 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(devClickUpRoute, /custom_item_id/);
   assert.match(devClickUpRoute, /\/custom_item/);
   assert.match(devClickUpRoute, /task\.tags/);
-  assert.match(devDashboard, /fetch\(refresh \? "\/api\/clickup\/dev\?refresh=tasks" : "\/api\/clickup\/dev"/);
+  assert.match(devDashboard, /clickUpReportLoader\.load\("\/api\/clickup\/dev"/);
+  assert.match(devDashboard, /refreshPath: "\/api\/clickup\/dev\?refresh=tasks"/);
   assert.match(devDashboard, /\/api\/clickup\/dev\?refresh=recent-sprints/);
   assert.match(devDashboard, /sprintId/);
   assert.match(devReport, /DEV_REPORT_START_YEAR = 2025/);

@@ -157,6 +157,9 @@ test("single and multiple period comparisons use equally sized, non-overlapping 
   const multi = previousSprintPeriods(segments, ["segment-19", "segment-21"]);
   assert.equal(multi.available, true);
   assert.deepEqual(multi.periods.map(period => period.id), ["segment-17", "segment-15"]);
+  const nonSequential = previousSprintPeriods(segments, ["segment-21", "segment-15"]);
+  assert.equal(nonSequential.available, true);
+  assert.deepEqual(nonSequential.periods.map(period => period.id), ["segment-19", "segment-13"]);
   const singles = buildSprintPeriods(lists, "sprint");
   assert.deepEqual(previousSprintPeriods(singles, ["sprint-15"]).periods.map(period => period.id), ["sprint-14"]);
   assert.deepEqual(previousSprintPeriods(singles, ["sprint-15", "sprint-16"]).periods.map(period => period.id), ["sprint-14", "sprint-13"]);

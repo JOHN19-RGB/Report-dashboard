@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import TeamSidebar, { CxReportNav } from "./components/team-sidebar";
 import ReportDownload from "./components/report-download";
+import { clickUpReportLoader } from "./lib/clickup-report-loader";
 import { useEffect, useMemo, useState } from "react";
 
 type MonthKey = string;
@@ -383,18 +384,26 @@ export default function Home() {
     let cancelled = false;
     async function loadClickUp() {
       try {
-        const response = await fetch("/api/clickup", { cache: "no-store" });
-        const result = (await response.json()) as ClickUpPayload & { error?: string };
-        if (!response.ok || !result.workspace || !Array.isArray(result.people) || !Array.isArray(result.parents) || !Array.isArray(result.subtasks)) {
-          throw new Error(result.error || "ClickUp өгөгдөл татаж чадсангүй.");
-        }
-        if (cancelled) return;
-        setClickUpData(result);
-        const latestMonthKey = result.subtasks.reduce((latest, task) => {
-          const key = monthKeyFromDate(task.dueDate);
-          return key > latest ? key : latest;
-        }, "01");
-        setSelectedMonthKey(latestMonthKey);
+        let firstResult = true;
+        await clickUpReportLoader.load("/api/clickup", {
+          refreshPath: "/api/clickup?refresh=1",
+          validate: (value): value is ClickUpPayload => {
+            const result = value as ClickUpPayload | null;
+            return Boolean(result?.workspace && typeof result.syncedAt === "string" && Array.isArray(result.people) && Array.isArray(result.parents) && Array.isArray(result.subtasks));
+          },
+          onData: result => {
+            if (cancelled) return;
+            setClickUpData(result);
+            if (firstResult) {
+              const latestMonthKey = result.subtasks.reduce((latest, task) => {
+                const key = monthKeyFromDate(task.dueDate);
+                return key > latest ? key : latest;
+              }, "01");
+              setSelectedMonthKey(latestMonthKey);
+              firstResult = false;
+            }
+          },
+        });
       } catch (error) {
         if (!cancelled) setClickUpError(error instanceof Error ? error.message : "ClickUp өгөгдөл татаж чадсангүй.");
       } finally {

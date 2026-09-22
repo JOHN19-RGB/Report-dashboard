@@ -1,5 +1,9 @@
 import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../db/clickup-snapshot";
 import { proxyClickUpForLocalDevelopment } from "../../lib/clickup-local-proxy";
+import { requestClickUp } from "../../lib/clickup-request";
+import { readClickUpTaskPages } from "../../lib/clickup-pagination";
+
+export const maxDuration = 300;
 
 type ClickUpUser = {
   id?: number;
@@ -83,18 +87,14 @@ function resolveType(task: ClickUpTask) {
 }
 
 async function clickUpFetch(path: string, token: string) {
-  return fetch(`https://api.clickup.com/api/v2${path}`, {
-    headers: { Authorization: token, Accept: "application/json" },
-    cache: "no-store",
-  });
+  return requestClickUp(path, token);
 }
 
 async function getCompletedSubtasks(parentId: string, workspaceId: string, token: string) {
-  const tasks: ClickUpTask[] = [];
   const reportStart = Date.UTC(REPORT_YEAR, 0, 1);
   const reportEnd = Date.UTC(REPORT_YEAR + 1, 0, 1);
 
-  for (let page = 0; page < 25; page += 1) {
+  return readClickUpTaskPages<ClickUpTask>(async page => {
     const query = new URLSearchParams({
       page: String(page),
       order_by: "due_date",
@@ -111,13 +111,8 @@ async function getCompletedSubtasks(parentId: string, workspaceId: string, token
     const response = await clickUpFetch(`/team/${encodeURIComponent(workspaceId)}/task?${query}`, token);
     if (!response.ok) throw new Error(`ClickUp subtask page failed: ${response.status}`);
 
-    const data = (await response.json()) as { tasks?: ClickUpTask[]; last_page?: boolean };
-    const pageTasks = data.tasks || [];
-    tasks.push(...pageTasks);
-    if (data.last_page === true || pageTasks.length < 100) break;
-  }
-
-  return tasks;
+    return response.json() as Promise<{ tasks?: ClickUpTask[]; last_page?: boolean }>;
+  }, { batchSize: 1 });
 }
 
 export async function GET(request: Request) {
@@ -134,7 +129,7 @@ export async function GET(request: Request) {
 
     const token = process.env.CLICKUP_API_TOKEN;
     if (!token) {
-      const proxyResponse = await proxyClickUpForLocalDevelopment(request, "/api/clickup");
+      const proxyResponse = await proxyClickUpForLocalDevelopment(request, "/api/clickup", SNAPSHOT_ID);
       if (proxyResponse) return proxyResponse;
       return Response.json({ error: "ClickUp API тохиргоо хийгдээгүй байна." }, { status: 503 });
     }
@@ -146,16 +141,20 @@ export async function GET(request: Request) {
     });
     parentQuery.append("statuses[]", "daily task");
 
-    const [teamsResponse, parentsResponse] = await Promise.all([
+    const [teamsResponse, parentPageResult] = await Promise.all([
       clickUpFetch("/team", token),
-      clickUpFetch(`/list/${CX_DEV_TEAM_LIST_ID}/task?${parentQuery}`, token),
+      readClickUpTaskPages<ClickUpTask>(async page => {
+        const query = new URLSearchParams(parentQuery);
+        query.set("page", String(page));
+        query.set("include_timl", "true");
+        const response = await clickUpFetch(`/list/${CX_DEV_TEAM_LIST_ID}/task?${query}`, token);
+        if (!response.ok) throw new Error(`ClickUp parent page failed: ${response.status}`);
+        return response.json() as Promise<{ tasks?: ClickUpTask[]; last_page?: boolean }>;
+      }),
     ]);
 
     if (!teamsResponse.ok) {
       return Response.json({ error: "ClickUp workspace мэдээлэл татаж чадсангүй." }, { status: teamsResponse.status });
-    }
-    if (!parentsResponse.ok) {
-      return Response.json({ error: "CX Dev.Team-ийн Daily Task мэдээлэл татаж чадсангүй." }, { status: parentsResponse.status });
     }
 
     const teamsData = (await teamsResponse.json()) as {
@@ -167,15 +166,16 @@ export async function GET(request: Request) {
       return Response.json({ error: "Хандах боломжтой ClickUp workspace олдсонгүй." }, { status: 404 });
     }
 
-    const parentsData = (await parentsResponse.json()) as { tasks?: ClickUpTask[] };
-    const dailyTaskParents = parentsData.tasks || [];
+    const dailyTaskParents = parentPageResult.tasks;
     const workspaceId = workspace.id;
-    const parentResults = await Promise.all(
-      dailyTaskParents.map(async (parent) => ({
-        parent,
-        subtasks: parent.id ? await getCompletedSubtasks(parent.id, workspaceId, token) : [],
-      })),
-    );
+    const parentResults: Array<{ parent: ClickUpTask; subtasks: ClickUpTask[]; partial: boolean }> = [];
+    // Bound concurrency so a large parent list does not flood ClickUp's per-token rate limit.
+    for (let start = 0; start < dailyTaskParents.length; start += 2) {
+      parentResults.push(...await Promise.all(dailyTaskParents.slice(start, start + 2).map(async parent => {
+        const result = await getCompletedSubtasks(parent.id!, workspaceId, token);
+        return { parent, subtasks: result.tasks, partial: result.partial };
+      })));
+    }
 
     const parents = parentResults.map(({ parent, subtasks }) => ({
       id: safeText(parent.id),
@@ -290,11 +290,12 @@ export async function GET(request: Request) {
         estimateMs,
       },
       dataQuality,
-      partial: false,
+      partial: parentPageResult.partial || parentResults.some(result => result.partial),
       syncedAt: new Date().toISOString(),
     } satisfies ClickUpSnapshot;
 
-    await saveSnapshot(payload);
+    // Never replace the last complete report with a truncated refresh.
+    if (!payload.partial) await saveSnapshot(payload);
 
     return Response.json({ ...payload, cacheSource: "clickup" }, {
       headers: {

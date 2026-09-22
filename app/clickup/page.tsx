@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import TeamSidebar, { CxReportNav } from "../components/team-sidebar";
+import { clickUpReportLoader } from "../lib/clickup-report-loader";
 import ReportDownload from "../components/report-download";
 import { filterTasks, totals, taskMonth, type ReportData } from "../lib/report";
 import { useEffect, useMemo, useState } from "react";
@@ -50,6 +51,7 @@ export default function ClickUpPage() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
+  const initialLoading = loading && !data;
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [personId, setPersonId] = useState("all");
@@ -78,14 +80,17 @@ export default function ClickUpPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(refresh ? "/api/clickup?refresh=1" : "/api/clickup", { cache: "no-store" });
-      const result = (await response.json()) as ReportData & { error?: string };
-      if (!response.ok || !Array.isArray(result.people) || !Array.isArray(result.parents) || !Array.isArray(result.subtasks)) {
-        throw new Error(result.error || "ClickUp өгөгдөл татаж чадсангүй.");
-      }
-      setData(result);
-      setPersonId(current => current === "all" || result.people.some(person => person.id === current) ? current : "all");
-      setPage(1);
+      await clickUpReportLoader.load("/api/clickup", {
+        refreshPath: "/api/clickup?refresh=1", refresh,
+        validate: (value): value is ReportData => {
+          const result = value as ReportData | null;
+          return Boolean(result && typeof result.syncedAt === "string" && Array.isArray(result.people) && Array.isArray(result.parents) && Array.isArray(result.subtasks));
+        },
+        onData: result => {
+          setData(result);
+          setPersonId(current => current === "all" || result.people.some(person => person.id === current) ? current : "all");
+        },
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "ClickUp өгөгдөл татаж чадсангүй.");
     } finally {
@@ -142,15 +147,15 @@ export default function ClickUpPage() {
             {(data || loading) && (
               <>
                 <div className="clickup-stats">
-                  <div><span className="clickup-stat-icon purple"><Layers3 size={17} /></span><span><small>2026 DAILY TASK PARENT</small><strong>{loading ? "—" : formatNumber(new Set(filteredTasks.map(task => task.parentId)).size)}</strong></span></div>
-                  <div><span className="clickup-stat-icon green"><CheckCircle2 size={17} /></span><span><small>COMPLETE SUBTASK</small><strong>{loading ? "—" : formatNumber(stats.tasks)}</strong></span></div>
-                  <div><span className="clickup-stat-icon orange"><ListChecks size={17} /></span><span><small>TYPE БҮРТГЭЛТЭЙ</small><strong>{loading ? "—" : formatNumber(filteredTasks.filter(task => task.type).length)}</strong></span></div>
-                  <div><span className="clickup-stat-icon blue"><Clock3 size={17} /></span><span><small>TIME ESTIMATE</small><strong>{loading ? "—" : formatDuration(stats.estimateMs)}</strong></span></div>
+                  <div><span className="clickup-stat-icon purple"><Layers3 size={17} /></span><span><small>2026 DAILY TASK PARENT</small><strong>{initialLoading ? "—" : formatNumber(new Set(filteredTasks.map(task => task.parentId)).size)}</strong></span></div>
+                  <div><span className="clickup-stat-icon green"><CheckCircle2 size={17} /></span><span><small>COMPLETE SUBTASK</small><strong>{initialLoading ? "—" : formatNumber(stats.tasks)}</strong></span></div>
+                  <div><span className="clickup-stat-icon orange"><ListChecks size={17} /></span><span><small>TYPE БҮРТГЭЛТЭЙ</small><strong>{initialLoading ? "—" : formatNumber(filteredTasks.filter(task => task.type).length)}</strong></span></div>
+                  <div><span className="clickup-stat-icon blue"><Clock3 size={17} /></span><span><small>TIME ESTIMATE</small><strong>{initialLoading ? "—" : formatDuration(stats.estimateMs)}</strong></span></div>
                 </div>
 
                 <div className="person-selector" role="group" aria-label="CX Dev.Team ажилтан сонгох">
-                  {!loading && <button className={`person-card ${personId === "all" ? "active" : ""}`} aria-pressed={personId === "all"} onClick={() => { setPersonId("all"); setPage(1); }}><span className="person-avatar all-people"><Users size={20} /></span><span className="person-card-copy"><small>CX DEV.TEAM</small><strong>Бүх ажилтан</strong></span><span className="person-task-count"><strong>{formatNumber(data?.subtasks.length || 0)}</strong><small>ажил</small></span></button>}
-                  {loading
+                  {!initialLoading && <button className={`person-card ${personId === "all" ? "active" : ""}`} aria-pressed={personId === "all"} onClick={() => { setPersonId("all"); setPage(1); }}><span className="person-avatar all-people"><Users size={20} /></span><span className="person-card-copy"><small>CX DEV.TEAM</small><strong>Бүх ажилтан</strong></span><span className="person-task-count"><strong>{formatNumber(data?.subtasks.length || 0)}</strong><small>ажил</small></span></button>}
+                  {initialLoading
                     ? Array.from({ length: 4 }).map((_, index) => <span className="person-card person-card-loading" key={index} />)
                     : (data?.people || []).map((person) => (
                         <button
@@ -189,7 +194,7 @@ export default function ClickUpPage() {
                   <table className="clickup-table">
                     <thead><tr><th scope="col">Ажил / ID</th><th scope="col">Assignment</th><th>Status</th><th>Type</th><th>Due date</th><th>Time estimate</th></tr></thead>
                     <tbody>
-                      {loading
+                      {initialLoading
                         ? Array.from({ length: 8 }).map((_, index) => <tr className="task-loading-row" key={index}><td colSpan={6}><span style={{ animationDelay: `${index * 80}ms` }} /></td></tr>)
                         : visibleTasks.map((task, index) => (
                             <tr className="subtask-row" key={task.id} style={{ animationDelay: `${Math.min(index, 12) * 24}ms` }}>

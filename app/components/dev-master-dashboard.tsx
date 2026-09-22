@@ -10,11 +10,13 @@ import {
   Clock3,
   ClipboardCheck,
   Download,
+  ExternalLink,
   Flag,
+  FolderKanban,
   Gauge,
   ListFilter,
   Menu,
-  MoreVertical,
+  Minus,
   RefreshCw,
   RotateCcw,
   Search,
@@ -22,10 +24,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TeamSidebar from "./team-sidebar";
 import DevTeamProductivity from "./dev-team-productivity";
 import DevTeamComparison from "./dev-team-comparison";
+import { clickUpReportLoader, needsClickUpSprintRefresh } from "../lib/clickup-report-loader";
 import {
   changeRequestRows,
   buildSprintPeriods,
@@ -35,6 +38,7 @@ import {
   DEV_REPORT_START_YEAR,
   DEV_TEAM_ASSIGNEES,
   devTeamPosition,
+  isDevReportData,
   filterDevTasksByMonthKeys,
   formatSprintDateRange,
   memberProductivity,
@@ -76,6 +80,10 @@ function formatSyncDate(value: string | undefined) {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("mn-MN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function personInitials(value: string) {
+  return value.split(/[\s-]+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join("") || "—";
 }
 
 function periodSelectionLabel(years: string[], months: string[]) {
@@ -142,6 +150,7 @@ export default function DevMasterDashboard() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [data, setData] = useState<DevReportData | null>(null);
   const [loading, setLoading] = useState(true);
+  const initialLoading = loading && !data;
   const [error, setError] = useState("");
   const [filters, setFilters] = useState<DevReportFilters>(DEFAULT_FILTERS);
   const [periodYears, setPeriodYears] = useState(REPORT_YEARS);
@@ -154,16 +163,10 @@ export default function DevMasterDashboard() {
   const loadData = useCallback(async (refresh: boolean) => {
     setLoading(true);
     setError("");
-    try {
-      const response = await fetch(refresh ? "/api/clickup/dev?refresh=tasks" : "/api/clickup/dev", { cache: "no-store" });
-      let payload = (await response.json()) as DevReportData & { error?: string };
-      if (!response.ok || !Array.isArray(payload.tasks)) throw new Error(payload.error || "B2C Master list-ийн мэдээлэл татагдсангүй.");
-      if (refresh) {
-        const sprintResponse = await fetch("/api/clickup/dev?refresh=recent-sprints", { cache: "no-store" });
-        const sprintPayload = (await sprintResponse.json()) as DevReportData & { error?: string };
-        if (sprintResponse.ok && Array.isArray(sprintPayload.tasks)) payload = sprintPayload;
-        else payload = { ...payload, partial: true, sprintSyncErrors: Math.max(1, payload.sprintSyncErrors || 0) };
-      }
+    let refreshSprints = refresh;
+    function applyPayload(payload: DevReportData) {
+      // Remember stale sprint data even when a task-only refresh updates syncedAt next.
+      refreshSprints ||= needsClickUpSprintRefresh(payload);
       const normalizedPayload: DevReportData = {
         ...payload,
         sprints: Array.isArray(payload.sprints) ? payload.sprints : [],
@@ -181,6 +184,22 @@ export default function DevMasterDashboard() {
           sprintIds,
         };
       });
+    }
+    try {
+      const payload = await clickUpReportLoader.load("/api/clickup/dev", {
+        refreshPath: "/api/clickup/dev?refresh=tasks", refresh,
+        validate: isDevReportData, onData: applyPayload,
+      });
+      if (refreshSprints || needsClickUpSprintRefresh(payload)) {
+        try {
+          const sprintPayload = await clickUpReportLoader.read("/api/clickup/dev?refresh=recent-sprints", isDevReportData);
+          clickUpReportLoader.remember("/api/clickup/dev", sprintPayload);
+          applyPayload(sprintPayload);
+        } catch (sprintError) {
+          applyPayload({ ...payload, partial: true, sprintSyncErrors: Math.max(1, payload.sprintSyncErrors || 0) });
+          throw sprintError;
+        }
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "B2C Master list-ийн мэдээлэл татагдсангүй.");
     } finally {
@@ -257,25 +276,32 @@ export default function DevMasterDashboard() {
     const result = previousSprintPeriods(periods, selectedPeriods.map(period => period.id));
     return data?.taskPartial ? { ...result, available: false, reason: "Master task-ийн өгөгдөл дутуу тул харьцуулах боломжгүй" } : result;
   }, [data?.taskPartial, periods, selectedPeriods]);
+  const showPreviousComparison = selectedPeriods.length === 1 && comparison.available;
+  const showPercentageComparison = selectedPeriods.length >= 2;
   const previousTasks = useMemo(() => data && comparison.available ? selectDevTasks(data, { ...filters, sprintIds: comparison.periods.flatMap(period => period.sprintIds) }) : [], [comparison, data, filters]);
   const previousMetrics = useMemo(() => reportMetrics(previousTasks), [previousTasks]);
   const previousAverage = useMemo(() => teamCompletionAverage(previousTasks), [previousTasks]);
   const completionRate = tasks.length ? metrics.doneTasks / tasks.length * 100 : 0;
   const previousCompletionRate = previousTasks.length ? previousMetrics.doneTasks / previousTasks.length * 100 : 0;
   const comparisonLabel = `өмнөх ${selectedPeriods.length > 1 ? `${selectedPeriods.length} ` : ""}${periodMode === "segment" ? "segment" : "sprint"}-ээс`;
-  const previousLabel = comparison.periods.map(period => period.label).join(", ");
   const chartItems = useMemo(() => {
     if (!selectedPeriods.length) return monthly.map(item => ({ key: item.key, label: item.month, short: item.month, count: chartType === "Bug" ? item.bug : item.imp, selected: false, sprintIds: [] as string[] }));
-    const visible = [...selectedPeriods, ...(comparison.available ? comparison.periods : [])].sort((a, b) => a.firstNumber - b.firstNumber);
+    const visible = [...selectedPeriods, ...(showPreviousComparison ? comparison.periods : [])].sort((a, b) => a.firstNumber - b.firstNumber);
     return visible.map(period => {
       const periodTasks = data ? selectDevTasks(data, { ...filters, sprintIds: period.sprintIds }) : [];
       return { key: period.id, label: period.label, short: period.label.replace(/^Sprint /, ""), count: periodTasks.filter(task => task.type === chartType).length, selected: selectedPeriods.some(selected => selected.id === period.id), sprintIds: period.sprintIds };
     });
-  }, [chartType, comparison, data, filters, monthly, selectedPeriods]);
+  }, [chartType, comparison, data, filters, monthly, selectedPeriods, showPreviousComparison]);
   const chartPeak = Math.max(1, ...chartItems.map(item => item.count));
   const chartStep = chartPeak <= 20 ? 4 : chartPeak <= 100 ? 20 : 100;
   const chartMax = Math.ceil(chartPeak / chartStep) * chartStep;
   const chartTotal = tasks.filter(task => task.type === chartType).length;
+  const selectedChartCounts = useMemo(() => [...selectedPeriods].sort((a, b) => a.firstNumber - b.firstNumber).map(period => data ? selectDevTasks(data, { ...filters, sprintIds: period.sprintIds }).filter(task => task.type === chartType).length : 0), [chartType, data, filters, selectedPeriods]);
+  const previousChartTotal = showPercentageComparison ? selectedChartCounts[0] : null;
+  const selectedChartTotal = showPercentageComparison ? selectedChartCounts.at(-1)! : chartTotal;
+  const chartChange = previousChartTotal === null ? null : previousChartTotal === 0 ? (selectedChartTotal ? null : 0) : ((selectedChartTotal - previousChartTotal) / previousChartTotal) * 100;
+  const chartChangeDirection = chartChange === null || chartChange > 0 ? "positive" : chartChange < 0 ? "negative" : "neutral";
+  const ChartChangeIcon = chartChangeDirection === "positive" ? ArrowUpRight : chartChangeDirection === "negative" ? ArrowDownRight : Minus;
   const totalTypeCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
   const hasPeriodFilter = periodYears.length !== REPORT_YEARS.length || periodMonths.length !== REPORT_MONTHS.length;
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) || hasPeriodFilter;
@@ -367,7 +393,7 @@ export default function DevMasterDashboard() {
       <div className="content-wrap dev-dashboard-wrap">
         <section className="dev-dashboard-heading">
           <div className="dev-dashboard-heading-top">
-            <div className="hero dev-dashboard-hero"><div className="eyebrow"><span /> DEV TEAM</div><h1>Dev.Master<span>.</span></h1><p>{data?.list.name || "B2C Master"} · {DEV_REPORT_START_YEAR}–{DEV_REPORT_END_YEAR} · {DEV_TEAM_ASSIGNEES.length} assignee · ClickUp {loading ? "өгөгдөл уншиж байна" : `сүүлд ${formatSyncDate(data?.syncedAt)} шинэчлэгдсэн`}</p></div>
+            <div className="hero dev-dashboard-hero"><div className="eyebrow"><span /> DEV TEAM</div><h1>Dev.Master<span>.</span></h1><p>{data?.list.name || "B2C Master"} · {DEV_REPORT_START_YEAR}–{DEV_REPORT_END_YEAR} · {DEV_TEAM_ASSIGNEES.length} assignee · ClickUp {data ? `сүүлд ${formatSyncDate(data.taskSyncedAt || data.syncedAt)} шинэчлэгдсэн${loading ? " · Шинэчилж байна" : ""}` : "өгөгдөл уншиж байна"}</p></div>
           </div>
           <div className="dev-dashboard-filters" ref={filterBarRef} aria-label="Dev тайлангийн шүүлтүүр">
             <label className="dev-filter-search"><Search size={16} /><input value={filters.search} onChange={event => updateFilter("search", event.target.value)} placeholder="Ажил, ажилтан эсвэл төсөл хайх" aria-label="Dev тайлангаас хайх" /></label>
@@ -398,41 +424,41 @@ export default function DevMasterDashboard() {
         </section>
 
         {error && <div className="clickup-error" role="alert"><span><X size={18} /></span><div><strong>ClickUp өгөгдөл татагдсангүй</strong><p>{error}</p></div><button onClick={() => void loadData(true)}>Дахин оролдох</button></div>}
-        {data?.partial && <div className="dev-data-warning" role="status">{data.taskPartial ? "ClickUp-ийн B2C Master хариу 10,000 ажлын хязгаарт хүрсэн тул хамгийн сүүлийн ажлуудыг харуулж байна." : data.sprintSyncErrors ? `${data.sprintSyncErrors} sprint-ийн мэдээлэл түр шинэчлэгдсэнгүй. Бусад ClickUp өгөгдлийг хэвийн харуулж байна.` : "Зарим sprint 2,000-аас олон ажилтай тул тухайн sprint-ийн хамгийн сүүлийн ажлуудыг харуулж байна."}</div>}
+        {data?.partial && <div className="dev-data-warning" role="status">{data.taskPartial ? "ClickUp-ийн B2C Master хариу 10,000 ажлын хязгаарт хүрсэн тул хамгийн сүүлийн ажлуудыг харуулж байна." : data.sprintSyncErrors ? `${data.sprintSyncErrors} sprint-ийн мэдээлэл түр шинэчлэгдсэнгүй. Бусад ClickUp өгөгдлийг хэвийн харуулж байна.` : "Sprint-ийн мэдээлэл бүрэн шинэчлэгдээгүй байна."}</div>}
 
         <section className="dev-kpi-grid" aria-label="Dev төслийн гол үзүүлэлтүүд">
-          <article className="dev-kpi-card" data-kpi="total"><div><strong>{loading ? "—" : tasks.length}</strong><span>Нийт таск</span><small><CheckCircle2 size={12} /> {metrics.doneTasks} гүйцэтгэсэн</small>
-            {!loading && selectedPeriods.length > 0 && <MetricComparison current={tasks.length} previous={comparison.available ? previousTasks.length : null} label={comparisonLabel} reason={comparison.reason} />}
+          <article className="dev-kpi-card" data-kpi="total"><div><strong>{initialLoading ? "—" : tasks.length}</strong><span>Нийт таск</span><small><CheckCircle2 size={12} /> {metrics.doneTasks} гүйцэтгэсэн</small>
+            {!initialLoading && selectedPeriods.length > 0 && <MetricComparison current={tasks.length} previous={comparison.available ? previousTasks.length : null} label={comparisonLabel} reason={comparison.reason} />}
           </div><span className="dev-kpi-art coral"><ClipboardCheck size={31} /></span></article>
-          <article className="dev-kpi-card" data-kpi="completion"><div><strong>{loading ? "—" : `${metrics.objectiveAchievement}%`}</strong><span>Таск гүйцэтгэл<br /></span><small><CheckCircle2 size={12} /> {metrics.doneTasks} / {tasks.length} гүйцэтгэсэн</small>
-            {!loading && selectedPeriods.length > 0 && <MetricComparison current={completionRate} previous={comparison.available ? previousCompletionRate : null} label={comparisonLabel} reason={comparison.reason} />}
-          </div><span className="dev-progress-ring" style={{ "--progress": `${completionRate * 3.6}deg` } as CSSProperties}><b>{metrics.objectiveAchievement}%</b></span></article>
-          <article className="dev-kpi-card" data-kpi="team-average"><div><strong>{loading ? "—" : `${Math.round(teamAverage.average)}%`}</strong><span>Багийн гишүүдийн<br />гүйцэтгэл</span><small title={teamAverage.members.map(member => `${member.name}: ${member.doneTasks}/${member.totalTasks} (${member.completion.toFixed(1)}%)`).join("\n") + "\nАжилгүй гишүүнийг 0% гэж тооцно; 5 гишүүний энгийн дундаж."}><Users size={12} /> 5 assignee average</small><span className="dev-kpi-progress"><i style={{ width: `${teamAverage.average}%` }} /></span>
-            {!loading && selectedPeriods.length > 0 && <MetricComparison current={teamAverage.average} previous={comparison.available ? previousAverage.average : null} label={comparisonLabel} reason={comparison.reason} />}
+          <article className="dev-kpi-card" data-kpi="completion"><div><strong>{initialLoading ? "—" : `${metrics.objectiveAchievement}%`}</strong><span>Таск гүйцэтгэл<br /></span><small><CheckCircle2 size={12} /> {metrics.doneTasks} / {tasks.length} гүйцэтгэсэн</small>
+            {!initialLoading && selectedPeriods.length > 0 && <MetricComparison current={completionRate} previous={comparison.available ? previousCompletionRate : null} label={comparisonLabel} reason={comparison.reason} />}
+          </div><span className="dev-progress-ring"><svg viewBox="0 0 66 66" aria-hidden="true"><circle className="dev-ring-track" cx="33" cy="33" r="28" /><circle className="dev-ring-value" cx="33" cy="33" r="28" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - completionRate} /></svg><b>{metrics.objectiveAchievement}%</b></span></article>
+          <article className="dev-kpi-card" data-kpi="team-average"><div><strong>{initialLoading ? "—" : `${Math.round(teamAverage.average)}%`}</strong><span>Багийн гишүүдийн<br />гүйцэтгэл</span><small title={teamAverage.members.map(member => `${member.name}: ${member.doneTasks}/${member.totalTasks} (${member.completion.toFixed(1)}%)`).join("\n") + "\nАжилгүй гишүүнийг 0% гэж тооцно; 5 гишүүний энгийн дундаж."}><Users size={12} /> 5 assignee average</small><span className="dev-kpi-progress"><i style={{ width: `${teamAverage.average}%` }} /></span>
+            {!initialLoading && selectedPeriods.length > 0 && <MetricComparison current={teamAverage.average} previous={comparison.available ? previousAverage.average : null} label={comparisonLabel} reason={comparison.reason} />}
           </div><span className="dev-kpi-art violet"><Gauge size={31} /></span></article>
-          <article className="dev-kpi-card dev-sprint-card" data-kpi="period"><div><strong>{loading ? "—" : selectedPeriods.length === 1 ? <>{periodMode === "segment" ? `Segment ${selectedPeriods[0].firstNumber}–${selectedPeriods[0].lastNumber}` : selectedPeriods[0].label}<span className="dev-sprint-card-date" title={formatDateRange(selectedPeriods[0].startDate || "", selectedPeriods[0].endDate || "")}>({formatSprintDateRange(selectedPeriods[0].startDate, selectedPeriods[0].endDate)})</span></> : periodCardLabel}</strong><span>{periodMode === "segment" ? "Segment" : "Sprint"}</span>
-            {!loading && selectedPeriods.length > 1 && <div className="dev-sprint-card-ranges" aria-label="Сонгосон sprint-ийн огноо">{selectedPeriods.map(item => <div className="dev-sprint-card-range" key={item.id} title={formatDateRange(item.startDate || "", item.endDate || "")}><b>{item.label}</b><span>{formatSprintDateRange(item.startDate, item.endDate)}</span></div>)}</div>}
+          <article className="dev-kpi-card dev-sprint-card" data-kpi="period"><div><strong>{initialLoading ? "—" : selectedPeriods.length === 1 ? <>{periodMode === "segment" ? `Segment ${selectedPeriods[0].firstNumber}–${selectedPeriods[0].lastNumber}` : selectedPeriods[0].label}<span className="dev-sprint-card-date" title={formatDateRange(selectedPeriods[0].startDate || "", selectedPeriods[0].endDate || "")}>({formatSprintDateRange(selectedPeriods[0].startDate, selectedPeriods[0].endDate)})</span></> : periodCardLabel}</strong><span>{periodMode === "segment" ? "Segment" : "Sprint"}</span>
+            {!initialLoading && selectedPeriods.length > 1 && <div className="dev-sprint-card-ranges" aria-label="Сонгосон sprint-ийн огноо">{selectedPeriods.map(item => <div className="dev-sprint-card-range" key={item.id} title={formatDateRange(item.startDate || "", item.endDate || "")}><b>{item.label}</b><span>{formatSprintDateRange(item.startDate, item.endDate)}</span></div>)}</div>}
             <small>{formatDuration(metrics.estimateMs)} estimate</small></div><span className="dev-kpi-art amber"><TimerReset size={31} /></span></article>
         </section>
 
         <section className="dev-chart-grid">
           <article className="dev-panel dev-performance-panel" data-task-type={chartType}>
-            <header><div><h2>Таск гүйцэтгэлийн харьцуулалт</h2><p>{selectedPeriods.length ? "Сонгосон болон өмнөх үеийн ажлын тоо" : "Сар бүрийн ажлын тоо"}</p></div><div className="dev-chart-type" role="group" aria-label="Графикийн ажлын төрөл"><button type="button" aria-pressed={chartType === "Bug"} onClick={() => setChartType("Bug")}>Bug</button><button type="button" aria-pressed={chartType === "Imp"} onClick={() => setChartType("Imp")}>Improvement</button></div></header>
-            <div className="dev-chart-context"><span className="dev-period-badge" title={formatDateRange(filters.startDate, filters.endDate)}><CalendarDays size={14} /> {periodLabel}</span>{comparison.available && <span title={previousLabel}>Өмнөх: {previousLabel}</span>}</div>
+            <header><div><h2>Таск гүйцэтгэлийн харьцуулалт</h2><p>{showPreviousComparison ? "Сонгосон болон өмнөх үеийн ажлын тоо" : selectedPeriods.length ? "Сонгосон үеийн ажлын тоо" : "Сар бүрийн ажлын тоо"}</p></div><div className="dev-chart-type" role="group" aria-label="Графикийн ажлын төрөл"><button type="button" aria-pressed={chartType === "Bug"} onClick={() => setChartType("Bug")}>Bug</button><button type="button" aria-pressed={chartType === "Imp"} onClick={() => setChartType("Imp")}>Improvement</button></div></header>
+            <div className="dev-chart-context"><span className="dev-period-badge" title={formatDateRange(filters.startDate, filters.endDate)}><CalendarDays size={14} /> {periodLabel}</span></div>
             <div className="dev-cx-chart-scroll">
               <div className="chart-area dev-cx-chart" style={{ minWidth: `${Math.max(280, chartItems.length * 46 + 42)}px` }} role="group" aria-label={`${chartType === "Bug" ? "Bug" : "Improvement"} ажлын тоо`}>
                 <div className="y-labels"><span>{chartMax}</span><span>{Math.round(chartMax * .75)}</span><span>{Math.round(chartMax * .5)}</span><span>{Math.round(chartMax * .25)}</span><span>0</span></div>
                 <div className="chart-grid-lines"><i /><i /><i /><i /><i /></div>
                 <div className="bars">{chartItems.map((item, index) => <button type="button" key={item.key} className={`bar-group ${item.selected ? "active" : ""}`} data-period={item.key} data-count={item.count} data-comparison={selectedPeriods.length && !item.selected ? "previous" : "current"} onClick={() => selectChartItem(item)} aria-label={`${item.label}: ${item.count} ${chartType === "Bug" ? "Bug" : "Improvement"} ажил · ${item.selected ? "Сонгосон үе" : selectedPeriods.length ? "Өмнөх үе" : "Сар"}`} aria-pressed={item.selected}>
-                  <span className="bar-value" aria-hidden="true">{item.count}</span><span className="bar-track"><span className="bar-fill" style={{ height: `${item.count / chartMax * 100}%`, minHeight: 0, animationDelay: `${index * 35}ms` }} /></span><span className="bar-label">{item.short}</span>
+                  <span className="bar-value" aria-hidden="true">{item.count}</span><span className="bar-track"><span key={chartType} className="bar-fill" style={{ height: `${item.count / chartMax * 100}%`, minHeight: 0, animationDelay: `${Math.min(index, 8) * 35}ms` }} /></span><span className="bar-label">{item.short}</span>
                 </button>)}</div>
               </div>
             </div>
-            <div className="chart-summary"><span className="legend-dot" /><strong>{chartTotal} {chartType === "Bug" ? "Bug" : "Improvement"}</strong><span>· {selectedPeriods.length ? "Сонгосон үе" : "Сонгосон хугацаа"}</span>{comparison.available && <span>· Саарал: өмнөх үе</span>}</div>
+            <div className="chart-summary"><span className="legend-dot" /><strong>{chartTotal} {chartType === "Bug" ? "Bug" : "Improvement"}</strong>{showPercentageComparison && <span className={`dev-chart-delta ${chartChangeDirection}`} title={previousChartTotal === 0 ? "Эхний сонгосон үед өгөгдөлгүй" : `Эхний сонголт: ${previousChartTotal} · Сүүлийн сонголт: ${selectedChartTotal}`}><ChartChangeIcon size={13} />{chartChange === null ? "Шинэ" : `${chartChange > 0 ? "+" : ""}${chartChange.toFixed(1)}%`}</span>}<span>· {selectedPeriods.length ? "Сонгосон үе" : "Сонгосон хугацаа"}</span>{showPreviousComparison && <span>· Саарал: өмнөх үе</span>}</div>
           </article>
 
           <article className="dev-panel dev-type-panel">
-            <header><h2>Task Type</h2><button aria-label="Task Type нэмэлт цэс"><MoreVertical size={18} /></button></header>
+            <header><div><h2>Task Type</h2><p>Төрөл тус бүрийн ажлын тоо</p></div></header>
             <div className="dev-donut-layout">
               <div className="dev-donut" style={{ background: totalTypeCount ? `conic-gradient(${donut})` : "#edf1f6" }}><span><strong>{totalTypeCount}</strong><small>tasks</small></span></div>
               <ul aria-label="Таск төрлийн тайлбар">{typeTotals.map((item, index) => <li key={item.type}><span style={{ background: taskTypeColor(item.type, index) }} /><b>{item.type}</b><strong>{item.count}</strong></li>)}</ul>
@@ -445,8 +471,8 @@ export default function DevMasterDashboard() {
         <DevTeamComparison data={data} />
 
         <section className="dev-panel dev-table-panel dev-change-panel">
-          <header><div><h2>Өөрчлөлтийн хүсэлт</h2><p>{changes.length} ажил · хамгийн сүүлийн 5 мөр харагдана, бусдыг гүйлгэж үзнэ</p></div></header>
-          <div className="dev-table-wrap"><div className="dev-change-scroll"><table><thead><tr><th>Вэбсайт / Төсөл</th><th>Хийгдсэн ажил</th><th>Хариуцсан ажилтан</th></tr></thead><tbody>{changes.map(request => <tr key={request.id}><td><span className="dev-role-dot" />{request.url ? <a href={request.url} target="_blank" rel="noreferrer">{request.website}</a> : request.website}</td><td>{request.request}</td><td>{request.owner}</td></tr>)}</tbody></table>{!changes.length && !loading && <p className="dev-no-results">Тохирох ажил олдсонгүй.</p>}</div></div>
+          <header><div><span className="dev-change-kicker">CHANGE LOG</span><h2>Өөрчлөлтийн хүсэлт</h2><p>Хамгийн сүүлийн 5 хүсэлт харагдана · бусдыг доош гүйлгэж үзнэ</p></div><div className="dev-change-count"><strong>{changes.length}</strong><span>нийт хүсэлт</span></div></header>
+          <div className="dev-table-wrap"><div className="dev-change-scroll"><table><thead><tr><th>Вэбсайт / Төсөл</th><th>Хийгдсэн ажил</th><th>Хариуцсан ажилтан</th></tr></thead><tbody>{changes.map(request => <tr key={request.id}><td><div className="dev-change-project"><span className="dev-change-project-icon"><FolderKanban size={16} /></span><div>{request.url ? <a href={request.url} target="_blank" rel="noreferrer"><span>{request.website}</span><ExternalLink size={12} /></a> : <strong>{request.website}</strong>}<small>Төсөл</small></div></div></td><td><div className="dev-change-work"><strong>{request.request}</strong><small>Өөрчлөлтийн ажил</small></div></td><td><span className="dev-change-owner"><span className="dev-change-avatar" aria-hidden="true">{personInitials(request.owner)}</span><span>{request.owner}</span></span></td></tr>)}</tbody></table>{!changes.length && !loading && <p className="dev-no-results">Тохирох ажил олдсонгүй.</p>}</div></div>
         </section>
       </div>
     </main>

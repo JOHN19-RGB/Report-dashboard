@@ -90,7 +90,7 @@ export function buildSprintPeriods(sprints: DevSprint[], mode: DevSprintPeriodMo
   }).sort((a, b) => b.firstNumber - a.firstNumber);
 }
 
-/** Compare with an equally sized block immediately before the earliest selection, never overlapping it. */
+/** Compare selected periods with the preceding block; non-sequential selections compare each period to its own predecessor. */
 export function previousSprintPeriods(periods: DevSprintPeriod[], selectedIds: string[]) {
   const selected = periods.filter(period => selectedIds.includes(period.id));
   if (!selected.length) return { periods: [] as DevSprintPeriod[], available: false, reason: "" };
@@ -99,6 +99,15 @@ export function previousSprintPeriods(periods: DevSprintPeriod[], selectedIds: s
   }
   const mode = selected[0].mode;
   const width = mode === "segment" ? 2 : 1;
+  const orderedSelected = [...selected].sort((a, b) => a.firstNumber - b.firstNumber);
+  const sequential = orderedSelected.every((period, index) => index === 0 || period.firstNumber === orderedSelected[index - 1].firstNumber + width);
+  if (!sequential) {
+    const previous = selected.map(period => periods.find(candidate => candidate.mode === mode && candidate.firstNumber === period.firstNumber - width));
+    if (previous.some(period => !period || !period.complete || period.partial)) {
+      return { periods: [] as DevSprintPeriod[], available: false, reason: `Харьцуулах өмнөх ${mode === "segment" ? "segment" : "sprint"}-ийн өгөгдөл алга эсвэл дутуу` };
+    }
+    return { periods: Array.from(new Map((previous as DevSprintPeriod[]).map(period => [period.id, period])).values()), available: true, reason: "" };
+  }
   const earliest = Math.min(...selected.map(period => period.firstNumber));
   const previous = Array.from({ length: selected.length }, (_, index) => periods.find(period => period.mode === mode && period.firstNumber === earliest - width * (index + 1)));
   if (previous.some(period => !period || !period.complete || period.partial)) {
@@ -136,9 +145,18 @@ export type DevReportData = {
   partial?: boolean;
   taskPartial?: boolean;
   sprintSyncErrors?: number;
+  sprintNeedsFullRefresh?: boolean;
+  sprintDiscoveryPartial?: boolean;
+  taskSyncedAt?: string;
+  sprintSyncedAt?: string;
   syncedAt: string;
   cacheSource?: "snapshot" | "clickup";
 };
+
+export function isDevReportData(value: unknown): value is DevReportData {
+  const report = value as DevReportData | null;
+  return Boolean(report && typeof report.syncedAt === "string" && report.list && Array.isArray(report.tasks) && Array.isArray(report.sprints));
+}
 
 export const DEV_REPORT_START_YEAR = 2025;
 export const DEV_REPORT_END_YEAR = 2026;

@@ -1,6 +1,6 @@
 const DEFAULT_CLICKUP_PROXY_ORIGIN = "https://b2c-team-report-dashboard.vercel.app";
 
-export async function proxyClickUpForLocalDevelopment(request: Request, pathname: string) {
+export async function proxyClickUpForLocalDevelopment(request: Request, pathname: string, snapshotId: number) {
   if (process.env.NODE_ENV !== "development") return null;
 
   const requestUrl = new URL(request.url);
@@ -14,7 +14,14 @@ export async function proxyClickUpForLocalDevelopment(request: Request, pathname
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
-    return new Response(await response.arrayBuffer(), {
+    const body = await response.text();
+    if (response.ok) {
+      const payload = JSON.parse(body);
+      if (typeof payload.syncedAt === "string" && (Array.isArray(payload.tasks) || Array.isArray(payload.subtasks))) {
+        await saveClickUpSnapshot(snapshotId, payload);
+      }
+    }
+    return new Response(body, {
       status: response.status,
       headers: {
         "Cache-Control": "private, no-store",
@@ -27,3 +34,4 @@ export async function proxyClickUpForLocalDevelopment(request: Request, pathname
     return Response.json({ error: "Local ClickUp proxy холбогдож чадсангүй." }, { status: 502 });
   }
 }
+import { saveClickUpSnapshot } from "../../db/clickup-snapshot";
