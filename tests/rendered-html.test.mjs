@@ -62,7 +62,7 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /11–12, 13–14/);
   assert.match(masterHtml, /data-kpi="completion"/);
   assert.match(masterHtml, /data-kpi="team-average"/);
-  assert.match(masterHtml, /Team Average|Багийн гишүүдийн/);
+  assert.match(masterHtml, /Ажилчдын гүйцэтгэлийн/);
   assert.match(masterHtml, /5 assignee average/);
   assert.match(masterHtml, /class="chart-area dev-cx-chart"/);
   assert.match(masterHtml, /class="dev-panel dev-performance-panel" data-task-type="Bug"/);
@@ -88,7 +88,7 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /class="icon-button dev-download-filter"[^>]*aria-label="All data татах"/);
   assert.match(masterHtml, /class="icon-button dev-refresh-filter"[^>]*aria-label="Өгөгдөл уншиж байна"/);
   assert.doesNotMatch(masterHtml, />All data<|>Шинэчлэх<|dev-heading-copy/);
-  assert.match(masterHtml, /Project Team Members Productivity/);
+  assert.match(masterHtml, /Ажилчдын гүйцэтгэлийн тайлан/);
   assert.match(masterHtml, /aria-label="Productivity харагдац"/);
   assert.match(masterHtml, />List<\/button>/);
   assert.match(masterHtml, />Card<\/button>/);
