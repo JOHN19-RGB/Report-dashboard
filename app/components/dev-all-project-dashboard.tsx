@@ -15,6 +15,7 @@ import {
   ListFilter,
   LayoutGrid,
   List,
+  ListTodo,
   Menu,
   RefreshCw,
   RotateCcw,
@@ -22,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { clickUpReportLoader, needsClickUpSprintRefresh } from "../lib/clickup-report-loader";
+import { clickUpReportLoader, isClickUpSnapshotStale } from "../lib/clickup-report-loader";
 import {
   buildSprintPeriods,
   DEV_PROJECT_STATUSES,
@@ -34,7 +35,7 @@ import {
   devProjectStatus,
   filterDevTasksByMonthKeys,
   formatSprintDateRange,
-  groupDevProjectTasks,
+  groupDevAllProjectTasks,
   isDevReportData,
   nextDevProjectSort,
   scopeDevReportTasks,
@@ -70,6 +71,10 @@ function formatDate(value: string | null | undefined) {
   if (!value) return "—";
   const date = new Date(`${value.slice(0, 10)}T00:00:00`);
   return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat("mn-MN", { year: "numeric", month: "short", day: "numeric" }).format(date);
+}
+
+function initials(value: string) {
+  return value.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toLocaleUpperCase("mn-MN") || "—";
 }
 
 function periodSelectionLabel(years: string[], months: string[]) {
@@ -126,9 +131,7 @@ export default function DevAllProjectDashboard() {
   const loadData = useCallback(async (refresh: boolean) => {
     setLoading(true);
     setError("");
-    let refreshSprints = refresh;
     function applyPayload(payload: DevReportData) {
-      refreshSprints ||= needsClickUpSprintRefresh(payload);
       const normalizeTasks = (tasks: DevTask[]) => tasks.map(task => ({ ...task, tags: Array.isArray(task.tags) ? task.tags : [], sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [], updatedAt: task.updatedAt || null }));
       const normalizedPayload: DevReportData = {
         ...payload,
@@ -140,20 +143,20 @@ export default function DevAllProjectDashboard() {
       setFilters(current => ({
         ...current,
         sprintIds: current.sprintIds.filter(id => normalizedPayload.sprints.some(sprint => sprint.id === id)),
-        taskType: current.taskType === "all" || topLevelDevTasks(normalizedPayload.tasks).some(task => task.type === current.taskType) ? current.taskType : "all",
+        taskType: current.taskType === "all" || normalizedPayload.allProjectTasks?.some(task => task.type === current.taskType) ? current.taskType : "all",
       }));
     }
     try {
-      const payload = await clickUpReportLoader.load("/api/clickup/dev", {
-        refreshPath: "/api/clickup/dev?refresh=tasks",
+      let payload = await clickUpReportLoader.load("/api/clickup/dev", {
+        refreshPath: "/api/clickup/dev?refresh=all-project",
         refresh,
         validate: isDevReportData,
         onData: applyPayload,
       });
-      if (refreshSprints || needsClickUpSprintRefresh(payload)) {
-        const sprintPayload = await clickUpReportLoader.read("/api/clickup/dev?refresh=recent-sprints", isDevReportData);
-        clickUpReportLoader.remember("/api/clickup/dev", sprintPayload);
-        applyPayload(sprintPayload);
+      if (!refresh && isClickUpSnapshotStale(payload.allProjectTaskSyncedAt || payload.syncedAt)) {
+        payload = await clickUpReportLoader.read("/api/clickup/dev?refresh=all-project", isDevReportData);
+        clickUpReportLoader.remember("/api/clickup/dev", payload);
+        applyPayload(payload);
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "All Projects list-ийн мэдээлэл татагдсангүй.");
@@ -195,19 +198,19 @@ export default function DevAllProjectDashboard() {
   const allProjectData = useMemo(() => data ? { ...data, tasks: data.allProjectTasks || [] } : null, [data]);
   const tasks = useMemo(() => {
     const selected = allProjectData ? selectDevTasks(allProjectData, filters) : [];
-    return topLevelDevTasks(filters.sprintIds.length ? selected : filterDevTasksByMonthKeys(selected, periodMonthKeys));
+    return filters.sprintIds.length ? selected : filterDevTasksByMonthKeys(selected, periodMonthKeys);
   }, [allProjectData, filters, periodMonthKeys]);
-  const taskTypes = useMemo(() => Array.from(new Set(topLevelDevTasks(allProjectData?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [allProjectData]);
+  const taskTypes = useMemo(() => Array.from(new Set((allProjectData?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [allProjectData]);
   const sprints = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const task of topLevelDevTasks(allProjectData?.tasks || [])) for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
+    for (const task of allProjectData?.tasks || []) for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
     return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
   }, [allProjectData, data?.sprints]);
   const periods = useMemo(() => buildSprintPeriods(sprints, periodMode), [periodMode, sprints]);
   const selectedPeriods = useMemo(() => periods.filter(period => period.sprintIds.every(id => filters.sprintIds.includes(id))), [filters.sprintIds, periods]);
   const selectionLabel = !selectedPeriods.length ? `All ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}`;
   const projects = useMemo(() => {
-    const grouped = groupDevProjectTasks(tasks);
+    const grouped = groupDevAllProjectTasks(tasks, allProjectData?.tasks || tasks);
     if (!projectSort) return grouped;
     return grouped.sort((a, b) => {
       let comparison = 0;
@@ -219,7 +222,7 @@ export default function DevAllProjectDashboard() {
       if (!comparison) comparison = a.name.localeCompare(b.name, "mn", { numeric: true, sensitivity: "base" });
       return projectSort.direction === "asc" ? comparison : -comparison;
     });
-  }, [projectSort, tasks]);
+  }, [allProjectData, projectSort, tasks]);
   const statusCounts = useMemo(() => {
     const counts = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
     for (const task of tasks) counts[devProjectStatus(task)] += 1;
@@ -228,7 +231,7 @@ export default function DevAllProjectDashboard() {
   const done = statusCounts.done;
   const ongoing = tasks.length - done;
   const completion = tasks.length ? Math.round(done / tasks.length * 100) : 0;
-  const planningTasks = useMemo(() => tasks.filter(task => devProjectStatus(task) === "todo").sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || devProjectName(a).localeCompare(devProjectName(b), "mn")), [tasks]);
+  const planningTasks = useMemo(() => topLevelDevTasks(tasks).filter(task => devProjectStatus(task) === "todo").sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || devProjectName(a).localeCompare(devProjectName(b), "mn")), [tasks]);
   const hasPeriodFilter = periodYears.length !== REPORT_YEARS.length || periodMonths.length !== REPORT_MONTHS.length;
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) || hasPeriodFilter;
   const statusSummary = DEV_PROJECT_STATUSES.reduce<Array<(typeof DEV_PROJECT_STATUSES)[number] & { count: number; share: number; start: number; end: number }>>((summary, status) => {
@@ -343,12 +346,12 @@ export default function DevAllProjectDashboard() {
                 "project", "Төсөл",
               ], ["status", "Төлөв"], ["tasks", "Таск"], ["completion", "Гүйцэтгэл"], ["updated", "Шинэчлэгдсэн"]] as Array<[DevProjectSortKey, string]>).map(([key, label]) => <span role="columnheader" aria-sort={projectSort?.key === key ? (projectSort.direction === "asc" ? "ascending" : "descending") : "none"} key={key}><button type="button" data-sort-key={key} className={projectSort?.key === key ? "active" : ""} onClick={() => toggleProjectSort(key)} title={`${label}: ${projectSort?.key === key ? projectSort.direction === "asc" ? "өсөхөөр эрэмбэлсэн" : "буурахаар эрэмбэлсэн" : "эрэмбэлээгүй"}. Дарахад дараагийн төлөвт шилжинэ.`}>{label}{sortIcon(key)}</button></span>)}
             </div>
-            <div className="all-project-list-scroll" role="rowgroup">{projects.map(project => <details className="all-project-row" key={project.name.toLocaleLowerCase("mn-MN")}>
-              <summary><span className="all-project-project"><ChevronDown size={15} /><span><strong>{project.name}</strong><small>{project.tasks[0]?.parentName || project.tasks[0]?.name}</small></span></span><span className={`all-project-current-status status-${currentProjectStatus(project.statuses).key}`}><i style={{ background: currentProjectStatus(project.statuses).color }} />{currentProjectStatus(project.statuses).label}</span><b>{project.tasks.length}</b><span className="all-project-completion"><i><b style={{ width: `${project.completion}%` }} /></i><strong>{project.completion}%</strong></span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></summary>
+            <div className="all-project-list-scroll" role="rowgroup">{projects.map(project => <details className="all-project-row" key={project.id}>
+              <summary><span className="all-project-project"><ChevronDown size={15} /><span><strong>{project.name}</strong><small>{project.tasks.length} ClickUp ажил</small></span></span><span className={`all-project-current-status status-${currentProjectStatus(project.statuses).key}`}><i style={{ background: currentProjectStatus(project.statuses).color }} />{currentProjectStatus(project.statuses).label}</span><b>{project.tasks.length}</b><span className="all-project-completion"><i><b style={{ width: `${project.completion}%` }} /></i><strong>{project.completion}%</strong></span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></summary>
               <div className="all-project-task-list">{project.tasks.map(task => <article key={task.id}><div><strong>{task.name}</strong><small>{task.type} · {task.sprint || "Sprint холбогдоогүй"}</small></div><span className={`all-project-task-status status-${devProjectStatus(task)}`}>{DEV_PROJECT_STATUSES.find(status => status.key === devProjectStatus(task))?.label}</span><span>{task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй"}</span><time>{formatDate(task.dueDate || taskDate(task))}</time>{task.url ? <a href={task.url} target="_blank" rel="noreferrer" aria-label={`${task.name} ClickUp дээр нээх`}><ExternalLink size={14} /></a> : <span />}</article>)}</div>
             </details>)}</div>
             {!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}
-          </div> : <div className="all-project-card-scroll"><div className="all-project-cards">{projects.map(project => <article className="dev-member-card all-project-card" key={project.name.toLocaleLowerCase("mn-MN")}>
+          </div> : <div className="all-project-card-scroll"><div className="all-project-cards">{projects.map(project => <article className="dev-member-card all-project-card" key={project.id}>
             <div className="all-project-card-heading"><span className="all-project-card-icon"><FolderKanban size={18} /></span><div><h3>{project.name}</h3><span>{project.tasks.length} таск · {project.done} Done</span></div></div>
             <div className="all-project-card-completion"><span><b>Гүйцэтгэл</b><strong>{project.completion}%</strong></span><i><b style={{ width: `${project.completion}%` }} /></i></div>
             <div className="all-project-card-statuses">{DEV_PROJECT_STATUSES.map(status => <span key={status.key}><i style={{ background: status.color }} />{status.label}<b>{project.statuses[status.key]}</b></span>)}</div>
@@ -356,9 +359,12 @@ export default function DevAllProjectDashboard() {
           </article>)}</div>{!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}</div>}
         </section>
 
-        <section className="dev-panel all-project-plan-panel" aria-labelledby="all-project-plan-title">
-          <header><div><h2 id="all-project-plan-title">Шинэ төслийн төлөвлөгөө</h2><p>To do төлөвтэй ClickUp таскууд</p></div><span className="all-project-total-badge">{planningTasks.length} таск</span></header>
-          <div className="dev-table-wrap"><table><thead><tr><th>Төсөл</th><th>Хийгдэх ажил</th><th>Хариуцсан ажилтан</th><th>Due date</th></tr></thead><tbody>{planningTasks.map(task => <tr key={task.id}><td><strong>{devProjectName(task)}</strong></td><td>{task.url ? <a href={task.url} target="_blank" rel="noreferrer">{task.name}<ExternalLink size={12} /></a> : task.name}</td><td>{task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй"}</td><td>{formatDate(task.dueDate)}</td></tr>)}</tbody></table>{!planningTasks.length && !loading && <p className="dev-no-results">To do төлөвтэй таск алга.</p>}</div>
+        <section className="dev-panel all-project-plan-panel" data-empty={!planningTasks.length} aria-labelledby="all-project-plan-title">
+          <header><div><span className="all-project-section-kicker">TO DO ROADMAP</span><h2 id="all-project-plan-title">Шинэ төслийн төлөвлөгөө</h2><p>All Projects list-ийн To do төлөвтэй үндсэн төслүүд</p></div><span className="all-project-total-badge">{planningTasks.length} төсөл</span></header>
+          {planningTasks.length ? <div className="dev-table-wrap"><table><thead><tr><th>Төсөл</th><th>Хийгдэх ажил</th><th>Хариуцсан ажилтан</th><th>Due date</th></tr></thead><tbody>{planningTasks.map(task => {
+            const owner = task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
+            return <tr key={task.id}><td><span className="all-project-plan-project"><i><FolderKanban size={14} /></i><strong>{devProjectName(task)}</strong></span></td><td>{task.url ? <a href={task.url} target="_blank" rel="noreferrer">{task.name}<ExternalLink size={12} /></a> : task.name}</td><td><span className="all-project-plan-owner"><i>{initials(owner)}</i>{owner}</span></td><td><time className="all-project-plan-date" dateTime={task.dueDate || undefined}>{formatDate(task.dueDate)}</time></td></tr>;
+          })}</tbody></table></div> : <div className="all-project-plan-empty" role="status"><span className="all-project-plan-empty-icon"><ListTodo size={24} /></span><div><strong>{loading && !data ? "Төлөвлөгөө уншиж байна" : "Төлөвлөх шинэ төсөл алга"}</strong><p>{loading && !data ? "ClickUp-ийн All Projects list-ээс To do төслүүдийг татаж байна." : hasFilters ? "Одоогийн шүүлтүүрт тохирох To do төсөл олдсонгүй." : "All Projects list-ийн To do хэсэг одоогоор хоосон байна."}</p></div>{!loading && hasFilters && <button type="button" onClick={resetFilters}><RotateCcw size={14} />Шүүлтүүр цэвэрлэх</button>}</div>}
         </section>
       </div>
     </main>

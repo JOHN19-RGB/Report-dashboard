@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { buildSprintPeriods, DEV_PROJECT_STATUSES, devProjectStatus, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, selectDevAllProjectList, selectDevTasks, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { buildSprintPeriods, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -104,6 +104,31 @@ test("productivity pie shares use the exact Total Tasks column, including multip
   assert.equal(memberTaskDistribution([team[0]]).members[0].share, 100);
 });
 
+test("Dev scope keeps every assignee while productivity list stays at five and pie groups others", () => {
+  const person = (id, name) => ({ id, name, avatar: null, color: "" });
+  const tasks = [
+    { id: "team", parentId: null, dueDate: "2026-03-01", assignees: [person("team", "Ariunbileg Garam-Ayush")], status: { done: true }, timeEstimateMs: 60_000, position: "Development" },
+    { id: "mixed", parentId: null, dueDate: "2026-03-02", assignees: [person("team", "Ariunbileg Garam-Ayush"), person("other-one", "Other One")], status: { done: false }, timeEstimateMs: 120_000, position: "Development" },
+    { id: "others", parentId: null, dueDate: "2026-03-03", assignees: [person("other-one", "Other One"), person("other-two", "Other Two")], status: { done: true }, timeEstimateMs: 180_000, position: "Development" },
+    { id: "unassigned", parentId: null, dueDate: "2026-03-04", assignees: [], status: { done: false }, timeEstimateMs: null, position: "" },
+    { id: "old", parentId: null, dueDate: "2024-12-31", assignees: [person("old", "Old Assignee")], status: { done: true }, timeEstimateMs: null, position: "" },
+  ];
+  const scoped = scopeDevReportTasks(tasks);
+  assert.deepEqual(scoped.map(task => task.id), ["team", "mixed", "others", "unassigned"]);
+
+  const team = devTeamProductivity(scoped);
+  assert.equal(team.length, 5);
+  assert.ok(team.every(member => member.name !== "Other One" && member.name !== "Other Two"));
+  assert.equal(team.find(member => member.name === "Ariunbileg Garam-Ayush").totalTasks, 2);
+
+  const pieMembers = devProductivityDistributionMembers(scoped);
+  const others = pieMembers.find(member => member.name === "Бусад");
+  assert.equal(pieMembers.length, 6);
+  assert.equal(others.totalTasks, 3);
+  assert.equal(others.doneTasks, 2);
+  assert.equal(memberTaskDistribution(pieMembers).total, 5);
+});
+
 test("All Project assigns every ClickUp task to one of the five requested status lanes", () => {
   const task = (id, name, type, done = false, parentName = "Store.mn | Development") => ({
     id, name: id, project: "", parentName, status: { name, type, done }, updatedAt: null,
@@ -144,6 +169,25 @@ test("New Project Plan uses only top-level To do tasks from the All Projects sou
   const allProjectTasks = [task("new-project", "to do"), task("new-project-child", "to do", "new-project"), task("active-project", "in progress")];
   const planningTasks = topLevelDevTasks(allProjectTasks).filter(item => devProjectStatus(item) === "todo");
   assert.deepEqual(planningTasks.map(item => item.id), ["new-project"]);
+});
+
+test("All Project directory groups every task under its root project without merging duplicate names", () => {
+  const task = (id, name, parentId, parentName, status) => ({
+    id, name, parentId, parentName, project: "", updatedAt: null, dueDate: "2026-05-01", closedDate: null, startDate: null, createdDate: null,
+    status: { name: status, type: status === "done" ? "closed" : "open", done: status === "done" },
+  });
+  const tasks = [
+    task("root-a", "Store", null, "", "in progress"),
+    task("child-a", "Frontend", "root-a", "Store", "done"),
+    task("root-b", "Store", null, "", "to do"),
+    task("child-b", "Design", "root-b", "Store", "qa test"),
+  ];
+  const groups = groupDevAllProjectTasks(tasks, tasks);
+  assert.equal(groups.length, 2);
+  assert.equal(groups.reduce((sum, group) => sum + group.tasks.length, 0), 4);
+  assert.deepEqual(groups.map(group => group.id).sort(), ["root-a", "root-b"]);
+  assert.ok(groups.every(group => group.name === "Store"));
+  assert.equal(groups.find(group => group.id === "root-a").completion, 50);
 });
 
 test("multiple sprint choices use a unique union and do not use task dates as membership", () => {

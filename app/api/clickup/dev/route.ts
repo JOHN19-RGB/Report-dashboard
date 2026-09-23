@@ -69,7 +69,7 @@ type ClickUpListLocation = {
   taskCount: number;
 };
 const SNAPSHOT_ID = 2;
-const SNAPSHOT_VERSION = 9;
+const SNAPSHOT_VERSION = 10;
 const reportDateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" });
 
 async function readSnapshot() {
@@ -365,6 +365,41 @@ export async function GET(request: Request) {
       const proxyResponse = await proxyClickUpForLocalDevelopment(request, "/api/clickup/dev", SNAPSHOT_ID);
       if (proxyResponse) return proxyResponse;
       return Response.json({ error: "ClickUp API тохиргоо дутуу байна." }, { status: 503 });
+    }
+
+    if (refresh === "all-project" && snapshot?.schemaVersion === SNAPSHOT_VERSION && Array.isArray(snapshot.tasks)) {
+      const discovery = await resolveB2cWorkspace(workspaceId, token);
+      if (!discovery.allProjectList) throw new Error("All Projects list олдсонгүй.");
+      const customTaskTypeData = Array.isArray(snapshot.customTaskTypeDefinitions)
+        ? { custom_items: snapshot.customTaskTypeDefinitions as ClickUpCustomTaskType[] }
+        : await clickUpJson<{ custom_items?: ClickUpCustomTaskType[] }>(`/team/${encodeURIComponent(workspaceId)}/custom_item`, token);
+      const result = await getListTasks(discovery.allProjectList.id, token, { includeTiml: true });
+      const rawTasks = Array.from(new Map(result.tasks.filter(task => task.id).map(task => [task.id, task])).values());
+      const previousTasks = [
+        ...(snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }>),
+        ...(Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : []),
+      ];
+      const previousSprintByTaskId = new Map(previousTasks.map(task => [safeText(task.id), { sprint: safeText(task.sprint), sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }]));
+      const customTaskTypes = new Map<string, string>(
+        (customTaskTypeData.custom_items || [])
+          .map((item): [string, string] => [String(item.id), safeText(item.name)])
+          .filter(([, name]) => Boolean(name)),
+      );
+      const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId);
+      const allProjectTasks = mergeClickUpTaskSnapshot(Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [], mappedTasks, result.partial);
+      const allProjectTaskSyncedAt = new Date().toISOString();
+      const payload = {
+        ...snapshot,
+        schemaVersion: SNAPSHOT_VERSION,
+        allProjectList: discovery.allProjectList,
+        allProjectTasks,
+        allProjectPartial: result.partial,
+        allProjectFetchedTaskCount: rawTasks.length,
+        allProjectTaskSyncedAt,
+        partial: Boolean(snapshot.taskPartial || result.partial || discovery.partial || snapshot.sprintDiscoveryPartial || snapshot.sprintNeedsFullRefresh || Number(snapshot.sprintSyncErrors)),
+      } satisfies ClickUpSnapshot;
+      await saveSnapshot(payload);
+      return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
     }
 
     const needsTaskSchemaRefresh = !refresh && snapshot && (snapshot.schemaVersion !== SNAPSHOT_VERSION || !hasAllProjectSnapshot);

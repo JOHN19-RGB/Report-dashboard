@@ -5,10 +5,11 @@ import { useState } from "react";
 import { DEV_TEAM_ASSIGNEES, memberTaskDistribution, type DevMemberProductivity } from "../lib/dev-report";
 
 const MEMBER_COLORS = ["#7468ff", "#35b5ec", "#ff9577", "#35c8ac", "#f3be48"];
+const OTHER_MEMBER_COLOR = "#94a3b8";
 
 function colorFor(name: string) {
   const index = DEV_TEAM_ASSIGNEES.findIndex(member => member.toLowerCase() === name.trim().toLowerCase());
-  return MEMBER_COLORS[Math.max(0, index)];
+  return index >= 0 ? MEMBER_COLORS[index] : OTHER_MEMBER_COLOR;
 }
 
 function duration(value: number) {
@@ -29,10 +30,10 @@ function piePath(start: number, share: number) {
   return `M100,100 L${point(start)} A88,88 0 ${share > 50 ? 1 : 0},1 ${point(start + share)} Z`;
 }
 
-export default function DevTeamProductivity({ team, taskCount, loading }: { team: DevMemberProductivity[]; taskCount: number; loading: boolean }) {
+export default function DevTeamProductivity({ team, distributionMembers, taskCount, loading }: { team: DevMemberProductivity[]; distributionMembers: DevMemberProductivity[]; taskCount: number; loading: boolean }) {
   const [view, setView] = useState<"list" | "card">("card");
   const [activeMember, setActiveMember] = useState<string | null>(null);
-  const distribution = memberTaskDistribution(team);
+  const distribution = memberTaskDistribution(distributionMembers);
   const active = distribution.members.find(member => member.id === activeMember);
   const pieMembers = distribution.members.map((member, index) => ({ ...member, start: distribution.members.slice(0, index).reduce((sum, previous) => sum + previous.share, 0) })).filter(member => member.totalTasks > 0);
 
@@ -48,7 +49,7 @@ export default function DevTeamProductivity({ team, taskCount, loading }: { team
       <div className="dev-distribution-heading"><h3>Total Tasks · Team Distribution</h3><p>Хүн бүрийн Total Tasks тоонд эзлэх хувь</p></div>
       <div className="dev-member-pie-layout">
         <div className="dev-member-pie-visual">
-          <svg viewBox="0 0 200 200" className="dev-member-pie" role="group" aria-label="Таван ажилтны Total Tasks хуваарилалт">
+          <svg viewBox="0 0 200 200" className="dev-member-pie" role="group" aria-label="Таван ажилтан болон бусад assignee-ийн Total Tasks хуваарилалт">
             {!distribution.total && <circle cx="100" cy="100" r="88" fill="#edf0f6" />}
             {pieMembers.map(member => {
               const props = { fill: colorFor(member.name), "data-member": member.id, "data-count": member.totalTasks, "data-share": member.share, className: activeMember === member.id ? "active" : undefined, role: "button", tabIndex: 0, "aria-label": `${member.name}: ${member.totalTasks} tasks, ${member.share.toFixed(1)}%`, "aria-pressed": activeMember === member.id, onPointerEnter: () => setActiveMember(member.id), onPointerLeave: () => setActiveMember(null), onFocus: () => setActiveMember(member.id), onBlur: () => setActiveMember(null), onClick: () => setActiveMember(member.id), onKeyDown: (event: React.KeyboardEvent<SVGElement>) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setActiveMember(member.id); } if (event.key === "Escape") setActiveMember(null); } };
@@ -59,7 +60,7 @@ export default function DevTeamProductivity({ team, taskCount, loading }: { team
         </div>
         <div className="dev-member-pie-legend">{distribution.members.map(member => <button key={member.id} type="button" className={activeMember === member.id ? "active" : ""} onPointerEnter={() => setActiveMember(member.id)} onPointerLeave={() => setActiveMember(null)} onFocus={() => setActiveMember(member.id)} onBlur={() => setActiveMember(null)} onClick={() => setActiveMember(member.id)} aria-label={`${member.name}: ${member.totalTasks} tasks, ${member.share.toFixed(1)}%`}><i style={{ background: colorFor(member.name) }} /><span>{member.name}<small>{member.share.toFixed(1)}% of total tasks</small></span><b>{member.totalTasks}</b></button>)}</div>
       </div>
-      <p className="dev-distribution-note">Нэг ажил олон ажилтантай бол хүн бүрийн Total Tasks-д тооцогдоно. Тиймээс хуваарилалтын нийлбэр ({distribution.total}) нь давхардалгүй ажлын тооноос ({taskCount}) ялгаатай байж болно.</p>
+      <p className="dev-distribution-note">Нэг ажил олон ажилтантай бол хүн бүрийн Total Tasks-д тооцогдоно. Assignee-гүй таск pie chart-д орохгүй. Тиймээс хуваарилалтын нийлбэр ({distribution.total}) нь давхардалгүй ажлын тооноос ({taskCount}) ялгаатай байж болно.</p>
     </div>
   </section>;
 }

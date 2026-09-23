@@ -146,6 +146,23 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
   assert.match(css, /\.all-project-cards \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
 });
 
+test("All Project keeps projects and tasks distinct, refreshes only its source, and uses the transparent white Cody logo", async () => {
+  const [dashboard, route, css, logo] = await Promise.all([
+    readFile(new URL("../app/components/dev-all-project-dashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/clickup/dev/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../public/cody-logo.svg", import.meta.url), "utf8"),
+  ]);
+  assert.match(dashboard, /groupDevAllProjectTasks\(tasks, allProjectData\?\.tasks \|\| tasks\)/);
+  assert.match(dashboard, /topLevelDevTasks\(tasks\)\.filter/);
+  assert.match(dashboard, /refreshPath: "\/api\/clickup\/dev\?refresh=all-project"/);
+  assert.match(dashboard, /className="all-project-plan-empty"/);
+  assert.match(route, /refresh === "all-project"/);
+  assert.match(css, /\.all-project-plan-empty \{[^}]*min-height: 166px;/);
+  assert.match(logo, /<g fill="#fff">/);
+  assert.doesNotMatch(logo, /<rect/);
+});
+
 test("removes starter preview and keeps API credentials server-side", async () => {
   const [page, route, clickUpRoute, devClickUpRoute, devDashboard, devReport, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),

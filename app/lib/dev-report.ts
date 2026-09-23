@@ -278,6 +278,40 @@ export function groupDevProjectTasks(tasks: DevTask[]) {
   }).sort((a, b) => b.tasks.length - a.tasks.length || a.name.localeCompare(b.name, "mn"));
 }
 
+/** Group filtered All Projects records by their ClickUp root task, preserving duplicate project names. */
+export function groupDevAllProjectTasks(tasks: DevTask[], contextTasks: DevTask[] = tasks) {
+  const contextById = new Map(contextTasks.map(task => [task.id, task]));
+  const groups = new Map<string, { id: string; name: string; tasks: DevTask[] }>();
+
+  for (const task of tasks) {
+    let root = task;
+    const visited = new Set([task.id]);
+    while (root.parentId) {
+      const parent = contextById.get(root.parentId);
+      if (!parent || visited.has(parent.id)) break;
+      visited.add(parent.id);
+      root = parent;
+    }
+    const id = root.parentId && !contextById.has(root.parentId) ? `parent:${root.parentId}` : root.id;
+    const fallbackName = root.parentName.trim() || task.parentName.trim() || task.name.trim();
+    const group = groups.get(id) || { id, name: root === task || !root.parentId ? devProjectName(root) : fallbackName, tasks: [] };
+    group.tasks.push(task);
+    groups.set(id, group);
+  }
+
+  return Array.from(groups.values()).map(group => {
+    const statuses = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
+    for (const task of group.tasks) statuses[devProjectStatus(task)] += 1;
+    return {
+      ...group,
+      statuses,
+      done: statuses.done,
+      completion: group.tasks.length ? Math.round(statuses.done / group.tasks.length * 100) : 0,
+      latestDate: group.tasks.map(task => task.updatedAt || taskDate(task) || "").sort().at(-1) || "",
+    };
+  }).sort((a, b) => b.tasks.length - a.tasks.length || a.name.localeCompare(b.name, "mn"));
+}
+
 export type DevMemberProductivity = {
   id: string;
   name: string;
@@ -314,7 +348,7 @@ export function topLevelDevTasks(tasks: DevTask[]) {
 }
 
 export function scopeDevReportTasks(tasks: DevTask[]) {
-  return scopeDevTeamTasks(tasks).filter(task => {
+  return tasks.filter(task => {
     const date = taskDate(task);
     return Boolean(date && date >= DEV_REPORT_START_DATE && date <= DEV_REPORT_END_DATE);
   });
@@ -375,6 +409,49 @@ export function memberProductivity(tasks: DevTask[]): DevMemberProductivity[] {
     }
   }
   return Array.from(members.values()).sort((a, b) => b.totalTasks - a.totalTasks || a.name.localeCompare(b.name));
+}
+
+/** The productivity list/card is intentionally limited to the five configured team members. */
+export function devTeamProductivity(tasks: DevTask[]) {
+  const allMembers = memberProductivity(tasks);
+  return DEV_TEAM_ASSIGNEES.map(name => {
+    const matches = allMembers.filter(member => normalizeAssigneeName(member.name) === normalizeAssigneeName(name));
+    const first = matches[0];
+    const totalTasks = matches.reduce((sum, member) => sum + member.totalTasks, 0);
+    const doneTasks = matches.reduce((sum, member) => sum + member.doneTasks, 0);
+    return {
+      id: first?.id || name,
+      name: first?.name || name,
+      color: first?.color || "",
+      avatar: first?.avatar || null,
+      position: devTeamPosition(name, first?.position || "Development"),
+      totalTasks,
+      doneTasks,
+      estimateMs: matches.reduce((sum, member) => sum + member.estimateMs, 0),
+      completion: totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0,
+    };
+  }).sort((a, b) => b.totalTasks - a.totalTasks || a.name.localeCompare(b.name));
+}
+
+/** Keep the named five in the pie and combine every other ClickUp assignee into Бусад. */
+export function devProductivityDistributionMembers(tasks: DevTask[]) {
+  const allMembers = memberProductivity(tasks);
+  const team = devTeamProductivity(tasks);
+  const otherMembers = allMembers.filter(member => !DEV_TEAM_ASSIGNEE_NAMES.has(normalizeAssigneeName(member.name)));
+  if (!otherMembers.length) return team;
+  const totalTasks = otherMembers.reduce((sum, member) => sum + member.totalTasks, 0);
+  const doneTasks = otherMembers.reduce((sum, member) => sum + member.doneTasks, 0);
+  return [...team, {
+    id: "dev-team-others",
+    name: "Бусад",
+    color: "#94a3b8",
+    avatar: null,
+    position: "Бусад",
+    totalTasks,
+    doneTasks,
+    estimateMs: otherMembers.reduce((sum, member) => sum + member.estimateMs, 0),
+    completion: totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0,
+  }];
 }
 
 export function monthlyTaskPerformance(tasks: DevTask[], startDate: string, endDate: string, selectedMonthKeys: string[] = []) {

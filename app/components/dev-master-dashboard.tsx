@@ -36,12 +36,11 @@ import {
   DEV_REPORT_END_YEAR,
   DEV_REPORT_START_DATE,
   DEV_REPORT_START_YEAR,
-  DEV_TEAM_ASSIGNEES,
-  devTeamPosition,
+  devProductivityDistributionMembers,
+  devTeamProductivity,
   isDevReportData,
   filterDevTasksByMonthKeys,
   formatSprintDateRange,
-  memberProductivity,
   metricPercentChange,
   monthlyTaskPerformance,
   previousSprintPeriods,
@@ -245,15 +244,10 @@ export default function DevMasterDashboard() {
     return filterDevTasksByMonthKeys(selectedTasks, periodMonthKeys);
   }, [data, filters, periodMonthKeys]);
   const tasks = useMemo(() => topLevelDevTasks(taskRecords), [taskRecords]);
-  const allTeamTasks = useMemo(() => data ? topLevelDevTasks(selectDevTasks(data, DEFAULT_FILTERS)) : [], [data]);
+  const allDevTasks = useMemo(() => data ? topLevelDevTasks(selectDevTasks(data, DEFAULT_FILTERS)) : [], [data]);
   const typeTotals = useMemo(() => taskTypeTotals(tasks), [tasks]);
-  const team = useMemo(() => {
-    const members = memberProductivity(tasks);
-    for (const name of DEV_TEAM_ASSIGNEES) {
-      if (!members.some(member => member.name.trim().toLowerCase() === name.toLowerCase())) members.push({ id: name, name, color: "", avatar: null, position: devTeamPosition(name), totalTasks: 0, doneTasks: 0, estimateMs: 0, completion: 0 });
-    }
-    return members;
-  }, [tasks]);
+  const team = useMemo(() => devTeamProductivity(tasks), [tasks]);
+  const distributionMembers = useMemo(() => devProductivityDistributionMembers(tasks), [tasks]);
   const monthly = useMemo(() => {
     const monthKeys = filters.sprintIds.length ? Array.from(new Set(tasks.map(task => taskDate(task)?.slice(0, 7)).filter((key): key is string => Boolean(key)))).sort() : periodMonthKeys;
     return monthlyTaskPerformance(tasks, filters.startDate, filters.endDate, monthKeys);
@@ -261,6 +255,7 @@ export default function DevMasterDashboard() {
   const changes = useMemo(() => changeRequestRows(taskRecords), [taskRecords]);
   const metrics = useMemo(() => reportMetrics(tasks), [tasks]);
   const teamAverage = useMemo(() => teamCompletionAverage(tasks), [tasks]);
+  const assigneeCount = useMemo(() => new Set((data?.tasks || []).flatMap(task => task.assignees.map(assignee => assignee.id || assignee.name.trim().toLocaleLowerCase("en-US")))).size, [data]);
   const taskTypes = useMemo(() => Array.from(new Set(topLevelDevTasks(data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
   const sprints = useMemo(() => {
     const counts = new Map<string, number>();
@@ -395,7 +390,7 @@ export default function DevMasterDashboard() {
       <div className="content-wrap dev-dashboard-wrap">
         <section className="dev-dashboard-heading">
           <div className="dev-dashboard-heading-top">
-            <div className="hero dev-dashboard-hero"><div className="eyebrow"><span /> DEV TEAM</div><h1>Dev.Master<span>.</span></h1><p>{data?.list.name || "B2C Master"} · {DEV_REPORT_START_YEAR}–{DEV_REPORT_END_YEAR} · {DEV_TEAM_ASSIGNEES.length} assignee · ClickUp {data ? `сүүлд ${formatSyncDate(data.taskSyncedAt || data.syncedAt)} шинэчлэгдсэн${loading ? " · Шинэчилж байна" : ""}` : "өгөгдөл уншиж байна"}</p></div>
+            <div className="hero dev-dashboard-hero"><div className="eyebrow"><span /> DEV TEAM</div><h1>Dev.Master<span>.</span></h1><p>{data?.list.name || "B2C Master"} · {DEV_REPORT_START_YEAR}–{DEV_REPORT_END_YEAR} · {data ? `${assigneeCount} assignee` : "бүх assignee"} · ClickUp {data ? `сүүлд ${formatSyncDate(data.taskSyncedAt || data.syncedAt)} шинэчлэгдсэн${loading ? " · Шинэчилж байна" : ""}` : "өгөгдөл уншиж байна"}</p></div>
           </div>
           <div className="dev-dashboard-filters" ref={filterBarRef} aria-label="Dev тайлангийн шүүлтүүр">
             <label className="dev-filter-search"><Search size={16} /><input value={filters.search} onChange={event => updateFilter("search", event.target.value)} placeholder="Ажил, ажилтан эсвэл төсөл хайх" aria-label="Dev тайлангаас хайх" /></label>
@@ -419,7 +414,7 @@ export default function DevMasterDashboard() {
             <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Таск төрөл:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
             {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
             <div className="dev-dashboard-actions" role="group" aria-label="Dev тайлангийн үйлдлүүд">
-              <button className="icon-button dev-download-filter" type="button" onClick={() => downloadAllDevData(allTeamTasks)} disabled={loading || !allTeamTasks.length} aria-label="All data татах" title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны ${DEV_TEAM_ASSIGNEES.length} assignee-ийн бүх өгөгдөл татах`}><Download size={18} /></button>
+              <button className="icon-button dev-download-filter" type="button" onClick={() => downloadAllDevData(allDevTasks)} disabled={loading || !allDevTasks.length} aria-label="All data татах" title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны бүх assignee-ийн өгөгдөл татах`}><Download size={18} /></button>
               <button className="icon-button dev-refresh-filter" type="button" onClick={() => void loadData(true)} disabled={loading} aria-label={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"} aria-busy={loading} title={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"}><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
             </div>
           </div>
@@ -468,7 +463,7 @@ export default function DevMasterDashboard() {
           </article>
         </section>
 
-        <DevTeamProductivity team={team} taskCount={tasks.length} loading={loading} />
+        <DevTeamProductivity team={team} distributionMembers={distributionMembers} taskCount={tasks.length} loading={loading} />
 
         <DevTeamComparison data={data} />
 
