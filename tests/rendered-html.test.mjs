@@ -155,9 +155,13 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   ]);
   assert.match(dashboard, /groupDevAllProjectTasks\(tasks, allProjectData\?\.tasks \|\| tasks\)/);
   assert.match(dashboard, /topLevelDevTasks\(tasks\)\.filter/);
-  assert.match(dashboard, /refreshPath: "\/api\/clickup\/dev\?refresh=all-project"/);
+  assert.match(dashboard, /"\/api\/clickup\/dev\?view=all-project"/);
+  assert.match(dashboard, /"\/api\/clickup\/dev\?refresh=all-project&view=all-project"/);
+  assert.match(dashboard, /topLevelDevTasks\(normalizeTasks\(Array\.isArray\(payload\.allProjectTasks\)/);
   assert.match(dashboard, /className="all-project-plan-empty"/);
   assert.match(route, /refresh === "all-project"/);
+  assert.match(route, /includeSubtasks: false/);
+  assert.match(route, /tasks: \[\],/);
   assert.match(css, /\.all-project-plan-empty \{[^}]*min-height: 166px;/);
   assert.match(logo, /<g fill="#fff">/);
   assert.doesNotMatch(logo, /<rect/);

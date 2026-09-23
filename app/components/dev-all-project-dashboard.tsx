@@ -137,7 +137,7 @@ export default function DevAllProjectDashboard() {
         ...payload,
         sprints: Array.isArray(payload.sprints) ? payload.sprints : [],
         tasks: scopeDevReportTasks(normalizeTasks(payload.tasks)),
-        allProjectTasks: normalizeTasks(Array.isArray(payload.allProjectTasks) ? payload.allProjectTasks : []),
+        allProjectTasks: topLevelDevTasks(normalizeTasks(Array.isArray(payload.allProjectTasks) ? payload.allProjectTasks : [])),
       };
       setData(normalizedPayload);
       setFilters(current => ({
@@ -147,15 +147,14 @@ export default function DevAllProjectDashboard() {
       }));
     }
     try {
-      let payload = await clickUpReportLoader.load("/api/clickup/dev", {
-        refreshPath: "/api/clickup/dev?refresh=all-project",
-        refresh,
-        validate: isDevReportData,
-        onData: applyPayload,
-      });
+      const path = "/api/clickup/dev?view=all-project";
+      const refreshPath = "/api/clickup/dev?refresh=all-project&view=all-project";
+      let payload = await clickUpReportLoader.read(refresh ? refreshPath : path, isDevReportData);
+      clickUpReportLoader.remember(path, payload);
+      applyPayload(payload);
       if (!refresh && isClickUpSnapshotStale(payload.allProjectTaskSyncedAt || payload.syncedAt)) {
-        payload = await clickUpReportLoader.read("/api/clickup/dev?refresh=all-project", isDevReportData);
-        clickUpReportLoader.remember("/api/clickup/dev", payload);
+        payload = await clickUpReportLoader.read(refreshPath, isDevReportData);
+        clickUpReportLoader.remember(path, payload);
         applyPayload(payload);
       }
     } catch (loadError) {

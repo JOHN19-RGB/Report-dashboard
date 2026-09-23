@@ -293,9 +293,9 @@ async function resolveB2cWorkspace(workspaceId: string, token: string) {
   return { list, allProjectList: allProjectList ? { id: allProjectList.id, name: allProjectList.name || "All Projects" } : null, sprintLists, partial };
 }
 
-async function getListTasks(listId: string, token: string, options: { includeTiml?: boolean; pageLimit?: number; batchSize?: number } = {}) {
+async function getListTasks(listId: string, token: string, options: { includeTiml?: boolean; includeSubtasks?: boolean; pageLimit?: number; batchSize?: number } = {}) {
   return readClickUpTaskPages<ClickUpTask>(async page => {
-      const query = new URLSearchParams({ archived: "false", include_closed: "true", subtasks: "true", include_timl: options.includeTiml ? "true" : "false", page: String(page), order_by: "due_date", reverse: "true" });
+      const query = new URLSearchParams({ archived: "false", include_closed: "true", subtasks: options.includeSubtasks === false ? "false" : "true", include_timl: options.includeTiml ? "true" : "false", page: String(page), order_by: "due_date", reverse: "true" });
       return clickUpJson<{ tasks?: ClickUpTask[]; last_page?: boolean }>(`/list/${encodeURIComponent(listId)}/task?${query}`, token);
   }, options);
 }
@@ -354,10 +354,27 @@ async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], toke
 
 export async function GET(request: Request) {
   try {
-    const refresh = new URL(request.url).searchParams.get("refresh") || "";
+    const requestUrl = new URL(request.url);
+    const refresh = requestUrl.searchParams.get("refresh") || "";
+    const allProjectView = requestUrl.searchParams.get("view") === "all-project";
     const snapshot = await readSnapshot();
     const hasAllProjectSnapshot = Boolean(snapshot?.allProjectList && Array.isArray(snapshot.allProjectTasks));
-    if (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION && hasAllProjectSnapshot) return Response.json({ ...snapshot, partial: Boolean(snapshot.partial || snapshot.sprintNeedsFullRefresh || !Array.isArray(snapshot.sprints) || !snapshot.sprints.length), cacheSource: "snapshot" }, { headers: { "Cache-Control": "private, no-store" } });
+    const responsePayload = (payload: ClickUpSnapshot, cacheSource: "snapshot" | "clickup") => {
+      if (!allProjectView) return { ...payload, cacheSource };
+      const allProjectTasks = (Array.isArray(payload.allProjectTasks) ? payload.allProjectTasks as DevTask[] : []).filter(task => !task.parentId);
+      return {
+        ...payload,
+        tasks: [],
+        allProjectTasks,
+        allProjectFetchedTaskCount: allProjectTasks.length,
+        partial: payload.allProjectPartial === true,
+        cacheSource,
+      };
+    };
+    if (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION && hasAllProjectSnapshot) {
+      const payload = { ...snapshot, partial: Boolean(snapshot.partial || snapshot.sprintNeedsFullRefresh || !Array.isArray(snapshot.sprints) || !snapshot.sprints.length) } satisfies ClickUpSnapshot;
+      return Response.json(responsePayload(payload, "snapshot"), { headers: { "Cache-Control": "private, no-store" } });
+    }
 
     const token = process.env.CLICKUP_API_TOKEN;
     const workspaceId = process.env.CLICKUP_WORKSPACE_ID;
@@ -373,7 +390,7 @@ export async function GET(request: Request) {
       const customTaskTypeData = Array.isArray(snapshot.customTaskTypeDefinitions)
         ? { custom_items: snapshot.customTaskTypeDefinitions as ClickUpCustomTaskType[] }
         : await clickUpJson<{ custom_items?: ClickUpCustomTaskType[] }>(`/team/${encodeURIComponent(workspaceId)}/custom_item`, token);
-      const result = await getListTasks(discovery.allProjectList.id, token, { includeTiml: true });
+      const result = await getListTasks(discovery.allProjectList.id, token, { includeTiml: true, includeSubtasks: false });
       const rawTasks = Array.from(new Map(result.tasks.filter(task => task.id).map(task => [task.id, task])).values());
       const previousTasks = [
         ...(snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }>),
@@ -385,7 +402,7 @@ export async function GET(request: Request) {
           .map((item): [string, string] => [String(item.id), safeText(item.name)])
           .filter(([, name]) => Boolean(name)),
       );
-      const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId);
+      const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId).filter(task => !task.parentId);
       const allProjectTasks = mergeClickUpTaskSnapshot(Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [], mappedTasks, result.partial);
       const allProjectTaskSyncedAt = new Date().toISOString();
       const payload = {
@@ -399,7 +416,7 @@ export async function GET(request: Request) {
         partial: Boolean(snapshot.taskPartial || result.partial || discovery.partial || snapshot.sprintDiscoveryPartial || snapshot.sprintNeedsFullRefresh || Number(snapshot.sprintSyncErrors)),
       } satisfies ClickUpSnapshot;
       await saveSnapshot(payload);
-      return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
+      return Response.json(responsePayload(payload, "clickup"), { headers: { "Cache-Control": "private, no-store" } });
     }
 
     const needsTaskSchemaRefresh = !refresh && snapshot && (snapshot.schemaVersion !== SNAPSHOT_VERSION || !hasAllProjectSnapshot);
@@ -460,7 +477,7 @@ export async function GET(request: Request) {
     const list = discovery.list;
     const [taskResult, allProjectTaskResult] = await Promise.all([
       getListTasks(list.id, token, { includeTiml: true }),
-      discovery.allProjectList ? getListTasks(discovery.allProjectList.id, token, { includeTiml: true }) : Promise.resolve(null),
+      discovery.allProjectList ? getListTasks(discovery.allProjectList.id, token, { includeTiml: true, includeSubtasks: false }) : Promise.resolve(null),
     ]);
     const rawTasks = Array.from(new Map(taskResult.tasks.filter(task => task.id).map(task => [task.id, task])).values());
     const rawAllProjectTasks = Array.from(new Map((allProjectTaskResult?.tasks || []).filter(task => task.id).map(task => [task.id, task])).values());
@@ -476,7 +493,7 @@ export async function GET(request: Request) {
         .filter(([, name]) => Boolean(name)),
     );
     const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId);
-    const mappedAllProjectTasks = mapClickUpTasks(rawAllProjectTasks, customTaskTypes, previousSprintByTaskId);
+    const mappedAllProjectTasks = mapClickUpTasks(rawAllProjectTasks, customTaskTypes, previousSprintByTaskId).filter(task => !task.parentId);
     const tasks = scopeDevReportTasks(mergeClickUpTaskSnapshot(Array.isArray(snapshot?.tasks) ? snapshot.tasks as DevTask[] : [], mappedTasks, taskResult.partial));
     const allProjectTasks = mergeClickUpTaskSnapshot(Array.isArray(snapshot?.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [], mappedAllProjectTasks, allProjectTaskResult?.partial === true);
     const allProjectPartial = discovery.allProjectList ? allProjectTaskResult?.partial === true : true;
@@ -512,7 +529,7 @@ export async function GET(request: Request) {
     } satisfies ClickUpSnapshot;
 
     await saveSnapshot(payload);
-    return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json(responsePayload(payload, "clickup"), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Dev ClickUp refresh failed", error);
     const message = error instanceof Error && error.message === "B2C Master list олдсонгүй." ? error.message : "ClickUp-ийн Dev мэдээллийг татаж чадсангүй.";
