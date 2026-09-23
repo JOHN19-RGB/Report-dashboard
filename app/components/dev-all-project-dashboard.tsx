@@ -40,7 +40,6 @@ import {
   nextDevProjectSort,
   scopeDevReportTasks,
   selectDevTasks,
-  taskDate,
   topLevelDevTasks,
   type DevProjectStatusKey,
   type DevProjectSort,
@@ -75,6 +74,56 @@ function formatDate(value: string | null | undefined) {
 
 function initials(value: string) {
   return value.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toLocaleUpperCase("mn-MN") || "—";
+}
+
+function projectWorkstream(task: DevTask) {
+  const value = Object.entries(task.customFields || {}).find(([name]) => /b2c\s+all\s+projects?/i.test(name))?.[1]?.toLocaleLowerCase("en-US") || "";
+  if (/design/.test(value)) return "design";
+  if (/development|front[ -]?end|dev\b/.test(value)) return "dev";
+  return "project";
+}
+
+function formatEstimate(value: number) {
+  if (!value) return "—";
+  const hours = Math.floor(value / 3_600_000);
+  const minutes = Math.round(value % 3_600_000 / 60_000);
+  return `${hours ? `${hours}ц ` : ""}${minutes ? `${minutes}м` : ""}`.trim() || "—";
+}
+
+function priorityLabel(value: string | undefined) {
+  return value?.trim() || "Priority байхгүй";
+}
+
+type AllProjectDirectoryItem = ReturnType<typeof groupDevAllProjectTasks>[number];
+
+function ProjectDetail({ project }: { project: AllProjectDirectoryItem }) {
+  const estimate = project.subtasks.reduce((sum, task) => sum + (task.timeEstimateMs || 0), 0);
+  const completed = project.subtasks.filter(task => devProjectStatus(task) === "done").length;
+  return <div className="all-project-detail">
+    <header><div><span className="all-project-section-kicker">PROJECT DETAIL</span><h3>{project.name}</h3></div><span>{project.subtasks.length} дэд ажил</span></header>
+    <div className="all-project-detail-stats">
+      <span><small>Ажлын урсгал</small><strong>{project.subtasks.length}</strong></span>
+      <span><small>Дууссан</small><strong>{completed}/{project.subtasks.length || 0}</strong></span>
+      <span><small>Нийт цаг</small><strong>{formatEstimate(estimate)}</strong></span>
+      <span><small>Үе шат</small><strong>{currentProjectStatus(project.statuses).label}</strong></span>
+    </div>
+    {project.subtasks.length ? <div className="all-project-detail-tasks">{project.subtasks.map(task => {
+      const status = DEV_PROJECT_STATUSES.find(item => item.key === devProjectStatus(task))!;
+      const title = task.name.includes("|") ? task.name.split("|").slice(1).join("|").trim() : task.name;
+      const assignees = task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
+      return <article key={task.id}>
+        <div className="all-project-detail-task-head"><div><small>{projectWorkstream(task) === "dev" ? "DEV" : projectWorkstream(task) === "design" ? "DESIGN" : "PROJECT"}</small><h4>{title || "Дэд ажил"}</h4></div><span className={`all-project-task-status status-${devProjectStatus(task)}`}>{status.label}</span></div>
+        <dl>
+          <div><dt>Хариуцагч</dt><dd>{assignees}</dd></div>
+          <div><dt>Эхэлсэн</dt><dd>{formatDate(task.startDate || task.createdDate)}</dd></div>
+          <div><dt>Дуусах</dt><dd>{formatDate(task.dueDate)}</dd></div>
+          <div><dt>Priority</dt><dd><span className={`all-project-priority priority-${(task.priority || "none").toLocaleLowerCase("en-US")}`}>{priorityLabel(task.priority)}</span></dd></div>
+          <div className="all-project-detail-sprint"><dt>Sprint</dt><dd title={task.sprint || undefined}>{task.sprint || "Sprint холбогдоогүй"}</dd></div>
+        </dl>
+        {task.url && <a href={task.url} target="_blank" rel="noreferrer">ClickUp дээр нээх <ExternalLink size={12} /></a>}
+      </article>;
+    })}</div> : <p className="all-project-detail-empty">Энэ төсөлд бүртгэлтэй дэд ажил алга.</p>}
+  </div>;
 }
 
 function periodSelectionLabel(years: string[], months: string[]) {
@@ -126,18 +175,19 @@ export default function DevAllProjectDashboard() {
   const [periodMode, setPeriodMode] = useState<DevSprintPeriodMode>("segment");
   const [projectView, setProjectView] = useState<"list" | "card">("list");
   const [projectSort, setProjectSort] = useState<DevProjectSort>(null);
+  const [workstream, setWorkstream] = useState<"dev" | "design" | "project">("project");
   const filterBarRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async (refresh: boolean) => {
     setLoading(true);
     setError("");
     function applyPayload(payload: DevReportData) {
-      const normalizeTasks = (tasks: DevTask[]) => tasks.map(task => ({ ...task, tags: Array.isArray(task.tags) ? task.tags : [], sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [], updatedAt: task.updatedAt || null }));
+      const normalizeTasks = (tasks: DevTask[]) => tasks.map(task => ({ ...task, tags: Array.isArray(task.tags) ? task.tags : [], sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [], updatedAt: task.updatedAt || null, priority: task.priority || "" }));
       const normalizedPayload: DevReportData = {
         ...payload,
         sprints: Array.isArray(payload.sprints) ? payload.sprints : [],
         tasks: scopeDevReportTasks(normalizeTasks(payload.tasks)),
-        allProjectTasks: topLevelDevTasks(normalizeTasks(Array.isArray(payload.allProjectTasks) ? payload.allProjectTasks : [])),
+        allProjectTasks: normalizeTasks(Array.isArray(payload.allProjectTasks) ? payload.allProjectTasks : []),
       };
       setData(normalizedPayload);
       setFilters(current => ({
@@ -195,52 +245,63 @@ export default function DevAllProjectDashboard() {
 
   const periodMonthKeys = useMemo(() => periodYears.flatMap(year => periodMonths.map(month => `${year}-${month}`)).sort(), [periodMonths, periodYears]);
   const allProjectData = useMemo(() => data ? { ...data, tasks: data.allProjectTasks || [] } : null, [data]);
-  const tasks = useMemo(() => {
+  const matchingRecords = useMemo(() => {
     const selected = allProjectData ? selectDevTasks(allProjectData, filters) : [];
     return filters.sprintIds.length ? selected : filterDevTasksByMonthKeys(selected, periodMonthKeys);
   }, [allProjectData, filters, periodMonthKeys]);
   const taskTypes = useMemo(() => Array.from(new Set((allProjectData?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [allProjectData]);
   const sprints = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const task of allProjectData?.tasks || []) for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
+    for (const task of topLevelDevTasks(allProjectData?.tasks || [])) for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
     return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
   }, [allProjectData, data?.sprints]);
   const periods = useMemo(() => buildSprintPeriods(sprints, periodMode), [periodMode, sprints]);
   const selectedPeriods = useMemo(() => periods.filter(period => period.sprintIds.every(id => filters.sprintIds.includes(id))), [filters.sprintIds, periods]);
   const selectionLabel = !selectedPeriods.length ? `All ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}`;
   const projects = useMemo(() => {
-    const grouped = groupDevAllProjectTasks(tasks, allProjectData?.tasks || tasks);
+    const context = allProjectData?.tasks || [];
+    const matchedIds = new Set(groupDevAllProjectTasks(matchingRecords, context).map(project => project.id));
+    const grouped = groupDevAllProjectTasks(context, context).filter(project => matchedIds.has(project.id));
     if (!projectSort) return grouped;
     return grouped.sort((a, b) => {
       let comparison = 0;
       if (projectSort.key === "project") comparison = a.name.localeCompare(b.name, "mn", { numeric: true, sensitivity: "base" });
       if (projectSort.key === "status") comparison = DEV_PROJECT_STATUSES.findIndex(status => status.key === currentProjectStatus(a.statuses).key) - DEV_PROJECT_STATUSES.findIndex(status => status.key === currentProjectStatus(b.statuses).key);
-      if (projectSort.key === "tasks") comparison = a.tasks.length - b.tasks.length;
+      if (projectSort.key === "tasks") comparison = a.subtasks.length - b.subtasks.length;
       if (projectSort.key === "completion") comparison = a.completion - b.completion;
       if (projectSort.key === "updated") comparison = a.latestDate.localeCompare(b.latestDate);
       if (!comparison) comparison = a.name.localeCompare(b.name, "mn", { numeric: true, sensitivity: "base" });
       return projectSort.direction === "asc" ? comparison : -comparison;
     });
-  }, [allProjectData, projectSort, tasks]);
-  const statusCounts = useMemo(() => {
+  }, [allProjectData, matchingRecords, projectSort]);
+  const projectRoots = useMemo(() => projects.map(project => project.rootTask), [projects]);
+  const chartTasks = useMemo(() => workstream === "project"
+    ? projectRoots
+    : projects.flatMap(project => project.subtasks).filter(task => projectWorkstream(task) === workstream), [projectRoots, projects, workstream]);
+  const projectStatusCounts = useMemo(() => {
     const counts = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
-    for (const task of tasks) counts[devProjectStatus(task)] += 1;
+    for (const task of projectRoots) counts[devProjectStatus(task)] += 1;
     return counts;
-  }, [tasks]);
-  const done = statusCounts.done;
-  const ongoing = tasks.length - done;
-  const completion = tasks.length ? Math.round(done / tasks.length * 100) : 0;
-  const planningTasks = useMemo(() => topLevelDevTasks(tasks).filter(task => devProjectStatus(task) === "todo").sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || devProjectName(a).localeCompare(devProjectName(b), "mn")), [tasks]);
+  }, [projectRoots]);
+  const chartStatusCounts = useMemo(() => {
+    const counts = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
+    for (const task of chartTasks) counts[devProjectStatus(task)] += 1;
+    return counts;
+  }, [chartTasks]);
+  const done = projectStatusCounts.done;
+  const ongoing = projectRoots.length - done;
+  const completion = projectRoots.length ? Math.round(done / projectRoots.length * 100) : 0;
+  const planningTasks = useMemo(() => projectRoots.filter(task => devProjectStatus(task) === "todo").sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || devProjectName(a).localeCompare(devProjectName(b), "mn")), [projectRoots]);
   const hasPeriodFilter = periodYears.length !== REPORT_YEARS.length || periodMonths.length !== REPORT_MONTHS.length;
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) || hasPeriodFilter;
   const statusSummary = DEV_PROJECT_STATUSES.reduce<Array<(typeof DEV_PROJECT_STATUSES)[number] & { count: number; share: number; start: number; end: number }>>((summary, status) => {
-    const count = statusCounts[status.key];
-    const share = tasks.length ? count / tasks.length * 100 : 0;
+    const count = chartStatusCounts[status.key];
+    const share = chartTasks.length ? count / chartTasks.length * 100 : 0;
     const start = summary.at(-1)?.end || 0;
     summary.push({ ...status, count, share, start, end: start + share });
     return summary;
   }, []);
-  const donut = tasks.length ? statusSummary.map(status => `${status.color} ${status.start}% ${status.end}%`).join(", ") : "#edf0f6 0% 100%";
+  const donut = chartTasks.length ? statusSummary.map(status => `${status.color} ${status.start}% ${status.end}%`).join(", ") : "#edf0f6 0% 100%";
 
   function updateFilter<Key extends keyof DevReportFilters>(key: Key, value: DevReportFilters[Key]) {
     setFilters(current => ({ ...current, [key]: value }));
@@ -314,7 +375,7 @@ export default function DevAllProjectDashboard() {
             </details>
             <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Таск төрөл:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
             {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
-            <div className="dev-dashboard-actions" role="group" aria-label="All Project тайлангийн үйлдлүүд"><button className="icon-button dev-download-filter" type="button" onClick={() => downloadProjects(tasks)} disabled={loading || !tasks.length} aria-label="Шүүсэн project data татах" title="Шүүсэн project data татах"><Download size={18} /></button><button className="icon-button dev-refresh-filter" type="button" onClick={() => void loadData(true)} disabled={loading} aria-label={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"} aria-busy={loading}><RefreshCw className={loading ? "spin" : ""} size={18} /></button></div>
+            <div className="dev-dashboard-actions" role="group" aria-label="All Project тайлангийн үйлдлүүд"><button className="icon-button dev-download-filter" type="button" onClick={() => downloadProjects(matchingRecords)} disabled={loading || !matchingRecords.length} aria-label="Шүүсэн project data татах" title="Шүүсэн project data татах"><Download size={18} /></button><button className="icon-button dev-refresh-filter" type="button" onClick={() => void loadData(true)} disabled={loading} aria-label={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"} aria-busy={loading}><RefreshCw className={loading ? "spin" : ""} size={18} /></button></div>
           </div>
         </section>
 
@@ -323,16 +384,18 @@ export default function DevAllProjectDashboard() {
         {data?.partial && <div className="dev-data-warning" role="status">ClickUp өгөгдлийн хэсэг түр шинэчлэгдээгүй байна. Хамгийн сүүлийн бүрэн snapshot-ийг харуулж байна.</div>}
 
         <section className="dev-kpi-grid all-project-kpis" aria-label="All Project гол үзүүлэлтүүд">
-          <article className="dev-kpi-card"><div><strong>{loading && !data ? "—" : projects.length}</strong><span>Нийт төсөл</span><small><FolderKanban size={12} /> {tasks.length} таск</small></div><span className="dev-kpi-art violet"><FolderKanban size={28} /></span></article>
+          <article className="dev-kpi-card"><div><strong>{loading && !data ? "—" : projects.length}</strong><span>Нийт төсөл</span><small><FolderKanban size={12} /> {projects.reduce((sum, project) => sum + project.subtasks.length, 0)} дэд ажил</small></div><span className="dev-kpi-art violet"><FolderKanban size={28} /></span></article>
           <article className="dev-kpi-card"><div><strong>{loading && !data ? "—" : done}</strong><span>Done</span><small><CheckCircle2 size={12} /> ClickUp-ийн дууссан төлөвүүд</small></div><span className="dev-kpi-art green"><CheckCircle2 size={28} /></span></article>
-          <article className="dev-kpi-card"><div><strong>{loading && !data ? "—" : `${completion}%`}</strong><span>Гүйцэтгэлийн хувь</span><small>{done} / {tasks.length} таск</small><span className="dev-kpi-progress"><i style={{ width: `${completion}%` }} /></span></div><span className="dev-progress-ring"><svg viewBox="0 0 66 66" aria-hidden="true"><circle className="dev-ring-track" cx="33" cy="33" r="28" /><circle className="dev-ring-value" cx="33" cy="33" r="28" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - completion} /></svg><b>{completion}%</b></span></article>
-          <article className="dev-kpi-card"><div><strong>{loading && !data ? "—" : ongoing}</strong><span>Үргэлжилж буй</span><small>{statusCounts.inProgress} In Progress · {statusCounts.qa} QA test</small></div><span className="dev-kpi-art amber"><RefreshCw size={28} /></span></article>
+          <article className="dev-kpi-card"><div><strong>{loading && !data ? "—" : `${completion}%`}</strong><span>Гүйцэтгэлийн хувь</span><small>{done} / {projectRoots.length} төсөл</small><span className="dev-kpi-progress"><i style={{ width: `${completion}%` }} /></span></div><span className="dev-progress-ring"><svg viewBox="0 0 66 66" aria-hidden="true"><circle className="dev-ring-track" cx="33" cy="33" r="28" /><circle className="dev-ring-value" cx="33" cy="33" r="28" pathLength="100" strokeDasharray="100" strokeDashoffset={100 - completion} /></svg><b>{completion}%</b></span></article>
+          <article className="dev-kpi-card"><div><strong>{loading && !data ? "—" : ongoing}</strong><span>Үргэлжилж буй</span><small>{projectStatusCounts.inProgress} In Progress · {projectStatusCounts.qa} QA test</small></div><span className="dev-kpi-art amber"><RefreshCw size={28} /></span></article>
         </section>
 
+        <nav className="all-project-workstream-tabs" aria-label="Төслийн ажлын урсгал">{(["dev", "design", "project"] as const).map(value => <button type="button" key={value} aria-pressed={workstream === value} onClick={() => setWorkstream(value)}>{value === "dev" ? "Dev" : value === "design" ? "Design" : "Project"}</button>)}</nav>
+
         <section className="dev-panel all-project-status-panel" aria-labelledby="all-project-status-title">
-          <header><div><span className="all-project-section-kicker">STATUS OVERVIEW</span><h2 id="all-project-status-title">Төслийн таскуудын төлөв</h2><p>Dev шүүлтүүрт тохирсон бүх ClickUp таск таван төлөвт багтана</p></div><span className="all-project-total-badge">{tasks.length} таск</span></header>
+          <header><div><span className="all-project-section-kicker">STATUS OVERVIEW</span><h2 id="all-project-status-title">Төслийн таскуудын төлөв</h2><p>{workstream === "project" ? "Үндсэн төслүүд" : workstream === "design" ? "Design дэд ажлууд" : "Development дэд ажлууд"} · сонгосон sprint болон шүүлтүүртэй холбоотой</p></div><span className="all-project-total-badge">{chartTasks.length} {workstream === "project" ? "төсөл" : "дэд ажил"}</span></header>
           <div className="all-project-status-layout">
-            <div className="all-project-status-visual"><div className="all-project-donut" style={{ background: `conic-gradient(${donut})` }} aria-label={`${tasks.length} таскийн төлөв`}><span><strong>{tasks.length}</strong><small>Нийт таск</small></span></div><div className="all-project-status-highlight"><strong>{completion}%</strong><span>Done болсон</span><small>{ongoing} таск үргэлжилж байна</small></div></div>
+            <div className="all-project-status-visual"><div className="all-project-donut" style={{ background: `conic-gradient(${donut})` }} aria-label={`${chartTasks.length} ажлын төлөв`}><span><strong>{chartTasks.length}</strong><small>{workstream === "project" ? "Нийт төсөл" : "Нийт дэд ажил"}</small></span></div><div className="all-project-status-highlight"><strong>{chartTasks.length ? Math.round(chartStatusCounts.done / chartTasks.length * 100) : 0}%</strong><span>Done болсон</span><small>{chartTasks.length - chartStatusCounts.done} ажил үргэлжилж байна</small></div></div>
             <div className="all-project-status-list">{statusSummary.map(status => <div className="all-project-status-row" data-status={status.key} key={status.key}><span className="all-project-status-name"><i style={{ background: status.color }} />{status.label}</span><div className="all-project-status-track"><i style={{ width: `${status.share}%`, background: status.color }} /></div><strong>{status.count}</strong><small>{status.share.toFixed(1)}%</small></div>)}</div>
           </div>
         </section>
@@ -343,19 +406,19 @@ export default function DevAllProjectDashboard() {
             <div className="all-project-list-head" role="row">
               {([[
                 "project", "Төсөл",
-              ], ["status", "Төлөв"], ["tasks", "Таск"], ["completion", "Гүйцэтгэл"], ["updated", "Шинэчлэгдсэн"]] as Array<[DevProjectSortKey, string]>).map(([key, label]) => <span role="columnheader" aria-sort={projectSort?.key === key ? (projectSort.direction === "asc" ? "ascending" : "descending") : "none"} key={key}><button type="button" data-sort-key={key} className={projectSort?.key === key ? "active" : ""} onClick={() => toggleProjectSort(key)} title={`${label}: ${projectSort?.key === key ? projectSort.direction === "asc" ? "өсөхөөр эрэмбэлсэн" : "буурахаар эрэмбэлсэн" : "эрэмбэлээгүй"}. Дарахад дараагийн төлөвт шилжинэ.`}>{label}{sortIcon(key)}</button></span>)}
+              ], ["status", "Төлөв"], ["tasks", "Дэд ажил"], ["completion", "Гүйцэтгэл"], ["updated", "Шинэчлэгдсэн"]] as Array<[DevProjectSortKey, string]>).map(([key, label]) => <span role="columnheader" aria-sort={projectSort?.key === key ? (projectSort.direction === "asc" ? "ascending" : "descending") : "none"} key={key}><button type="button" data-sort-key={key} className={projectSort?.key === key ? "active" : ""} onClick={() => toggleProjectSort(key)} title={`${label}: ${projectSort?.key === key ? projectSort.direction === "asc" ? "өсөхөөр эрэмбэлсэн" : "буурахаар эрэмбэлсэн" : "эрэмбэлээгүй"}. Дарахад дараагийн төлөвт шилжинэ.`}>{label}{sortIcon(key)}</button></span>)}
             </div>
             <div className="all-project-list-scroll" role="rowgroup">{projects.map(project => <details className="all-project-row" key={project.id}>
-              <summary><span className="all-project-project"><ChevronDown size={15} /><span><strong>{project.name}</strong><small>{project.tasks.length} ClickUp ажил</small></span></span><span className={`all-project-current-status status-${currentProjectStatus(project.statuses).key}`}><i style={{ background: currentProjectStatus(project.statuses).color }} />{currentProjectStatus(project.statuses).label}</span><b>{project.tasks.length}</b><span className="all-project-completion"><i><b style={{ width: `${project.completion}%` }} /></i><strong>{project.completion}%</strong></span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></summary>
-              <div className="all-project-task-list">{project.tasks.map(task => <article key={task.id}><div><strong>{task.name}</strong><small>{task.type} · {task.sprint || "Sprint холбогдоогүй"}</small></div><span className={`all-project-task-status status-${devProjectStatus(task)}`}>{DEV_PROJECT_STATUSES.find(status => status.key === devProjectStatus(task))?.label}</span><span>{task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй"}</span><time>{formatDate(task.dueDate || taskDate(task))}</time>{task.url ? <a href={task.url} target="_blank" rel="noreferrer" aria-label={`${task.name} ClickUp дээр нээх`}><ExternalLink size={14} /></a> : <span />}</article>)}</div>
+              <summary><span className="all-project-project"><ChevronDown size={15} /><span><strong>{project.name}</strong><small>{project.subtasks.length} дэд ажил · {project.rootTask.sprint || "Sprint холбогдоогүй"}</small></span></span><span className={`all-project-current-status status-${currentProjectStatus(project.statuses).key}`}><i style={{ background: currentProjectStatus(project.statuses).color }} />{currentProjectStatus(project.statuses).label}</span><b>{project.subtasks.length}</b><span className="all-project-completion"><i><b style={{ width: `${project.completion}%` }} /></i><strong>{project.completion}%</strong></span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></summary>
+              <ProjectDetail project={project} />
             </details>)}</div>
             {!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}
-          </div> : <div className="all-project-card-scroll"><div className="all-project-cards">{projects.map(project => <article className="dev-member-card all-project-card" key={project.id}>
-            <div className="all-project-card-heading"><span className="all-project-card-icon"><FolderKanban size={18} /></span><div><h3>{project.name}</h3><span>{project.tasks.length} таск · {project.done} Done</span></div></div>
+          </div> : <div className="all-project-card-scroll"><div className="all-project-cards">{projects.map(project => <details className="dev-member-card all-project-card" key={project.id}>
+            <summary><div className="all-project-card-heading"><span className="all-project-card-icon"><FolderKanban size={18} /></span><div><h3>{project.name}</h3><span>{project.subtasks.length} дэд ажил · {project.done} Done</span></div><ChevronDown size={16} /></div>
             <div className="all-project-card-completion"><span><b>Гүйцэтгэл</b><strong>{project.completion}%</strong></span><i><b style={{ width: `${project.completion}%` }} /></i></div>
             <div className="all-project-card-statuses">{DEV_PROJECT_STATUSES.map(status => <span key={status.key}><i style={{ background: status.color }} />{status.label}<b>{project.statuses[status.key]}</b></span>)}</div>
-            <footer><span>Шинэчлэгдсэн</span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></footer>
-          </article>)}</div>{!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}</div>}
+            <footer><span>Шинэчлэгдсэн</span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></footer></summary><ProjectDetail project={project} />
+          </details>)}</div>{!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}</div>}
         </section>
 
         <section className="dev-panel all-project-plan-panel" data-empty={!planningTasks.length} aria-labelledby="all-project-plan-title">

@@ -17,7 +17,8 @@ export async function proxyClickUpForLocalDevelopment(request: Request, pathname
     const body = await response.text();
     if (response.ok) {
       const payload = JSON.parse(body);
-      if (typeof payload.syncedAt === "string" && (Array.isArray(payload.tasks) || Array.isArray(payload.subtasks))) {
+      const compactView = requestUrl.searchParams.get("view") === "all-project";
+      if (!compactView && typeof payload.syncedAt === "string" && (Array.isArray(payload.tasks) || Array.isArray(payload.subtasks))) {
         await saveClickUpSnapshot(snapshotId, payload);
       }
     }

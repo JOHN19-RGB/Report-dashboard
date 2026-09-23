@@ -25,6 +25,7 @@ export type DevTask = {
   updatedAt: string | null;
   closedDate: string | null;
   timeEstimateMs: number | null;
+  priority?: string;
   customFields: Record<string, string>;
 };
 
@@ -256,6 +257,46 @@ export function devProjectName(task: DevTask) {
   return source.split("|")[0].trim() || "Төсөл тодорхойгүй";
 }
 
+function devProjectConnectionKey(value: string) {
+  return value
+    .split("|")[0]
+    .normalize("NFKD")
+    .toLocaleLowerCase("en-US")
+    .replace(/\b(?:v\s*)?\d+(?:\.\d+)*\b/g, "")
+    .replace(/[^a-z0-9\u0400-\u04ff]+/g, "");
+}
+
+/** Connect All Projects roots and subtasks to Master sprint membership through their site name. */
+export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTasks: DevTask[]) {
+  const sprintByProject = new Map<string, { ids: Set<string>; names: Set<string> }>();
+  for (const task of masterTasks) {
+    if (!task.sprintIds?.length) continue;
+    const key = devProjectConnectionKey(devProjectName(task));
+    if (!key) continue;
+    const connection = sprintByProject.get(key) || { ids: new Set<string>(), names: new Set<string>() };
+    task.sprintIds.forEach(id => connection.ids.add(id));
+    if (task.sprint) connection.names.add(task.sprint);
+    sprintByProject.set(key, connection);
+  }
+
+  const byId = new Map(allProjectTasks.map(task => [task.id, task]));
+  return allProjectTasks.map(task => {
+    let root = task;
+    const visited = new Set([task.id]);
+    while (root.parentId) {
+      const parent = byId.get(root.parentId);
+      if (!parent || visited.has(parent.id)) break;
+      visited.add(parent.id);
+      root = parent;
+    }
+    const connection = sprintByProject.get(devProjectConnectionKey(devProjectName(root)));
+    if (!connection) return task;
+    const sprintIds = Array.from(new Set([...(task.sprintIds || []), ...connection.ids]));
+    const sprint = Array.from(new Set([task.sprint, ...connection.names].filter(Boolean))).join(", ");
+    return { ...task, sprintIds, sprint };
+  });
+}
+
 export function groupDevProjectTasks(tasks: DevTask[]) {
   const groups = new Map<string, { name: string; tasks: DevTask[] }>();
   for (const task of tasks) {
@@ -281,7 +322,7 @@ export function groupDevProjectTasks(tasks: DevTask[]) {
 /** Group filtered All Projects records by their ClickUp root task, preserving duplicate project names. */
 export function groupDevAllProjectTasks(tasks: DevTask[], contextTasks: DevTask[] = tasks) {
   const contextById = new Map(contextTasks.map(task => [task.id, task]));
-  const groups = new Map<string, { id: string; name: string; tasks: DevTask[] }>();
+  const groups = new Map<string, { id: string; name: string; rootTask: DevTask; tasks: DevTask[] }>();
 
   for (const task of tasks) {
     let root = task;
@@ -294,19 +335,22 @@ export function groupDevAllProjectTasks(tasks: DevTask[], contextTasks: DevTask[
     }
     const id = root.parentId && !contextById.has(root.parentId) ? `parent:${root.parentId}` : root.id;
     const fallbackName = root.parentName.trim() || task.parentName.trim() || task.name.trim();
-    const group = groups.get(id) || { id, name: root === task || !root.parentId ? devProjectName(root) : fallbackName, tasks: [] };
+    const group = groups.get(id) || { id, name: root === task || !root.parentId ? devProjectName(root) : fallbackName, rootTask: root, tasks: [] };
     group.tasks.push(task);
     groups.set(id, group);
   }
 
   return Array.from(groups.values()).map(group => {
+    const subtasks = group.tasks.filter(task => task.id !== group.rootTask.id);
+    const progressTasks = subtasks.length ? subtasks : [group.rootTask];
     const statuses = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
-    for (const task of group.tasks) statuses[devProjectStatus(task)] += 1;
+    for (const task of progressTasks) statuses[devProjectStatus(task)] += 1;
     return {
       ...group,
+      subtasks,
       statuses,
       done: statuses.done,
-      completion: group.tasks.length ? Math.round(statuses.done / group.tasks.length * 100) : 0,
+      completion: progressTasks.length ? Math.round(statuses.done / progressTasks.length * 100) : 0,
       latestDate: group.tasks.map(task => task.updatedAt || taskDate(task) || "").sort().at(-1) || "",
     };
   }).sort((a, b) => b.tasks.length - a.tasks.length || a.name.localeCompare(b.name, "mn"));

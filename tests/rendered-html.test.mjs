@@ -142,26 +142,32 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
   assert.match(dashboard, /Bug: "#ff876d", Imp: "#6d9eff"/);
   assert.match(css, /\.dev-cx-chart \.bar-fill \{ background: #dfe3e9;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-fill,[\s\S]*?background: var\(--series-color\)/);
-  assert.match(css, /\.all-project-list-scroll \{ max-height: 310px; overflow-y: auto;/);
+  assert.match(css, /\.all-project-list-scroll \{ max-height: 620px; overflow-y: auto;/);
   assert.match(css, /\.all-project-cards \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
 });
 
 test("All Project keeps projects and tasks distinct, refreshes only its source, and uses the transparent white Cody logo", async () => {
-  const [dashboard, route, css, logo] = await Promise.all([
+  const [dashboard, route, localProxy, css, logo] = await Promise.all([
     readFile(new URL("../app/components/dev-all-project-dashboard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/clickup/dev/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/lib/clickup-local-proxy.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../public/cody-logo.svg", import.meta.url), "utf8"),
   ]);
-  assert.match(dashboard, /groupDevAllProjectTasks\(tasks, allProjectData\?\.tasks \|\| tasks\)/);
-  assert.match(dashboard, /topLevelDevTasks\(tasks\)\.filter/);
+  assert.match(dashboard, /groupDevAllProjectTasks\(matchingRecords, context\)/);
+  assert.match(dashboard, /projectRoots\.filter\(task => devProjectStatus\(task\) === "todo"\)/);
   assert.match(dashboard, /"\/api\/clickup\/dev\?view=all-project"/);
   assert.match(dashboard, /"\/api\/clickup\/dev\?refresh=all-project&view=all-project"/);
-  assert.match(dashboard, /topLevelDevTasks\(normalizeTasks\(Array\.isArray\(payload\.allProjectTasks\)/);
+  assert.match(dashboard, /className="all-project-workstream-tabs"/);
+  assert.match(dashboard, /<ProjectDetail project=\{project\} \/>/);
   assert.match(dashboard, /className="all-project-plan-empty"/);
   assert.match(route, /refresh === "all-project"/);
-  assert.match(route, /includeSubtasks: false/);
+  assert.match(route, /connectDevAllProjectSprints/);
+  assert.doesNotMatch(route, /includeSubtasks: false/);
   assert.match(route, /tasks: \[\],/);
+  assert.match(localProxy, /compactView = requestUrl\.searchParams\.get\("view"\) === "all-project"/);
+  assert.match(localProxy, /if \(!compactView && typeof payload\.syncedAt/);
+  assert.match(css, /\.all-project-detail-tasks \{ display: grid;/);
   assert.match(css, /\.all-project-plan-empty \{[^}]*min-height: 166px;/);
   assert.match(logo, /<g fill="#fff">/);
   assert.doesNotMatch(logo, /<rect/);

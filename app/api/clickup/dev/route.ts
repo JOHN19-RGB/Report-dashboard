@@ -1,6 +1,6 @@
 import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../../db/clickup-snapshot";
 import { proxyClickUpForLocalDevelopment } from "../../../lib/clickup-local-proxy";
-import { DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, selectDevAllProjectList, type DevSprint, type DevTask } from "../../../lib/dev-report";
+import { connectDevAllProjectSprints, DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, selectDevAllProjectList, type DevSprint, type DevTask } from "../../../lib/dev-report";
 import { requestClickUp } from "../../../lib/clickup-request";
 import { mergeClickUpTaskSnapshot, readClickUpTaskPages } from "../../../lib/clickup-pagination";
 import { mergeSprintMemberships, type SprintAssignment, type SprintSyncState } from "../../../lib/clickup-sprint-sync";
@@ -44,6 +44,7 @@ type ClickUpTask = {
   date_updated?: string | null;
   date_closed?: string | null;
   time_estimate?: number | null;
+  priority?: { priority?: string; color?: string } | null;
   custom_fields?: ClickUpCustomField[];
 };
 
@@ -328,6 +329,7 @@ function mapClickUpTasks(rawTasks: ClickUpTask[], customTaskTypes: Map<string, s
       updatedAt: timestampToIso(task.date_updated),
       closedDate: dateToIso(task.date_closed),
       timeEstimateMs: typeof task.time_estimate === "number" ? task.time_estimate : null,
+      priority: safeText(task.priority?.priority),
       customFields: fields,
     };
   });
@@ -359,9 +361,14 @@ export async function GET(request: Request) {
     const allProjectView = requestUrl.searchParams.get("view") === "all-project";
     const snapshot = await readSnapshot();
     const hasAllProjectSnapshot = Boolean(snapshot?.allProjectList && Array.isArray(snapshot.allProjectTasks));
+    const hasAllProjectSubtasks = Boolean(Array.isArray(snapshot?.allProjectTasks) && (snapshot.allProjectTasks as DevTask[]).some(task => task.parentId));
+    const refreshAllProject = refresh === "all-project" || (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION && hasAllProjectSnapshot && !hasAllProjectSubtasks);
     const responsePayload = (payload: ClickUpSnapshot, cacheSource: "snapshot" | "clickup") => {
       if (!allProjectView) return { ...payload, cacheSource };
-      const allProjectTasks = (Array.isArray(payload.allProjectTasks) ? payload.allProjectTasks as DevTask[] : []).filter(task => !task.parentId);
+      const allProjectTasks = connectDevAllProjectSprints(
+        Array.isArray(payload.allProjectTasks) ? payload.allProjectTasks as DevTask[] : [],
+        Array.isArray(payload.tasks) ? payload.tasks as DevTask[] : [],
+      );
       return {
         ...payload,
         tasks: [],
@@ -371,7 +378,7 @@ export async function GET(request: Request) {
         cacheSource,
       };
     };
-    if (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION && hasAllProjectSnapshot) {
+    if (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION && hasAllProjectSnapshot && hasAllProjectSubtasks) {
       const payload = { ...snapshot, partial: Boolean(snapshot.partial || snapshot.sprintNeedsFullRefresh || !Array.isArray(snapshot.sprints) || !snapshot.sprints.length) } satisfies ClickUpSnapshot;
       return Response.json(responsePayload(payload, "snapshot"), { headers: { "Cache-Control": "private, no-store" } });
     }
@@ -384,13 +391,13 @@ export async function GET(request: Request) {
       return Response.json({ error: "ClickUp API тохиргоо дутуу байна." }, { status: 503 });
     }
 
-    if (refresh === "all-project" && snapshot?.schemaVersion === SNAPSHOT_VERSION && Array.isArray(snapshot.tasks)) {
+    if (refreshAllProject && snapshot?.schemaVersion === SNAPSHOT_VERSION && Array.isArray(snapshot.tasks)) {
       const discovery = await resolveB2cWorkspace(workspaceId, token);
       if (!discovery.allProjectList) throw new Error("All Projects list олдсонгүй.");
       const customTaskTypeData = Array.isArray(snapshot.customTaskTypeDefinitions)
         ? { custom_items: snapshot.customTaskTypeDefinitions as ClickUpCustomTaskType[] }
         : await clickUpJson<{ custom_items?: ClickUpCustomTaskType[] }>(`/team/${encodeURIComponent(workspaceId)}/custom_item`, token);
-      const result = await getListTasks(discovery.allProjectList.id, token, { includeTiml: true, includeSubtasks: false });
+      const result = await getListTasks(discovery.allProjectList.id, token, { includeTiml: true });
       const rawTasks = Array.from(new Map(result.tasks.filter(task => task.id).map(task => [task.id, task])).values());
       const previousTasks = [
         ...(snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }>),
@@ -402,8 +409,11 @@ export async function GET(request: Request) {
           .map((item): [string, string] => [String(item.id), safeText(item.name)])
           .filter(([, name]) => Boolean(name)),
       );
-      const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId).filter(task => !task.parentId);
-      const allProjectTasks = mergeClickUpTaskSnapshot(Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [], mappedTasks, result.partial);
+      const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId);
+      const allProjectTasks = connectDevAllProjectSprints(
+        mergeClickUpTaskSnapshot(Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [], mappedTasks, result.partial),
+        snapshot.tasks as DevTask[],
+      );
       const allProjectTaskSyncedAt = new Date().toISOString();
       const payload = {
         ...snapshot,
@@ -433,10 +443,11 @@ export async function GET(request: Request) {
       const previousSprints = Array.isArray(snapshot.sprints) ? snapshot.sprints as DevSprint[] : [];
       const { tasks, sprints, state } = mergeSprintMemberships(snapshotTasks, previousSprints, rawSprintAssignments, previousState);
       const sprintMembershipByTaskId = new Map(tasks.map(task => [task.id, { sprint: task.sprint, sprintIds: task.sprintIds }]));
-      const allProjectTasks = (Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : []).map(task => {
+      const sprintLinkedAllProjectTasks = (Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : []).map(task => {
         const membership = sprintMembershipByTaskId.get(task.id);
         return membership ? { ...task, sprint: membership.sprint, sprintIds: membership.sprintIds } : task;
       });
+      const allProjectTasks = connectDevAllProjectSprints(sprintLinkedAllProjectTasks, tasks);
       const taskPartial = snapshot.taskPartial === true;
       const sprintSyncErrors = Object.values(state).filter(item => item.failed).length;
       const payload = {
@@ -477,7 +488,7 @@ export async function GET(request: Request) {
     const list = discovery.list;
     const [taskResult, allProjectTaskResult] = await Promise.all([
       getListTasks(list.id, token, { includeTiml: true }),
-      discovery.allProjectList ? getListTasks(discovery.allProjectList.id, token, { includeTiml: true, includeSubtasks: false }) : Promise.resolve(null),
+      discovery.allProjectList ? getListTasks(discovery.allProjectList.id, token, { includeTiml: true }) : Promise.resolve(null),
     ]);
     const rawTasks = Array.from(new Map(taskResult.tasks.filter(task => task.id).map(task => [task.id, task])).values());
     const rawAllProjectTasks = Array.from(new Map((allProjectTaskResult?.tasks || []).filter(task => task.id).map(task => [task.id, task])).values());
@@ -493,9 +504,12 @@ export async function GET(request: Request) {
         .filter(([, name]) => Boolean(name)),
     );
     const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId);
-    const mappedAllProjectTasks = mapClickUpTasks(rawAllProjectTasks, customTaskTypes, previousSprintByTaskId).filter(task => !task.parentId);
+    const mappedAllProjectTasks = mapClickUpTasks(rawAllProjectTasks, customTaskTypes, previousSprintByTaskId);
     const tasks = scopeDevReportTasks(mergeClickUpTaskSnapshot(Array.isArray(snapshot?.tasks) ? snapshot.tasks as DevTask[] : [], mappedTasks, taskResult.partial));
-    const allProjectTasks = mergeClickUpTaskSnapshot(Array.isArray(snapshot?.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [], mappedAllProjectTasks, allProjectTaskResult?.partial === true);
+    const allProjectTasks = connectDevAllProjectSprints(
+      mergeClickUpTaskSnapshot(Array.isArray(snapshot?.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [], mappedAllProjectTasks, allProjectTaskResult?.partial === true),
+      tasks,
+    );
     const allProjectPartial = discovery.allProjectList ? allProjectTaskResult?.partial === true : true;
     const workspace = workspaceData.teams?.find(team => team.id === workspaceId) || workspaceData.teams?.[0];
     const syncedAt = new Date().toISOString();

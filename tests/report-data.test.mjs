@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { buildSprintPeriods, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -187,7 +187,25 @@ test("All Project directory groups every task under its root project without mer
   assert.equal(groups.reduce((sum, group) => sum + group.tasks.length, 0), 4);
   assert.deepEqual(groups.map(group => group.id).sort(), ["root-a", "root-b"]);
   assert.ok(groups.every(group => group.name === "Store"));
-  assert.equal(groups.find(group => group.id === "root-a").completion, 50);
+  assert.equal(groups.find(group => group.id === "root-a").completion, 100);
+  assert.deepEqual(groups.find(group => group.id === "root-a").subtasks.map(task => task.id), ["child-a"]);
+});
+
+test("All Projects inherits sprint membership from Master tasks with the same site name", () => {
+  const task = (id, name, parentId = null, sprint = "", sprintIds = []) => ({
+    id, name, parentId, parentName: "", project: "", sprint, sprintIds,
+  });
+  const allProjects = [
+    task("root", "Gadget.mn 2.0"),
+    task("design", "Gadget.mn 2.0 | UI UX Design", "root"),
+    task("unmatched", "Other.mn"),
+  ];
+  const master = [task("master", "Gadget.mn | Checkout", null, "Sprint 47", ["s47"])];
+  const connected = connectDevAllProjectSprints(allProjects, master);
+  assert.deepEqual(connected.find(item => item.id === "root").sprintIds, ["s47"]);
+  assert.deepEqual(connected.find(item => item.id === "design").sprintIds, ["s47"]);
+  assert.equal(connected.find(item => item.id === "design").sprint, "Sprint 47");
+  assert.deepEqual(connected.find(item => item.id === "unmatched").sprintIds, []);
 });
 
 test("multiple sprint choices use a unique union and do not use task dates as membership", () => {
