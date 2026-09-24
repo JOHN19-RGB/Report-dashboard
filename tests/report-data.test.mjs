@@ -179,32 +179,44 @@ test("All Project directory groups every task under its root project without mer
   const tasks = [
     task("root-a", "Store", null, "", "in progress"),
     task("child-a", "Frontend", "root-a", "Store", "done"),
+    task("grandchild-a", "Checkout", "child-a", "Frontend", "to do"),
     task("root-b", "Store", null, "", "to do"),
     task("child-b", "Design", "root-b", "Store", "qa test"),
   ];
   const groups = groupDevAllProjectTasks(tasks, tasks);
   assert.equal(groups.length, 2);
-  assert.equal(groups.reduce((sum, group) => sum + group.tasks.length, 0), 4);
+  assert.equal(groups.reduce((sum, group) => sum + group.tasks.length, 0), 5);
   assert.deepEqual(groups.map(group => group.id).sort(), ["root-a", "root-b"]);
   assert.ok(groups.every(group => group.name === "Store"));
   assert.equal(groups.find(group => group.id === "root-a").completion, 100);
   assert.deepEqual(groups.find(group => group.id === "root-a").subtasks.map(task => task.id), ["child-a"]);
 });
 
-test("All Projects inherits sprint membership from Master tasks with the same site name", () => {
-  const task = (id, name, parentId = null, sprint = "", sprintIds = []) => ({
-    id, name, parentId, parentName: "", project: "", sprint, sprintIds,
+test("All Projects uses exact B2C relationships before root-level site sprint fallback", () => {
+  const task = (id, name, parentId = null, sprint = "", sprintIds = [], customFields = {}) => ({
+    id, name, parentId, parentName: "", project: "", sprint, sprintIds, customFields,
   });
   const allProjects = [
-    task("root", "Gadget.mn 2.0"),
-    task("design", "Gadget.mn 2.0 | UI UX Design", "root"),
+    task("root", "Gadget.mn 2.0", null, "Old sprint", ["stale"], { "Relationship B2C": "Gadget.mn | Checkout" }),
+    task("design", "Gadget.mn 2.0 | UI UX Design", "root", "Old sprint", ["stale"], { "Relationship B2C": "Gadget.mn | UI UX Design" }),
+    task("frontend", "Gadget.mn 2.0 | Front-end Dev", "root", "Old sprint", ["stale"], { "Relationship B2C": "Removed relationship" }),
+    task("training", "Gadget.mn 2.0 | Training", "root", "Old sprint", ["stale"]),
+    task("fallback-root", "Store.mn 2.0"),
     task("unmatched", "Other.mn"),
   ];
-  const master = [task("master", "Gadget.mn | Checkout", null, "Sprint 47", ["s47"])];
+  const master = [
+    task("master-project", "Gadget.mn | Checkout", null, "Sprint 47", ["s47"]),
+    task("master-design", "Gadget.mn | UI UX Design", null, "Sprint 48", ["s48"]),
+    task("master-frontend", "Gadget.mn | Front-end development", null, "Sprint 48", ["s48"]),
+    task("master-store", "Store.mn | Header", null, "Sprint 49", ["s49"]),
+  ];
   const connected = connectDevAllProjectSprints(allProjects, master);
   assert.deepEqual(connected.find(item => item.id === "root").sprintIds, ["s47"]);
-  assert.deepEqual(connected.find(item => item.id === "design").sprintIds, ["s47"]);
-  assert.equal(connected.find(item => item.id === "design").sprint, "Sprint 47");
+  assert.deepEqual(connected.find(item => item.id === "design").sprintIds, ["s48"]);
+  assert.equal(connected.find(item => item.id === "design").sprint, "Sprint 48");
+  assert.deepEqual(connected.find(item => item.id === "frontend").sprintIds, ["s48"]);
+  assert.deepEqual(connected.find(item => item.id === "training").sprintIds, []);
+  assert.deepEqual(connected.find(item => item.id === "fallback-root").sprintIds, ["s49"]);
   assert.deepEqual(connected.find(item => item.id === "unmatched").sprintIds, []);
 });
 

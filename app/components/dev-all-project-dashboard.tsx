@@ -258,6 +258,7 @@ export default function DevAllProjectDashboard() {
   const periods = useMemo(() => buildSprintPeriods(sprints, periodMode), [periodMode, sprints]);
   const selectedPeriods = useMemo(() => periods.filter(period => period.sprintIds.every(id => filters.sprintIds.includes(id))), [filters.sprintIds, periods]);
   const selectionLabel = !selectedPeriods.length ? `All ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}`;
+  const matchingRecordIds = useMemo(() => new Set(matchingRecords.map(task => task.id)), [matchingRecords]);
   const projects = useMemo(() => {
     const context = allProjectData?.tasks || [];
     const matchedIds = new Set(groupDevAllProjectTasks(matchingRecords, context).map(project => project.id));
@@ -277,7 +278,7 @@ export default function DevAllProjectDashboard() {
   const projectRoots = useMemo(() => projects.map(project => project.rootTask), [projects]);
   const chartTasks = useMemo(() => workstream === "project"
     ? projectRoots
-    : projects.flatMap(project => project.subtasks).filter(task => projectWorkstream(task) === workstream), [projectRoots, projects, workstream]);
+    : projects.flatMap(project => project.subtasks).filter(task => projectWorkstream(task) === workstream && (!filters.sprintIds.length || matchingRecordIds.has(task.id))), [filters.sprintIds.length, matchingRecordIds, projectRoots, projects, workstream]);
   const projectStatusCounts = useMemo(() => {
     const counts = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
     for (const task of projectRoots) counts[devProjectStatus(task)] += 1;

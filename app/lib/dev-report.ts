@@ -263,20 +263,41 @@ function devProjectConnectionKey(value: string) {
     .normalize("NFKD")
     .toLocaleLowerCase("en-US")
     .replace(/\b(?:v\s*)?\d+(?:\.\d+)*\b/g, "")
+    .replace(/\b(?:www|mn|com|net|org)\b/g, "")
     .replace(/[^a-z0-9\u0400-\u04ff]+/g, "");
 }
 
-/** Connect All Projects roots and subtasks to Master sprint membership through their site name. */
+function devTaskConnectionKey(value: string) {
+  const [site = "", ...workParts] = value.split("|");
+  const work = workParts.join("|")
+    .normalize("NFKD")
+    .toLocaleLowerCase("en-US")
+    .replace(/front[\s_-]*end\s+(?:dev(?:elopment)?|хөгжүүлэлт)/g, "frontend")
+    .replace(/ui\s*ux\s*design/g, "design")
+    .replace(/[^a-z0-9\u0400-\u04ff]+/g, "");
+  return `${devProjectConnectionKey(site)}|${work}`;
+}
+
+/** Connect All Projects records to exact Master tasks, with a site fallback for project roots. */
 export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTasks: DevTask[]) {
   const sprintByProject = new Map<string, { ids: Set<string>; names: Set<string> }>();
+  const sprintByTask = new Map<string, { ids: Set<string>; names: Set<string> }>();
   for (const task of masterTasks) {
     if (!task.sprintIds?.length) continue;
-    const key = devProjectConnectionKey(devProjectName(task));
-    if (!key) continue;
-    const connection = sprintByProject.get(key) || { ids: new Set<string>(), names: new Set<string>() };
-    task.sprintIds.forEach(id => connection.ids.add(id));
-    if (task.sprint) connection.names.add(task.sprint);
-    sprintByProject.set(key, connection);
+    const projectKey = devProjectConnectionKey(devProjectName(task));
+    if (projectKey) {
+      const connection = sprintByProject.get(projectKey) || { ids: new Set<string>(), names: new Set<string>() };
+      task.sprintIds.forEach(id => connection.ids.add(id));
+      if (task.sprint) connection.names.add(task.sprint);
+      sprintByProject.set(projectKey, connection);
+    }
+    const taskKey = devTaskConnectionKey(task.name);
+    if (taskKey) {
+      const connection = sprintByTask.get(taskKey) || { ids: new Set<string>(), names: new Set<string>() };
+      task.sprintIds.forEach(id => connection.ids.add(id));
+      if (task.sprint) connection.names.add(task.sprint);
+      sprintByTask.set(taskKey, connection);
+    }
   }
 
   const byId = new Map(allProjectTasks.map(task => [task.id, task]));
@@ -289,10 +310,17 @@ export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTa
       visited.add(parent.id);
       root = parent;
     }
-    const connection = sprintByProject.get(devProjectConnectionKey(devProjectName(root)));
-    if (!connection) return task;
-    const sprintIds = Array.from(new Set([...(task.sprintIds || []), ...connection.ids]));
-    const sprint = Array.from(new Set([task.sprint, ...connection.names].filter(Boolean))).join(", ");
+    const relationship = Object.entries(task.customFields || {}).find(([name]) => /relationship\s+b2c/i.test(name))?.[1] || "";
+    const relationshipConnection = relationship
+      ? sprintByTask.get(devTaskConnectionKey(relationship))
+      : undefined;
+    const directConnection = relationshipConnection || sprintByTask.get(devTaskConnectionKey(task.name));
+    const projectConnection = !task.parentId && !task.name.includes("|")
+      ? sprintByProject.get(devProjectConnectionKey(devProjectName(root)))
+      : undefined;
+    const connection = directConnection || projectConnection;
+    const sprintIds = connection ? Array.from(connection.ids) : [];
+    const sprint = connection ? Array.from(connection.names).join(", ") : "";
     return { ...task, sprintIds, sprint };
   });
 }
@@ -341,7 +369,7 @@ export function groupDevAllProjectTasks(tasks: DevTask[], contextTasks: DevTask[
   }
 
   return Array.from(groups.values()).map(group => {
-    const subtasks = group.tasks.filter(task => task.id !== group.rootTask.id);
+    const subtasks = group.tasks.filter(task => task.parentId === group.rootTask.id);
     const progressTasks = subtasks.length ? subtasks : [group.rootTask];
     const statuses = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
     for (const task of progressTasks) statuses[devProjectStatus(task)] += 1;
