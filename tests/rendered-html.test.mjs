@@ -142,7 +142,7 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
   assert.match(dashboard, /Bug: "#ff876d", Imp: "#6d9eff"/);
   assert.match(css, /\.dev-cx-chart \.bar-fill \{ background: #dfe3e9;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-fill,[\s\S]*?background: var\(--series-color\)/);
-  assert.match(css, /\.all-project-list-scroll \{ max-height: 620px; overflow-y: auto;/);
+  assert.match(css, /\.all-project-list-scroll \{ max-height: 345px; overflow-y: auto;/);
   assert.match(css, /\.all-project-cards \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
 });
 

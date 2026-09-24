@@ -410,7 +410,17 @@ export default function DevAllProjectDashboard() {
               ], ["status", "Төлөв"], ["tasks", "Дэд ажил"], ["completion", "Гүйцэтгэл"], ["updated", "Шинэчлэгдсэн"]] as Array<[DevProjectSortKey, string]>).map(([key, label]) => <span role="columnheader" aria-sort={projectSort?.key === key ? (projectSort.direction === "asc" ? "ascending" : "descending") : "none"} key={key}><button type="button" data-sort-key={key} className={projectSort?.key === key ? "active" : ""} onClick={() => toggleProjectSort(key)} title={`${label}: ${projectSort?.key === key ? projectSort.direction === "asc" ? "өсөхөөр эрэмбэлсэн" : "буурахаар эрэмбэлсэн" : "эрэмбэлээгүй"}. Дарахад дараагийн төлөвт шилжинэ.`}>{label}{sortIcon(key)}</button></span>)}
             </div>
             <div className="all-project-list-scroll" role="rowgroup">{projects.map(project => <details className="all-project-row" key={project.id}>
-              <summary><span className="all-project-project"><ChevronDown size={15} /><span><strong>{project.name}</strong><small>{project.subtasks.length} дэд ажил · {project.rootTask.sprint || "Sprint холбогдоогүй"}</small></span></span><span className={`all-project-current-status status-${currentProjectStatus(project.statuses).key}`}><i style={{ background: currentProjectStatus(project.statuses).color }} />{currentProjectStatus(project.statuses).label}</span><b>{project.subtasks.length}</b><span className="all-project-completion"><i><b style={{ width: `${project.completion}%` }} /></i><strong>{project.completion}%</strong></span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></summary>
+              <summary>
+                <span className="all-project-project">
+                  <span className="all-project-disclosure"><ChevronDown size={14} /></span>
+                  <span className="all-project-project-icon"><FolderKanban size={16} /></span>
+                  <span className="all-project-project-copy"><strong>{project.name}</strong><small>{project.rootTask.sprint || "Sprint холбогдоогүй"}</small></span>
+                </span>
+                <span className={`all-project-current-status status-${currentProjectStatus(project.statuses).key}`}><i style={{ background: currentProjectStatus(project.statuses).color }} />{currentProjectStatus(project.statuses).label}</span>
+                <span className="all-project-task-count"><strong>{project.subtasks.length}</strong><small>таск</small></span>
+                <span className="all-project-completion"><i><b style={{ width: `${project.completion}%` }} /></i><strong>{project.completion}%</strong></span>
+                <time className="all-project-updated" dateTime={project.latestDate || undefined}><Clock3 size={13} /><span>{project.latestDate ? formatDate(project.latestDate) : "—"}</span></time>
+              </summary>
               <ProjectDetail project={project} />
             </details>)}</div>
             {!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}
