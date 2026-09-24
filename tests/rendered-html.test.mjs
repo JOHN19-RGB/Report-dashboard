@@ -167,7 +167,9 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   assert.match(route, /tasks: \[\],/);
   assert.match(localProxy, /compactView = requestUrl\.searchParams\.get\("view"\) === "all-project"/);
   assert.match(localProxy, /if \(!compactView && typeof payload\.syncedAt/);
-  assert.match(css, /\.all-project-detail-tasks \{ display: grid;/);
+  assert.match(dashboard, /className="all-project-subtask"/);
+  assert.match(css, /\.all-project-subtask > summary \{ display: grid;/);
+  assert.match(css, /\.all-project-subtask-body \{/);
   assert.match(css, /\.all-project-plan-empty \{[^}]*min-height: 166px;/);
   assert.match(logo, /<g fill="#fff">/);
   assert.doesNotMatch(logo, /<rect/);

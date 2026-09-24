@@ -107,21 +107,33 @@ function ProjectDetail({ project }: { project: AllProjectDirectoryItem }) {
       <span><small>Нийт цаг</small><strong>{formatEstimate(estimate)}</strong></span>
       <span><small>Үе шат</small><strong>{currentProjectStatus(project.statuses).label}</strong></span>
     </div>
-    {project.subtasks.length ? <div className="all-project-detail-tasks">{project.subtasks.map(task => {
+    {project.subtasks.length ? <div className="all-project-subtasks">
+      <div className="all-project-subtasks-heading"><div><ListTodo size={15} /><span>Дэд ажлууд</span></div><small>Дэлгэрэнгүй мэдээллийг харахын тулд таск дээр дарна уу</small></div>
+      {project.subtasks.map((task, index) => {
       const status = DEV_PROJECT_STATUSES.find(item => item.key === devProjectStatus(task))!;
       const title = task.name.includes("|") ? task.name.split("|").slice(1).join("|").trim() : task.name;
       const assignees = task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
-      return <article key={task.id}>
-        <div className="all-project-detail-task-head"><div><small>{projectWorkstream(task) === "dev" ? "DEV" : projectWorkstream(task) === "design" ? "DESIGN" : "PROJECT"}</small><h4>{title || "Дэд ажил"}</h4></div><span className={`all-project-task-status status-${devProjectStatus(task)}`}>{status.label}</span></div>
-        <dl>
-          <div><dt>Хариуцагч</dt><dd>{assignees}</dd></div>
-          <div><dt>Эхэлсэн</dt><dd>{formatDate(task.startDate || task.createdDate)}</dd></div>
-          <div><dt>Дуусах</dt><dd>{formatDate(task.dueDate)}</dd></div>
-          <div><dt>Priority</dt><dd><span className={`all-project-priority priority-${(task.priority || "none").toLocaleLowerCase("en-US")}`}>{priorityLabel(task.priority)}</span></dd></div>
-          <div className="all-project-detail-sprint"><dt>Sprint</dt><dd title={task.sprint || undefined}>{task.sprint || "Sprint холбогдоогүй"}</dd></div>
-        </dl>
-        {task.url && <a href={task.url} target="_blank" rel="noreferrer">ClickUp дээр нээх <ExternalLink size={12} /></a>}
-      </article>;
+      const workstream = projectWorkstream(task) === "dev" ? "DEV" : projectWorkstream(task) === "design" ? "DESIGN" : "PROJECT";
+      return <details className="all-project-subtask" key={task.id}>
+        <summary>
+          <span className="all-project-subtask-index">{String(index + 1).padStart(2, "0")}</span>
+          <span className="all-project-subtask-copy"><small>{workstream}</small><strong>{title || "Дэд ажил"}</strong></span>
+          <span className="all-project-subtask-owner">{assignees}</span>
+          <span className={`all-project-task-status status-${devProjectStatus(task)}`}><i style={{ background: status.color }} />{status.label}</span>
+          <span className="all-project-subtask-chevron"><ChevronDown size={14} /></span>
+        </summary>
+        <div className="all-project-subtask-body">
+          <dl>
+            <div><dt>Хариуцагч</dt><dd>{assignees}</dd></div>
+            <div><dt>Эхэлсэн</dt><dd>{formatDate(task.startDate || task.createdDate)}</dd></div>
+            <div><dt>Дуусах</dt><dd>{formatDate(task.dueDate)}</dd></div>
+            <div><dt>Тооцоолсон цаг</dt><dd>{formatEstimate(task.timeEstimateMs || 0)}</dd></div>
+            <div><dt>Priority</dt><dd><span className={`all-project-priority priority-${(task.priority || "none").toLocaleLowerCase("en-US")}`}>{priorityLabel(task.priority)}</span></dd></div>
+            <div className="all-project-detail-sprint"><dt>Sprint</dt><dd title={task.sprint || undefined}>{task.sprint || "Sprint холбогдоогүй"}</dd></div>
+          </dl>
+          {task.url && <a href={task.url} target="_blank" rel="noreferrer">ClickUp дээр нээх <ExternalLink size={12} /></a>}
+        </div>
+      </details>;
     })}</div> : <p className="all-project-detail-empty">Энэ төсөлд бүртгэлтэй дэд ажил алга.</p>}
   </div>;
 }
