@@ -27,6 +27,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TeamSidebar from "./team-sidebar";
 import DevTeamProductivity from "./dev-team-productivity";
+import DevFilterSummary from "./dev-filter-summary";
 import DevTeamComparison from "./dev-team-comparison";
 import { clickUpReportLoader, needsClickUpSprintRefresh } from "../lib/clickup-report-loader";
 import {
@@ -53,7 +54,6 @@ import {
   topLevelDevTasks,
   type DevReportData,
   type DevReportFilters,
-  type DevSprintPeriodMode,
   type DevTask,
 } from "../lib/dev-report";
 
@@ -67,6 +67,16 @@ function taskTypeColor(type: string, index: number) {
 const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE, taskType: "all", sprintIds: [] };
 const REPORT_YEARS = Array.from({ length: DEV_REPORT_END_YEAR - DEV_REPORT_START_YEAR + 1 }, (_, index) => String(DEV_REPORT_START_YEAR + index));
 const REPORT_MONTHS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
+type SummaryPriorityKey = "urgent" | "high" | "medium" | "low" | "unspecified";
+
+function summaryPriority(value: string): SummaryPriorityKey {
+  const normalized = value.trim().toLocaleLowerCase("en-US");
+  if (normalized === "urgent") return "urgent";
+  if (normalized === "high") return "high";
+  if (normalized === "normal" || normalized === "medium") return "medium";
+  if (normalized === "low") return "low";
+  return "unspecified";
+}
 
 function formatDuration(value: number) {
   const totalMinutes = Math.round(value / 60_000);
@@ -155,7 +165,6 @@ export default function DevMasterDashboard() {
   const [filters, setFilters] = useState<DevReportFilters>(DEFAULT_FILTERS);
   const [periodYears, setPeriodYears] = useState(REPORT_YEARS);
   const [periodMonths, setPeriodMonths] = useState(REPORT_MONTHS);
-  const [periodMode, setPeriodMode] = useState<DevSprintPeriodMode>("segment");
   const [chartType, setChartType] = useState<"Bug" | "Imp">("Bug");
   const filterBarRef = useRef<HTMLDivElement>(null);
   const periodRangeRef = useRef({ startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE });
@@ -264,11 +273,11 @@ export default function DevMasterDashboard() {
     }
     return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
   }, [data]);
-  const periods = useMemo(() => buildSprintPeriods(sprints, periodMode), [periodMode, sprints]);
+  const periods = useMemo(() => buildSprintPeriods(sprints, "segment"), [sprints]);
   const selectedPeriods = useMemo(() => periods.filter(period => period.sprintIds.every(id => filters.sprintIds.includes(id))), [filters.sprintIds, periods]);
-  const selectionLabel = !selectedPeriods.length ? `All ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}`;
-  const periodCardLabel = selectedPeriods.length > 1 ? `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectionLabel;
-  const periodLabel = selectedPeriods.length ? `${periodMode === "segment" ? "Segment" : "Sprint"} ${selectionLabel}` : periodSelectionLabel(periodYears, periodMonths);
+  const selectionLabel = !selectedPeriods.length ? "All Sprints" : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} Sprints`;
+  const periodCardLabel = selectedPeriods.length > 1 ? `${selectedPeriods.length} Sprints` : selectionLabel;
+  const periodLabel = selectedPeriods.length ? `Sprint ${selectionLabel}` : periodSelectionLabel(periodYears, periodMonths);
   const comparison = useMemo(() => {
     const result = previousSprintPeriods(periods, selectedPeriods.map(period => period.id));
     return data?.taskPartial ? { ...result, available: false, reason: "Master task-ийн өгөгдөл дутуу тул харьцуулах боломжгүй" } : result;
@@ -280,13 +289,13 @@ export default function DevMasterDashboard() {
   const previousAverage = useMemo(() => teamCompletionAverage(previousTasks), [previousTasks]);
   const completionRate = tasks.length ? metrics.doneTasks / tasks.length * 100 : 0;
   const previousCompletionRate = previousTasks.length ? previousMetrics.doneTasks / previousTasks.length * 100 : 0;
-  const comparisonLabel = `өмнөх ${selectedPeriods.length > 1 ? `${selectedPeriods.length} ` : ""}${periodMode === "segment" ? "segment" : "sprint"}-ээс`;
+  const comparisonLabel = `өмнөх ${selectedPeriods.length > 1 ? `${selectedPeriods.length} ` : ""}sprint-ээс`;
   const chartItems = useMemo(() => {
-    if (!selectedPeriods.length) return monthly.map(item => ({ key: item.key, label: item.month, short: item.month, count: chartType === "Bug" ? item.bug : item.imp, selected: false, sprintIds: [] as string[] }));
+    if (!selectedPeriods.length) return monthly.map(item => ({ key: item.key, label: item.month, short: item.month, dateRange: "", count: chartType === "Bug" ? item.bug : item.imp, selected: false, sprintIds: [] as string[] }));
     const visible = [...selectedPeriods, ...(showPreviousComparison ? comparison.periods : [])].sort((a, b) => a.firstNumber - b.firstNumber);
     return visible.map(period => {
       const periodTasks = data ? topLevelDevTasks(selectDevTasks(data, { ...filters, sprintIds: period.sprintIds })) : [];
-      return { key: period.id, label: period.label, short: period.label.replace(/^Sprint /, ""), count: periodTasks.filter(task => task.type === chartType).length, selected: selectedPeriods.some(selected => selected.id === period.id), sprintIds: period.sprintIds };
+      return { key: period.id, label: period.label, short: period.label.replace(/^Sprint /, ""), dateRange: formatSprintDateRange(period.startDate, period.endDate), count: periodTasks.filter(task => task.type === chartType).length, selected: selectedPeriods.some(selected => selected.id === period.id), sprintIds: period.sprintIds };
     });
   }, [chartType, comparison, data, filters, monthly, selectedPeriods, showPreviousComparison]);
   const chartPeak = Math.max(1, ...chartItems.map(item => item.count));
@@ -308,6 +317,56 @@ export default function DevMasterDashboard() {
     donutPosition += totalTypeCount ? (item.count / totalTypeCount) * 100 : 0;
     return `${taskTypeColor(item.type, index)} ${start}% ${donutPosition}%`;
   }).join(", ");
+  const summaryInput = useMemo(() => {
+    const summarizeType = (type: "Imp" | "Bug") => {
+      const current = tasks.filter(task => task.type === type);
+      const previous = comparison.available ? previousTasks.filter(task => task.type === type) : [];
+      return {
+        current,
+        count: current.length,
+        estimateMinutes: Math.round(current.reduce((sum, task) => sum + (task.timeEstimateMs || 0), 0) / 60_000),
+        previousCount: comparison.available ? previous.length : null,
+      };
+    };
+    const imp = summarizeType("Imp");
+    const bug = summarizeType("Bug");
+    const priorities: Record<SummaryPriorityKey, number> = { urgent: 0, high: 0, medium: 0, low: 0, unspecified: 0 };
+    for (const task of imp.current) priorities[summaryPriority(task.priority || "")] += 1;
+    const statusMap = new Map<string, { name: string; count: number }>();
+    for (const task of tasks) {
+      const name = task.status.name.trim() || "Төлөв тодорхойгүй";
+      const key = name.toLocaleLowerCase("en-US");
+      const current = statusMap.get(key) || { name, count: 0 };
+      current.count += 1;
+      statusMap.set(key, current);
+    }
+
+    return {
+      period: periodLabel,
+      previousPeriod: comparison.available ? comparison.periods.map(period => period.label).join(", ") : "",
+      filter: {
+        taskType: filters.taskType === "all" ? "Бүх төрөл" : `Type · ${filters.taskType}`,
+        sprint: selectedPeriods.length ? `Sprint · ${selectionLabel}` : "",
+        search: filters.search.trim(),
+      },
+      breakdown: {
+        types: typeTotals.map(item => ({ name: item.type, count: item.count })),
+        statuses: Array.from(statusMap.values()).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "mn")),
+      },
+      imp: {
+        count: imp.count,
+        estimateMinutes: imp.estimateMinutes,
+        previousCount: imp.previousCount,
+        priorities,
+      },
+      bug: {
+        count: bug.count,
+        estimateMinutes: bug.estimateMinutes,
+        previousCount: bug.previousCount,
+      },
+      partial: Boolean(data?.partial),
+    };
+  }, [comparison.available, comparison.periods, data?.partial, filters.search, filters.taskType, periodLabel, previousTasks, selectedPeriods.length, selectionLabel, tasks, typeTotals]);
 
   function updateFilter<Key extends keyof DevReportFilters>(key: Key, value: DevReportFilters[Key]) {
     setFilters(current => ({ ...current, [key]: value }));
@@ -357,12 +416,6 @@ export default function DevMasterDashboard() {
     applySprints(periods.filter(period => next.includes(period.id)).flatMap(period => period.sprintIds));
   }
 
-  function changePeriodMode(mode: DevSprintPeriodMode) {
-    if (mode === periodMode) return;
-    applySprints([]);
-    setPeriodMode(mode);
-  }
-
   function selectChartItem(item: typeof chartItems[number]) {
     if (item.sprintIds.length) applySprints(item.sprintIds);
     else {
@@ -394,7 +447,7 @@ export default function DevMasterDashboard() {
           </div>
           <div className="dev-dashboard-filters" ref={filterBarRef} aria-label="Dev тайлангийн шүүлтүүр">
             <label className="dev-filter-search"><Search size={16} /><input value={filters.search} onChange={event => updateFilter("search", event.target.value)} placeholder="Ажил, ажилтан эсвэл төсөл хайх" aria-label="Dev тайлангаас хайх" /></label>
-            <details className="dev-select-filter dev-period-filter dev-period-multiselect" title={filters.sprintIds.length ? "Sprint/segment сонгосон үед жил/сар үйлчлэхгүй. Жил эсвэл сар соливол sprint/segment сонголтыг цэвэрлэнэ." : undefined}>
+            <details className="dev-select-filter dev-period-filter dev-period-multiselect" title={filters.sprintIds.length ? "Sprint сонгосон үед жил/сар үйлчлэхгүй. Жил эсвэл сар соливол sprint сонголтыг цэвэрлэнэ." : undefined}>
               <summary><Clock3 size={17} /><span>Хугацаа:</span><b>{periodSelectionLabel(periodYears, periodMonths)}</b><ChevronDown size={14} /></summary>
               <div className="dev-period-menu">
                 <fieldset><legend><span>Жил</span><button type="button" onClick={() => applyPeriodSelection(REPORT_YEARS, periodMonths)}>Бүгд</button></legend><div className="dev-period-years">{REPORT_YEARS.map(year => <label key={year}><input type="checkbox" checked={periodYears.includes(year)} disabled={periodYears.length === 1 && periodYears.includes(year)} onChange={() => togglePeriodYear(year)} /><span>{year}</span></label>)}</div></fieldset>
@@ -402,12 +455,11 @@ export default function DevMasterDashboard() {
               </div>
             </details>
             <details className="dev-select-filter dev-sprint-filter dev-period-multiselect">
-              <summary><Flag size={17} /><span>{periodMode === "segment" ? "Segment:" : "Sprint:"}</span><b>{selectionLabel}</b><ChevronDown size={14} /></summary>
-              <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint болон segment олон сонголт">
-                <div className="dev-period-mode" role="group" aria-label="Sprint эсвэл segment"><button type="button" aria-pressed={periodMode === "segment"} onClick={() => changePeriodMode("segment")}>Segments</button><button type="button" aria-pressed={periodMode === "sprint"} onClick={() => changePeriodMode("sprint")}>Sprints</button></div>
-                <label title="Sprint/segment-ийн шүүлтүүргүй. Sprint холбогдоогүй Master ажлууд мөн багтана."><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All {periodMode === "segment" ? "Segments" : "Sprints"}</span></label>
-                <div className="dev-sprint-options">{periods.map(item => <label key={item.id} title={item.complete ? `${item.label} · ${formatDateRange(item.startDate || "", item.endDate || "")}` : `Sprint ${item.missingNumbers.join(", ")} хараахан байхгүй — segment бүрдэхийг хүлээж байна`}><input type="checkbox" value={item.id} checked={selectedPeriods.some(period => period.id === item.id)} disabled={!item.complete} onChange={() => toggleSprintPeriod(item.id)} /><span>{item.label}{!item.complete && <small>Хүлээгдэж байна</small>}</span></label>)}</div>
-                {periodMode === "segment" && <p>2 sprint = 1 segment · 11–12, 13–14, …</p>}
+              <summary><Flag size={17} /><span>Sprints:</span><b>{selectionLabel}</b><ChevronDown size={14} /></summary>
+              <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint олон сонголт">
+                <label title="Sprint-ийн шүүлтүүргүй. Sprint холбогдоогүй Master ажлууд мөн багтана."><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All Sprints</span></label>
+                <div className="dev-sprint-options">{periods.map(item => <label key={item.id} title={item.complete ? `${item.label} · ${formatDateRange(item.startDate || "", item.endDate || "")}` : `Sprint ${item.missingNumbers.join(", ")} хараахан байхгүй — sprint хос бүрдэхийг хүлээж байна`}><input type="checkbox" value={item.id} checked={selectedPeriods.some(period => period.id === item.id)} disabled={!item.complete} onChange={() => toggleSprintPeriod(item.id)} /><span>{item.label}{!item.complete && <small>Хүлээгдэж байна</small>}</span></label>)}</div>
+                <p>Sprint-үүдийг хосоор сонгоно · 11–12, 13–14, …</p>
                 {!loading && !sprints.length && <p>ClickUp sprint олдсонгүй</p>}
               </div>
             </details>
@@ -433,7 +485,7 @@ export default function DevMasterDashboard() {
           <article className="dev-kpi-card" data-kpi="team-average"><div><strong>{initialLoading ? "—" : `${Math.round(teamAverage.average)}%`}</strong><span>Ажилчдын гүйцэтгэлийн<br />тайлан</span><small title={teamAverage.members.map(member => `${member.name}: ${member.doneTasks}/${member.totalTasks} (${member.completion.toFixed(1)}%)`).join("\n") + "\nАжилгүй гишүүнийг 0% гэж тооцно; 5 гишүүний энгийн дундаж."}><Users size={12} /> 5 assignee average</small><span className="dev-kpi-progress"><i style={{ width: `${teamAverage.average}%` }} /></span>
             {!initialLoading && selectedPeriods.length > 0 && <MetricComparison current={teamAverage.average} previous={comparison.available ? previousAverage.average : null} label={comparisonLabel} reason={comparison.reason} />}
           </div><span className="dev-kpi-art violet"><Gauge size={31} /></span></article>
-          <article className="dev-kpi-card dev-sprint-card" data-kpi="period"><div><strong>{initialLoading ? "—" : selectedPeriods.length === 1 ? <>{periodMode === "segment" ? `Segment ${selectedPeriods[0].firstNumber}–${selectedPeriods[0].lastNumber}` : selectedPeriods[0].label}<span className="dev-sprint-card-date" title={formatDateRange(selectedPeriods[0].startDate || "", selectedPeriods[0].endDate || "")}>({formatSprintDateRange(selectedPeriods[0].startDate, selectedPeriods[0].endDate)})</span></> : periodCardLabel}</strong><span>{periodMode === "segment" ? "Segment" : "Sprint"}</span>
+          <article className="dev-kpi-card dev-sprint-card" data-kpi="period"><div><strong>{initialLoading ? "—" : selectedPeriods.length === 1 ? <>{selectedPeriods[0].label}<span className="dev-sprint-card-date" title={formatDateRange(selectedPeriods[0].startDate || "", selectedPeriods[0].endDate || "")}>({formatSprintDateRange(selectedPeriods[0].startDate, selectedPeriods[0].endDate)})</span></> : periodCardLabel}</strong><span>Sprint</span>
             {!initialLoading && selectedPeriods.length > 1 && <div className="dev-sprint-card-ranges" aria-label="Сонгосон sprint-ийн огноо">{selectedPeriods.map(item => <div className="dev-sprint-card-range" key={item.id} title={formatDateRange(item.startDate || "", item.endDate || "")}><b>{item.label}</b><span>{formatSprintDateRange(item.startDate, item.endDate)}</span></div>)}</div>}
             <small>{formatDuration(metrics.estimateMs)} estimate</small></div><span className="dev-kpi-art amber"><TimerReset size={31} /></span></article>
         </section>
@@ -443,15 +495,15 @@ export default function DevMasterDashboard() {
             <header><div><h2>Таск гүйцэтгэлийн харьцуулалт</h2><p>{showPreviousComparison ? "Сонгосон болон өмнөх үеийн ажлын тоо" : selectedPeriods.length ? "Сонгосон үеийн ажлын тоо" : "Сар бүрийн ажлын тоо"}</p></div><div className="dev-chart-type" role="group" aria-label="Графикийн ажлын төрөл"><button type="button" aria-pressed={chartType === "Bug"} onClick={() => setChartType("Bug")}>Bug</button><button type="button" aria-pressed={chartType === "Imp"} onClick={() => setChartType("Imp")}>Improvement</button></div></header>
             <div className="dev-chart-context"><span className="dev-period-badge" title={formatDateRange(filters.startDate, filters.endDate)}><CalendarDays size={14} /> {periodLabel}</span></div>
             <div className="dev-cx-chart-scroll">
-              <div className="chart-area dev-cx-chart" style={{ minWidth: `${Math.max(280, chartItems.length * 46 + 42)}px` }} role="group" aria-label={`${chartType === "Bug" ? "Bug" : "Improvement"} ажлын тоо`}>
+              <div className={`chart-area dev-cx-chart ${selectedPeriods.length ? "has-period-dates" : ""}`} style={{ minWidth: `${Math.max(280, chartItems.length * 64 + 42)}px` }} role="group" aria-label={`${chartType === "Bug" ? "Bug" : "Improvement"} ажлын тоо`}>
                 <div className="y-labels"><span>{chartMax}</span><span>{Math.round(chartMax * .75)}</span><span>{Math.round(chartMax * .5)}</span><span>{Math.round(chartMax * .25)}</span><span>0</span></div>
                 <div className="chart-grid-lines"><i /><i /><i /><i /><i /></div>
-                <div className="bars">{chartItems.map((item, index) => <button type="button" key={item.key} className={`bar-group ${item.selected ? "active" : ""}`} data-period={item.key} data-count={item.count} data-comparison={selectedPeriods.length && !item.selected ? "previous" : "current"} onClick={() => selectChartItem(item)} aria-label={`${item.label}: ${item.count} ${chartType === "Bug" ? "Bug" : "Improvement"} ажил · ${item.selected ? "Сонгосон үе" : selectedPeriods.length ? "Өмнөх үе" : "Сар"}`} aria-pressed={item.selected}>
-                  <span className="bar-value" aria-hidden="true">{item.count}</span><span className="bar-track"><span key={chartType} className="bar-fill" style={{ height: `${item.count / chartMax * 100}%`, minHeight: 0, animationDelay: `${Math.min(index, 8) * 35}ms` }} /></span><span className="bar-label">{item.short}</span>
+                <div className="bars">{chartItems.map((item, index) => <button type="button" key={item.key} className={`bar-group ${item.selected ? "active" : ""}`} data-period={item.key} data-count={item.count} data-comparison={selectedPeriods.length && !item.selected ? "previous" : "current"} onClick={() => selectChartItem(item)} aria-label={`${item.label}${item.dateRange ? ` (${item.dateRange})` : ""}: ${item.count} ${chartType === "Bug" ? "Bug" : "Improvement"} ажил · ${item.selected ? "Сонгосон үе" : selectedPeriods.length ? "Өмнөх үе" : "Сар"}`} aria-pressed={item.selected}>
+                  <span className="bar-value" aria-hidden="true">{item.count}</span><span className="bar-track"><span key={chartType} className="bar-fill" style={{ height: `${item.count / chartMax * 100}%`, minHeight: 0, animationDelay: `${Math.min(index, 8) * 35}ms` }} /></span><span className="bar-label"><b>{item.short}</b>{item.dateRange && <small className="bar-date">{item.dateRange}</small>}</span>
                 </button>)}</div>
               </div>
             </div>
-            <div className="chart-summary"><span className="legend-dot" /><strong>{chartTotal} {chartType === "Bug" ? "Bug" : "Improvement"}</strong>{showPercentageComparison && <span className={`dev-chart-delta ${chartChangeDirection}`} title={previousChartTotal === 0 ? "Эхний сонгосон үед өгөгдөлгүй" : `Эхний сонголт: ${previousChartTotal} · Сүүлийн сонголт: ${selectedChartTotal}`}><ChartChangeIcon size={13} />{chartChange === null ? "Шинэ" : `${chartChange > 0 ? "+" : ""}${chartChange.toFixed(1)}%`}</span>}<span>· {selectedPeriods.length ? "Сонгосон үе" : "Сонгосон хугацаа"}</span>{showPreviousComparison && <span>· Саарал: өмнөх үе</span>}</div>
+            <div className="chart-summary"><span className="legend-dot" /><strong>{chartTotal} {chartType === "Bug" ? "Bug" : "Improvement"}</strong>{showPercentageComparison && <span className={`dev-chart-delta ${chartChangeDirection}`} title={previousChartTotal === 0 ? "Эхний сонгосон үед өгөгдөлгүй" : `Эхний сонголт: ${previousChartTotal} · Сүүлийн сонголт: ${selectedChartTotal}`}><ChartChangeIcon size={16} />{chartChange === null ? "Шинэ" : `${chartChange > 0 ? "+" : ""}${chartChange.toFixed(1)}%`}</span>}<span>· {selectedPeriods.length ? "Сонгосон үе" : "Сонгосон хугацаа"}</span>{showPreviousComparison && <span>· Саарал: өмнөх үе</span>}</div>
           </article>
 
           <article className="dev-panel dev-type-panel">
@@ -462,6 +514,8 @@ export default function DevMasterDashboard() {
             </div>
           </article>
         </section>
+
+        <DevFilterSummary input={summaryInput} syncedAt={data?.taskSyncedAt || data?.syncedAt} />
 
         <DevTeamProductivity team={team} distributionMembers={distributionMembers} taskCount={tasks.length} loading={loading} />
 

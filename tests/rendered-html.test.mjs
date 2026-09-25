@@ -55,16 +55,16 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(projectsHtml, /Dev\.All project/);
   assert.match(masterHtml, /Task Performance Comparison|Таск гүйцэтгэлийн харьцуулалт/);
   assert.match(masterHtml, /Хугацаа:/);
-  assert.match(masterHtml, /Segment:/);
-  assert.match(masterHtml, /All Segments/);
-  assert.match(masterHtml, /aria-label="Sprint эсвэл segment"/);
-  assert.match(masterHtml, />Sprints<\/button>/);
+  assert.match(masterHtml, /Sprints:/);
+  assert.match(masterHtml, /All Sprints/);
+  assert.match(masterHtml, /aria-label="ClickUp sprint олон сонголт"/);
+  assert.doesNotMatch(masterHtml, /dev-period-mode|>Segments<|>Sprints<\/button>/);
   assert.match(masterHtml, /11–12, 13–14/);
   assert.match(masterHtml, /data-kpi="completion"/);
   assert.match(masterHtml, /data-kpi="team-average"/);
   assert.match(masterHtml, /Ажилчдын гүйцэтгэлийн/);
   assert.match(masterHtml, /5 assignee average/);
-  assert.match(masterHtml, /class="chart-area dev-cx-chart"/);
+  assert.match(masterHtml, /class="chart-area dev-cx-chart(?: |")/);
   assert.match(masterHtml, /class="dev-panel dev-performance-panel" data-task-type="Bug"/);
   assert.doesNotMatch(masterHtml, /dev-bar-tooltip|dev-bar-cap/);
   assert.match(masterHtml, />Bug<\/button>/);
@@ -94,6 +94,10 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, />List<\/button>/);
   assert.match(masterHtml, />Card<\/button>/);
   assert.match(masterHtml, /Total Tasks · Team Distribution/);
+  assert.match(masterHtml, /Imp \/ Bug · Priority · Time estimate · өмнөх sprint/);
+  assert.match(masterHtml, /GROQ AI · CURRENT FILTERS/);
+  assert.match(masterHtml, /AI дүгнэлтэд ашигласан шүүлтүүр/);
+  assert.match(masterHtml, /0(?:<!-- -->)? Imp · (?:<!-- -->)?0(?:<!-- -->)? Bug таскийг нэгтгэхэд бэлэн/);
   assert.match(masterHtml, /CX &amp; Dev · Bug \/ IMP дүгнэлт/);
   assert.match(masterHtml, /CX Dev дүгнэлтийн сар/);
   assert.match(masterHtml, /Өөрчлөлтийн хүсэлт/);
@@ -131,14 +135,18 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(dashboard, /className="bar-value" aria-hidden="true">\{item.count\}/);
+  assert.match(dashboard, /dateRange: formatSprintDateRange\(period\.startDate, period\.endDate\)/);
+  assert.match(dashboard, /className="bar-date">\{item.dateRange\}/);
   assert.match(dashboard, /data-comparison=\{selectedPeriods.length && !item.selected \? "previous" : "current"\}/);
-  assert.match(dashboard, /aria-label=\{`\$\{item.label\}: \$\{item.count\}/);
+  assert.match(dashboard, /aria-label=\{`\$\{item.label\}\$\{item.dateRange \? ` \(\$\{item.dateRange\}\)` : ""\}: \$\{item.count\}/);
   assert.doesNotMatch(dashboard, /dev-bar-tooltip|dev-bar-cap/);
   assert.match(css, /\.dev-cx-chart \.bar-group \.bar-value \{[^}]*color: transparent;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-value,[\s\S]*?\.dev-cx-chart \.bar-group:focus-visible \.bar-value \{ color: var\(--ink\); \}/);
   assert.doesNotMatch(css, /\.dev-cx-chart \.bar-group\.active \.bar-value/);
   assert.match(css, /\.dev-performance-panel \{ --series-color: #ff876d;/);
   assert.match(css, /\.dev-performance-panel\[data-task-type="Imp"\] \{ --series-color: #6d9eff;/);
+  assert.match(css, /\.dev-cx-chart \.bar-date/);
+  assert.match(css, /\.dev-chart-delta svg \{ color: currentColor;/);
   assert.match(dashboard, /Bug: "#ff876d", Imp: "#6d9eff"/);
   assert.match(css, /\.dev-cx-chart \.bar-fill \{ background: #dfe3e9;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-fill,[\s\S]*?background: var\(--series-color\)/);
@@ -176,12 +184,14 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
 });
 
 test("removes starter preview and keeps API credentials server-side", async () => {
-  const [page, route, clickUpRoute, devClickUpRoute, devDashboard, devReport, layout, packageJson] = await Promise.all([
+  const [page, route, devSummaryRoute, clickUpRoute, devClickUpRoute, devDashboard, devSummary, devReport, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/summarize/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/summarize/dev/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/clickup/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/clickup/dev/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/components/dev-master-dashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/dev-filter-summary.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -191,6 +201,10 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(page, /fetch\("\/api\/summarize"/);
   assert.doesNotMatch(page, /GROQ_API_KEY|CLICKUP_API_TOKEN|api\.groq\.com|pk_[A-Za-z0-9_]+/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);
+  assert.match(devSummaryRoute, /process\.env\.GROQ_API_KEY/);
+  assert.match(devDashboard, /<DevFilterSummary input=\{summaryInput\}/);
+  assert.match(devSummary, />ТАЙЛБАР</);
+  assert.doesNotMatch(devSummary, />AI ТАЙЛБАР</);
   assert.match(clickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
   assert.match(clickUpRoute, /requestClickUp/);
   assert.match(clickUpRoute, /readClickUpTaskPages/);
