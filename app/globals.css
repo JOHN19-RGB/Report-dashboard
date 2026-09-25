@@ -3158,16 +3158,19 @@ button {
 .dev-all-project-dashboard .all-project-status-panel { --dev-entry-delay: 170ms; }
 .dev-all-project-dashboard .all-project-list-panel { --dev-entry-delay: 240ms; }
 .dev-all-project-dashboard .all-project-plan-panel { --dev-entry-delay: 310ms; }
+.dev-all-project-dashboard .all-project-summary-panel { --dev-entry-delay: 380ms; }
 .all-project-section-kicker { display: block; margin-bottom: 7px; color: #7468ff; font-size: 10px; font-weight: 780; letter-spacing: .13em; }
 .all-project-total-badge { display: inline-flex; min-height: 32px; align-items: center; padding: 0 12px; border: 1px solid #e5e7ee; border-radius: 999px; background: #f8f9fc; color: var(--dev-muted); font-size: 11px; font-weight: 700; white-space: nowrap; }
-.all-project-workstream-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 14px; padding: 5px; border: 1px solid #e8eaf1; border-radius: 12px; background: #f3f4f9; animation: reveal .5s 120ms ease backwards; }
-.all-project-workstream-tabs button { min-height: 37px; border: 1px solid #e6e8ef; border-radius: 9px; background: #fff; color: #6c7588; font-size: 11px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 7px rgb(31 42 68 / 3%); transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.all-project-status-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.all-project-workstream-tabs { display: grid; width: 286px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border: 1px solid #e8eaf1; border-radius: 11px; background: #f3f4f9; }
+.all-project-workstream-tabs button { min-height: 32px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #6c7588; font-size: 10px; font-weight: 720; cursor: pointer; transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease; }
 .all-project-workstream-tabs button:hover { border-color: #cfd5e1; color: #4e5d77; transform: translateY(-1px); }
 .all-project-workstream-tabs button[aria-pressed="true"] { border-color: #5870ef; background: linear-gradient(135deg, #5f73f4, #4869f0); color: #fff; box-shadow: 0 7px 18px rgb(73 103 236 / 22%); }
 .all-project-status-panel { overflow: hidden; background: linear-gradient(135deg, #fff 0%, #fbfbff 58%, #f6f8ff 100%); }
-.all-project-status-layout { display: grid; grid-template-columns: minmax(290px, .85fr) minmax(420px, 1.55fr); align-items: stretch; gap: 22px; padding: 24px 28px 28px; }
-.all-project-status-visual { display: grid; grid-template-columns: minmax(150px, 185px) minmax(100px, 1fr); align-items: center; gap: 22px; padding: 18px; border: 1px solid #e8e9f3; border-radius: 14px; background: rgb(255 255 255 / 78%); box-shadow: 0 10px 28px rgb(56 48 96 / 5%); }
-.all-project-donut { display: grid; width: min(185px, 100%); aspect-ratio: 1; padding: 7px; place-items: center; justify-self: center; border-radius: 50%; box-shadow: 0 9px 24px rgb(74 65 126 / 11%); animation: dev-chart-enter .6s 120ms cubic-bezier(.2,.8,.2,1) backwards; }
+.all-project-status-panel > header { align-items: center; padding-bottom: 18px; border-bottom: 1px solid #edf0f5; }
+.all-project-status-layout { display: grid; grid-template-columns: minmax(300px, .78fr) minmax(420px, 1.5fr); align-items: stretch; gap: 18px; padding: 18px 28px 24px; }
+.all-project-status-visual { display: grid; grid-template-columns: minmax(126px, 152px) minmax(100px, 1fr); align-items: center; gap: 18px; padding: 15px 17px; border: 1px solid #e8e9f3; border-radius: 14px; background: rgb(255 255 255 / 82%); box-shadow: 0 10px 28px rgb(56 48 96 / 5%); }
+.all-project-donut { display: grid; width: min(152px, 100%); aspect-ratio: 1; padding: 7px; place-items: center; justify-self: center; border-radius: 50%; box-shadow: 0 9px 24px rgb(74 65 126 / 11%); animation: dev-chart-enter .6s 120ms cubic-bezier(.2,.8,.2,1) backwards; }
 .all-project-donut > span { display: flex; width: 69%; height: 69%; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: #fff; box-shadow: 0 0 0 7px rgb(255 255 255 / 68%), 0 3px 12px rgb(23 34 58 / 7%); }
 .all-project-donut strong { color: var(--ink); font-size: 28px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
 .all-project-donut small { margin-top: 7px; color: var(--dev-muted); font-size: 11px; }
@@ -3175,11 +3178,11 @@ button {
 .all-project-status-highlight strong,
 .all-project-status-highlight span,
 .all-project-status-highlight small { display: block; }
-.all-project-status-highlight strong { color: #2b3a52; font-size: 30px; line-height: 1; letter-spacing: -.05em; }
+.all-project-status-highlight strong { color: #2b3a52; font-size: 28px; line-height: 1; letter-spacing: -.05em; }
 .all-project-status-highlight span { margin-top: 8px; color: #58667c; font-size: 12px; font-weight: 700; }
 .all-project-status-highlight small { margin-top: 5px; color: #929aaa; font-size: 10px; line-height: 1.45; }
-.all-project-status-list { display: grid; align-content: center; gap: 6px; padding: 13px; border: 1px solid #e8e9f3; border-radius: 14px; background: rgb(255 255 255 / 76%); }
-.all-project-status-row { display: grid; grid-template-columns: 116px minmax(120px, 1fr) 46px 54px; align-items: center; gap: 12px; min-height: 42px; padding: 0 10px; border-radius: 9px; transition: background .18s ease, transform .18s ease; }
+.all-project-status-list { display: grid; align-content: center; gap: 4px; padding: 10px 13px; border: 1px solid #e8e9f3; border-radius: 14px; background: rgb(255 255 255 / 78%); }
+.all-project-status-row { display: grid; grid-template-columns: 116px minmax(120px, 1fr) 46px 54px; align-items: center; gap: 12px; min-height: 38px; padding: 0 10px; border-radius: 9px; transition: background .18s ease, transform .18s ease; }
 .all-project-status-row:hover { background: #f7f8fd; transform: translateX(2px); }
 .all-project-status-name { display: flex; align-items: center; gap: 9px; color: #4e5a70; font-size: 12px; font-weight: 650; }
 .all-project-status-name i { width: 9px; height: 9px; flex: 0 0 9px; border: 2px solid rgb(255 255 255 / 90%); border-radius: 50%; box-shadow: 0 0 0 1px rgb(23 34 58 / 7%); }
@@ -3234,9 +3237,9 @@ button {
 .all-project-current-status.status-qa { background: #f1eeff; color: #6d5ed1; }
 .all-project-current-status.status-hold { background: #fff5df; color: #a46c08; }
 .all-project-current-status.status-done { background: #e9f8f2; color: #168961; }
-.all-project-task-count { display: inline-flex; width: fit-content; min-width: 49px; min-height: 30px; align-items: baseline; justify-content: center; gap: 4px; padding: 0 8px; border: 1px solid #e2e7ef; border-radius: 9px; background: #f7f9fc; }
+.all-project-task-count { display: inline-flex; width: fit-content; min-width: 45px; min-height: 40px; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 5px 8px 4px; border: 1px solid #e2e7ef; border-radius: 10px; background: #f7f9fc; line-height: 1; }
 .all-project-task-count strong { color: #334056; font-size: 13px; font-variant-numeric: tabular-nums; }
-.all-project-task-count small { color: #919aaa; font-size: 8px; }
+.all-project-task-count small { color: #919aaa; font-size: 7px; letter-spacing: .025em; }
 .all-project-completion { display: flex; align-items: center; gap: 10px; }
 .all-project-completion > i { width: min(94px, 70%); height: 7px; overflow: hidden; border-radius: 999px; background: #e9edf3; box-shadow: inset 0 1px 2px rgb(23 34 58 / 4%); }
 .all-project-completion > i > b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6d9eff, #38bd95); transform-origin: left; animation: growWidth .6s cubic-bezier(.2,.8,.2,1) backwards; transition: width .45s cubic-bezier(.2,.8,.2,1); }
@@ -3291,14 +3294,14 @@ button {
 .all-project-subtask-owner { overflow: hidden; color: #758094; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .all-project-subtask-chevron { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 7px; background: #f1f3f7; color: #8d96a6; transition: background .18s ease, color .18s ease, transform .2s ease; }
 .all-project-subtask[open] .all-project-subtask-chevron { background: #eae7ff; color: #6557d8; transform: rotate(180deg); }
-.all-project-subtask-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px 14px 12px 62px; border-top: 1px solid #e8ebf2; background: linear-gradient(110deg, #fafbfe, #f7f8fc); }
-.all-project-subtask-body dl { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; margin: 0; }
+.all-project-subtask-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 20px; padding: 16px 16px 17px 62px; border-top: 1px solid #e8ebf2; background: linear-gradient(110deg, #fafbfe, #f7f8fc); }
+.all-project-subtask-body dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px 24px; margin: 0; }
 .all-project-subtask-body dl > div { min-width: 0; }
-.all-project-subtask-body dt { color: #9aa2b2; font-size: 8px; font-weight: 650; }
-.all-project-subtask-body dd { margin: 4px 0 0; overflow: hidden; color: #536076; font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.all-project-subtask-body dt { color: #929bad; font-size: 9px; font-weight: 680; letter-spacing: .012em; }
+.all-project-subtask-body dd { margin: 5px 0 0; overflow: hidden; color: #48566e; font-size: 11px; font-weight: 660; text-overflow: ellipsis; white-space: nowrap; }
 .all-project-detail-sprint { grid-column: 1 / -1; }
 .all-project-subtask-body .all-project-detail-sprint { grid-column: auto; }
-.all-project-subtask-body > a { display: inline-flex; min-height: 29px; align-items: center; gap: 6px; margin: 0; padding: 0 9px; border: 1px solid #ddd9f5; border-radius: 8px; background: #fff; color: #6457d7; font-size: 9px; font-weight: 700; text-decoration: none; white-space: nowrap; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.all-project-subtask-body > a { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; margin: 0; padding: 0 11px; border: 1px solid #d8d3f3; border-radius: 9px; background: #fff; color: #6457d7; font-size: 10px; font-weight: 720; text-decoration: none; white-space: nowrap; box-shadow: 0 5px 14px rgb(65 53 121 / 5%); transition: border-color .18s ease, background .18s ease, transform .18s ease; }
 .all-project-subtask-body > a:hover { border-color: #bfb6ef; background: #f8f6ff; transform: translateY(-1px); }
 .all-project-task-status { gap: 6px; }
 .all-project-task-status i { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; }
@@ -3363,6 +3366,25 @@ button {
 .all-project-plan-empty p { margin: 6px 0 0; color: #7c8698; font-size: 11px; line-height: 1.55; }
 .all-project-plan-empty button { display: inline-flex; min-height: 34px; align-items: center; gap: 7px; margin-left: 12px; padding: 0 12px; border: 1px solid #d9d4f5; border-radius: 9px; background: #fff; color: #6256ca; font-size: 10px; font-weight: 700; cursor: pointer; }
 .all-project-plan-empty button:hover { border-color: #bfb6ef; background: #f9f7ff; }
+.all-project-summary-panel { overflow: hidden; border-color: #e2e3f1; background: linear-gradient(135deg, #fff 0%, #fcfbff 56%, #f5f7ff 100%); }
+.all-project-summary-panel > header { align-items: center; padding-bottom: 19px; border-bottom: 1px solid #eceef5; background: linear-gradient(100deg, #fbfdff 0%, #fff 56%, #f6f3ff 100%); }
+.all-project-summary-panel > header h2 { max-width: 760px; }
+.all-project-summary-badge { display: inline-flex; min-height: 32px; align-items: center; gap: 7px; padding: 0 11px; border: 1px solid #ded9f5; border-radius: 999px; background: rgb(255 255 255 / 82%); color: #6558ce; font-size: 10px; font-weight: 720; white-space: nowrap; box-shadow: 0 5px 16px rgb(69 57 128 / 5%); }
+.all-project-summary-badge svg { color: #7468ff; }
+.all-project-summary-content { display: grid; grid-template-columns: minmax(205px, .42fr) minmax(0, 1.58fr); gap: 16px; padding: 20px 28px 28px; }
+.all-project-summary-content > aside { position: relative; display: flex; min-height: 190px; overflow: hidden; flex-direction: column; justify-content: center; padding: 23px; border-radius: 15px; background: linear-gradient(145deg, #182541, #2f3269 58%, #574eab); color: #fff; box-shadow: 0 15px 32px rgb(36 42 86 / 15%); }
+.all-project-summary-content > aside::after { position: absolute; width: 150px; height: 150px; right: -62px; bottom: -82px; border: 22px solid rgb(255 255 255 / 7%); border-radius: 50%; content: ""; }
+.all-project-summary-content > aside span { position: relative; z-index: 1; color: #cbd2f1; font-size: 10px; font-weight: 720; letter-spacing: .08em; text-transform: uppercase; }
+.all-project-summary-content > aside strong { position: relative; z-index: 1; margin-top: 8px; font-size: 42px; line-height: 1; letter-spacing: -.055em; }
+.all-project-summary-content > aside small { position: relative; z-index: 1; margin-top: 9px; color: #d8dcf2; font-size: 11px; }
+.all-project-summary-content > aside > i { position: relative; z-index: 1; display: block; height: 7px; margin-top: 20px; overflow: hidden; border-radius: 999px; background: rgb(255 255 255 / 16%); }
+.all-project-summary-content > aside > i b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #74a5ff, #63ddb7); transform-origin: left; animation: growWidth .7s cubic-bezier(.2,.8,.2,1) backwards; }
+.all-project-summary-content > article { padding: 17px 21px; border: 1px solid #e6e8f1; border-radius: 15px; background: rgb(255 255 255 / 84%); box-shadow: 0 10px 28px rgb(47 53 84 / 5%); }
+.all-project-summary-content > article p { margin: 0; color: #5f6b80; font-size: 12px; line-height: 1.72; }
+.all-project-summary-content > article p:first-child { color: #354259; font-size: 13px; }
+.all-project-summary-content > article p + p { margin-top: 11px; padding-top: 11px; border-top: 1px solid #edf0f5; }
+.all-project-summary-content > article strong,
+.all-project-summary-content > article b { color: #27344b; font-weight: 760; }
 .all-project-status-row { animation: subtaskReveal .36s ease backwards; }
 .all-project-status-row:nth-child(2) { animation-delay: 45ms; }
 .all-project-status-row:nth-child(3) { animation-delay: 90ms; }
@@ -3376,6 +3398,10 @@ button {
 
 @media (max-width: 900px) {
   .all-project-status-layout { grid-template-columns: 1fr; gap: 24px; }
+  .all-project-status-panel > header { align-items: flex-start; flex-wrap: wrap; gap: 16px; }
+  .all-project-status-controls { width: 100%; justify-content: space-between; }
+  .all-project-summary-content { grid-template-columns: 1fr; }
+  .all-project-summary-content > aside { min-height: 150px; }
   .all-project-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .all-project-list { overflow-x: auto; }
   .all-project-list-head,
@@ -3390,13 +3416,20 @@ button {
 }
 
 @media (max-width: 560px) {
-  .all-project-status-layout { padding: 24px 18px; }
+  .all-project-status-controls { align-items: stretch; flex-direction: column-reverse; }
+  .all-project-status-controls .all-project-total-badge { width: fit-content; }
+  .all-project-workstream-tabs { width: 100%; }
+  .all-project-status-layout { padding: 18px; }
   .all-project-status-visual { grid-template-columns: 1fr; text-align: center; }
   .all-project-status-row { grid-template-columns: 94px minmax(70px, 1fr) 35px; gap: 8px; }
   .all-project-status-row > small { display: none; }
   .all-project-status-name { font-size: 11px; }
   .all-project-workstream-tabs { gap: 5px; padding: 4px; }
   .all-project-workstream-tabs button { min-height: 34px; }
+  .all-project-summary-panel > header { align-items: flex-start; flex-direction: column; }
+  .all-project-summary-content { padding: 18px; }
+  .all-project-summary-content > aside { min-height: 145px; padding: 20px; }
+  .all-project-summary-content > article { padding: 16px 17px; }
   .all-project-list { margin-right: 18px; margin-left: 18px; }
   .all-project-list-controls { width: 100%; justify-content: stretch; }
   .all-project-plan-empty { margin: 0 18px 22px; padding: 22px; }

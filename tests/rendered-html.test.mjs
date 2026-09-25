@@ -105,7 +105,7 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /class="dev-change-count"/);
   assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
   assert.match(projectsHtml, /Dev\.All Project/);
-  assert.match(projectsHtml, /Төслийн таскуудын төлөв/);
+  assert.match(projectsHtml, /Төслийн гүйцэтгэлийн төлөв/);
   assert.match(projectsHtml, /Төслүүдийн жагсаалт/);
   assert.match(projectsHtml, /Шинэ төслийн төлөвлөгөө/);
   assert.match(projectsHtml, />To do</);
@@ -118,6 +118,8 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(projectsHtml, /data-sort-key="status"/);
   assert.match(projectsHtml, /data-sort-key="tasks"/);
   assert.match(projectsHtml, /data-sort-key="completion"/);
+  assert.match(projectsHtml, /PROJECT SUMMARY/);
+  assert.match(projectsHtml, /дэд ажлыг тоонд оруулаагүй/);
   assert.match(projectsHtml, /data-sort-key="updated"/);
   assert.match(projectsHtml, /Шинэчлэгдсэн/);
   assert.doesNotMatch(projectsHtml, /Төслийн нэрээр эрэмбэлэх|Өсөх · A–Я|Буурах · Я–A/);
@@ -167,6 +169,8 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   assert.match(dashboard, /"\/api\/clickup\/dev\?view=all-project"/);
   assert.match(dashboard, /"\/api\/clickup\/dev\?refresh=all-project&view=all-project"/);
   assert.match(dashboard, /className="all-project-workstream-tabs"/);
+  assert.match(dashboard, /const chartTasks = useMemo\(\(\) => chartProjects\.map\(project => project\.rootTask\)/);
+  assert.match(dashboard, /className="dev-panel all-project-summary-panel"/);
   assert.match(dashboard, /<ProjectDetail project=\{project\} \/>/);
   assert.match(dashboard, /className="all-project-plan-empty"/);
   assert.match(route, /refresh === "all-project"/);
