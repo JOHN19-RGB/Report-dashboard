@@ -126,6 +126,7 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(projectsHtml, /class="dev-view-toggle" data-view="list" role="group" aria-label="Төслийн харагдац"/);
   assert.match(projectsHtml, />List<\/button>/);
   assert.match(projectsHtml, />Card<\/button>/);
+  assert.doesNotMatch(projectsHtml, /dev-type-filter|Таск төрөл:|All Types/);
   assert.doesNotMatch(projectsHtml, /Одоогоор өгөгдөл алга/);
   assert.doesNotMatch(masterHtml, /class="kpi-grid|clickup-page-panel/);
   assert.doesNotMatch(projectsHtml, /class="kpi-grid|clickup-page-panel/);

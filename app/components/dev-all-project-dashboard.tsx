@@ -12,7 +12,6 @@ import {
   ExternalLink,
   Flag,
   FolderKanban,
-  ListFilter,
   LayoutGrid,
   List,
   ListTodo,
@@ -269,7 +268,6 @@ export default function DevAllProjectDashboard() {
     const selected = allProjectData ? selectDevTasks(allProjectData, filters) : [];
     return filters.sprintIds.length ? selected : filterDevTasksByMonthKeys(selected, periodMonthKeys);
   }, [allProjectData, filters, periodMonthKeys]);
-  const taskTypes = useMemo(() => Array.from(new Set((allProjectData?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [allProjectData]);
   const sprints = useMemo(() => {
     const counts = new Map<string, number>();
     for (const task of topLevelDevTasks(allProjectData?.tasks || [])) for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
@@ -410,7 +408,6 @@ export default function DevAllProjectDashboard() {
                 {periodMode === "segment" && <p>2 sprint = 1 segment · 11–12, 13–14, …</p>}
               </div>
             </details>
-            <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Таск төрөл:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
             {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
             <div className="dev-dashboard-actions" role="group" aria-label="All Project тайлангийн үйлдлүүд"><button className="icon-button dev-download-filter" type="button" onClick={() => downloadProjects(matchingRecords)} disabled={loading || !matchingRecords.length} aria-label="Шүүсэн project data татах" title="Шүүсэн project data татах"><Download size={18} /></button><button className="icon-button dev-refresh-filter" type="button" onClick={() => void loadData(true)} disabled={loading} aria-label={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"} aria-busy={loading}><RefreshCw className={loading ? "spin" : ""} size={18} /></button></div>
           </div>
