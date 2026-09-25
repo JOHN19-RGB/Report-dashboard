@@ -305,6 +305,11 @@ export default function DevAllProjectDashboard() {
     for (const task of projectRoots) counts[devProjectStatus(task)] += 1;
     return counts;
   }, [projectRoots]);
+  const summaryProjectsByStatus = useMemo(() => {
+    const grouped = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, []])) as Record<DevProjectStatusKey, DevTask[]>;
+    for (const task of projectRoots) grouped[devProjectStatus(task)].push(task);
+    return grouped;
+  }, [projectRoots]);
   const chartStatusCounts = useMemo(() => {
     const counts = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
     for (const task of chartTasks) counts[devProjectStatus(task)] += 1;
@@ -475,12 +480,39 @@ export default function DevAllProjectDashboard() {
             <aside><span>Гүйцэтгэл</span><strong>{completion}%</strong><small>{done} / {projectRoots.length} төсөл Done</small><i><b style={{ width: `${completion}%` }} /></i></aside>
             <article>
               {projectRoots.length ? <>
-                <p>Тайлант хугацаанд нийт <strong>{projectRoots.length} төсөл</strong> төлөвлөгдөн хийгдсэнээс гүйцэтгэлийн явц <strong>{completion}%</strong>-ийн биелэлттэй байна.</p>
-                {done > 0 && <p><b>Дууссан төслүүд (Done — {Math.round(done / projectRoots.length * 100)}%):</b> Нийт {done} төсөл бүрэн дууссан.{doneEstimateMs > 0 ? ` Эдгээр төслийн шууд ажлуудад нийт ${formatNarrativeDuration(doneEstimateMs)} тооцоолсон байна.` : ""}</p>}
-                {projectStatusCounts.inProgress > 0 && <p><b>Явцтай төслүүд (In Progress — {Math.round(projectStatusCounts.inProgress / projectRoots.length * 100)}%):</b> {projectStatusCounts.inProgress} төсөл хуваарийн дагуу хэрэгжиж байна.</p>}
-                {projectStatusCounts.qa > 0 && <p><b>Шалгалтын шат (QA test — {Math.round(projectStatusCounts.qa / projectRoots.length * 100)}%):</b> {projectStatusCounts.qa} төсөл чанарын шалгалтад байна.</p>}
-                {projectStatusCounts.hold > 0 && <p><b>Түр зогссон (Hold — {Math.round(projectStatusCounts.hold / projectRoots.length * 100)}%):</b> {projectStatusCounts.hold} төсөл түр хүлээгдэж байна.</p>}
-                {projectStatusCounts.todo > 0 && <p><b>Төлөвлөсөн (To do — {Math.round(projectStatusCounts.todo / projectRoots.length * 100)}%):</b> {projectStatusCounts.todo} төсөл эхлэхээр төлөвлөгдсөн байна.</p>}
+                <p className="all-project-summary-intro">Тайлант хугацаанд нийт <strong>{projectRoots.length} төсөл</strong> төлөвлөгдөн хийгдсэнээс гүйцэтгэлийн явц <strong>{completion}%</strong>-ийн биелэлттэй байна. Доорх төлөв дээр дарж үндсэн таскуудыг харна уу.</p>
+                {([
+                  { key: "done", heading: "Дууссан төслүүд", description: `Нийт ${done} төсөл бүрэн дууссан.${doneEstimateMs > 0 ? ` Эдгээр төслийн шууд ажлуудад нийт ${formatNarrativeDuration(doneEstimateMs)} тооцоолсон байна.` : ""}` },
+                  { key: "inProgress", heading: "Явцтай төслүүд", description: `${projectStatusCounts.inProgress} төсөл хуваарийн дагуу хэрэгжиж байна.` },
+                  { key: "qa", heading: "Шалгалтын шат", description: `${projectStatusCounts.qa} төсөл чанарын шалгалтад байна.` },
+                  { key: "hold", heading: "Түр зогссон", description: `${projectStatusCounts.hold} төсөл түр хүлээгдэж байна.` },
+                  { key: "todo", heading: "Төлөвлөсөн", description: `${projectStatusCounts.todo} төсөл эхлэхээр төлөвлөгдсөн байна.` },
+                ] as Array<{ key: DevProjectStatusKey; heading: string; description: string }>).filter(section => summaryProjectsByStatus[section.key].length).map(section => {
+                  const status = DEV_PROJECT_STATUSES.find(item => item.key === section.key)!;
+                  const tasks = summaryProjectsByStatus[section.key];
+                  const share = Math.round(tasks.length / projectRoots.length * 100);
+                  return <details className="all-project-summary-status" data-status={section.key} name="project-summary-status" key={section.key}>
+                    <summary>
+                      <span className="all-project-summary-status-copy"><i style={{ background: status.color }} /><span><b>{section.heading} ({status.label} — {share}%)</b><small>{section.description}</small></span></span>
+                      <span className="all-project-summary-status-action"><b>{tasks.length} таск</b><ChevronDown size={15} /></span>
+                    </summary>
+                    <div className="all-project-summary-task-list">
+                      {tasks.map(task => {
+                        const projectName = devProjectName(task);
+                        const taskName = task.name.trim() || projectName;
+                        const owner = task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
+                        return <div className="all-project-summary-task" key={task.id}>
+                          <span className="all-project-summary-task-icon"><FolderKanban size={14} /></span>
+                          <span className="all-project-summary-task-copy"><strong>{taskName}</strong><small>{projectName !== taskName ? projectName : "Үндсэн таск"}</small></span>
+                          <span className="all-project-summary-task-meta owner"><small>Хариуцагч</small><b>{owner}</b></span>
+                          <span className="all-project-summary-task-meta sprint"><small>Sprint</small><b>{task.sprint || "Холбогдоогүй"}</b></span>
+                          <time className="all-project-summary-task-meta due" dateTime={task.dueDate || undefined}><small>Due date</small><b>{formatDate(task.dueDate)}</b></time>
+                          {task.url ? <a href={task.url} target="_blank" rel="noreferrer" aria-label={`${taskName} таскийг ClickUp дээр нээх`}><ExternalLink size={13} /></a> : <span />}
+                        </div>;
+                      })}
+                    </div>
+                  </details>;
+                })}
               </> : <p>Одоогийн шүүлтүүрт дүгнэх үндсэн төсөл олдсонгүй.</p>}
             </article>
           </div>

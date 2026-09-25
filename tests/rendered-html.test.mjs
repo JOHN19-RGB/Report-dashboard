@@ -171,6 +171,9 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   assert.match(dashboard, /className="all-project-workstream-tabs"/);
   assert.match(dashboard, /const chartTasks = useMemo\(\(\) => chartProjects\.map\(project => project\.rootTask\)/);
   assert.match(dashboard, /className="dev-panel all-project-summary-panel"/);
+  assert.match(dashboard, /className="all-project-summary-status"/);
+  assert.match(dashboard, /name="project-summary-status"/);
+  assert.match(dashboard, /summaryProjectsByStatus\[section\.key\]/);
   assert.match(dashboard, /<ProjectDetail project=\{project\} \/>/);
   assert.match(dashboard, /className="all-project-plan-empty"/);
   assert.match(route, /refresh === "all-project"/);
@@ -182,6 +185,8 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   assert.match(dashboard, /className="all-project-subtask"/);
   assert.match(css, /\.all-project-subtask > summary \{ display: grid;/);
   assert.match(css, /\.all-project-subtask-body \{/);
+  assert.match(css, /\.all-project-summary-status::details-content \{/);
+  assert.match(css, /\.all-project-summary-task \{ display: grid;/);
   assert.match(css, /\.all-project-plan-empty \{[^}]*min-height: 166px;/);
   assert.match(logo, /<g fill="#fff">/);
   assert.doesNotMatch(logo, /<rect/);
