@@ -304,7 +304,7 @@ export default function DevAllProjectDashboard() {
     return counts;
   }, [projectRoots]);
   const summaryProjectsByStatus = useMemo(() => {
-    const grouped = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, []])) as Record<DevProjectStatusKey, DevTask[]>;
+    const grouped: Record<DevProjectStatusKey, DevTask[]> = { todo: [], inProgress: [], qa: [], hold: [], done: [] };
     for (const task of projectRoots) grouped[devProjectStatus(task)].push(task);
     return grouped;
   }, [projectRoots]);
