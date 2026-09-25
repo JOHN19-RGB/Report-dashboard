@@ -25,6 +25,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clickUpReportLoader, isClickUpSnapshotStale } from "../lib/clickup-report-loader";
 import {
+  ALL_PROJECT_SUMMARY_INTRO,
+  parseAllProjectSummary,
+  type AllProjectSummary,
+  type AllProjectSummaryInput,
+} from "../lib/all-project-summary";
+import {
   buildSprintPeriods,
   DEV_PROJECT_STATUSES,
   DEV_REPORT_END_DATE,
@@ -195,7 +201,12 @@ export default function DevAllProjectDashboard() {
   const [projectView, setProjectView] = useState<"list" | "card">("list");
   const [projectSort, setProjectSort] = useState<DevProjectSort>(null);
   const [workstream, setWorkstream] = useState<"dev" | "design" | "project">("project");
+  const [generatedProjectSummary, setGeneratedProjectSummary] = useState<{ key: string; summary: AllProjectSummary; source: "groq" | "local" } | null>(null);
+  const [projectSummaryLoadingKey, setProjectSummaryLoadingKey] = useState<string | null>(null);
+  const [projectSummaryError, setProjectSummaryError] = useState<{ key: string; message: string } | null>(null);
   const filterBarRef = useRef<HTMLDivElement>(null);
+  const projectSummaryRequestRef = useRef(0);
+  const projectSummaryAbortRef = useRef<AbortController | null>(null);
 
   const loadData = useCallback(async (refresh: boolean) => {
     setLoading(true);
@@ -327,6 +338,17 @@ export default function DevAllProjectDashboard() {
     : selectedPeriods.length > 1
       ? `${selectedPeriods.length} сонгосон спринтийн`
       : `${periodSelectionLabel(periodYears, periodMonths)} хугацааны`;
+  const allProjectSummaryInput = useMemo<AllProjectSummaryInput>(() => ({
+    period: summaryPeriod,
+    totalProjects: projectRoots.length,
+    doneEstimateMinutes: Math.round(doneEstimateMs / 60_000),
+    statuses: { ...projectStatusCounts },
+    partial: data?.partial === true,
+  }), [data?.partial, doneEstimateMs, projectRoots.length, projectStatusCounts, summaryPeriod]);
+  const allProjectSummaryKey = useMemo(() => JSON.stringify(allProjectSummaryInput), [allProjectSummaryInput]);
+  const currentProjectSummary = generatedProjectSummary?.key === allProjectSummaryKey ? generatedProjectSummary : null;
+  const projectSummaryLoading = projectSummaryLoadingKey === allProjectSummaryKey;
+  const currentProjectSummaryError = projectSummaryError?.key === allProjectSummaryKey ? projectSummaryError.message : "";
   const hasPeriodFilter = periodYears.length !== REPORT_YEARS.length || periodMonths.length !== REPORT_MONTHS.length;
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) || hasPeriodFilter;
   const statusSummary = DEV_PROJECT_STATUSES.reduce<Array<(typeof DEV_PROJECT_STATUSES)[number] & { count: number; share: number; start: number; end: number }>>((summary, status) => {
@@ -337,6 +359,43 @@ export default function DevAllProjectDashboard() {
     return summary;
   }, []);
   const donut = chartTasks.length ? statusSummary.map(status => `${status.color} ${status.start}% ${status.end}%`).join(", ") : "#edf0f6 0% 100%";
+
+  useEffect(() => {
+    projectSummaryRequestRef.current += 1;
+    projectSummaryAbortRef.current?.abort();
+    projectSummaryAbortRef.current = null;
+    return () => projectSummaryAbortRef.current?.abort();
+  }, [allProjectSummaryKey]);
+
+  async function generateAllProjectSummary() {
+    if (projectSummaryLoading || !projectRoots.length) return;
+    projectSummaryAbortRef.current?.abort();
+    const controller = new AbortController();
+    projectSummaryAbortRef.current = controller;
+    const requestId = ++projectSummaryRequestRef.current;
+    const requestKey = allProjectSummaryKey;
+    setProjectSummaryLoadingKey(requestKey);
+    setProjectSummaryError(null);
+    try {
+      const response = await fetch("/api/summarize/dev/all-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify(allProjectSummaryInput),
+      });
+      const result = await response.json() as { summary?: unknown; source?: "groq" | "local"; error?: string };
+      const summary = parseAllProjectSummary(result.summary);
+      if (!response.ok || !summary || JSON.stringify(summary.facts) !== requestKey) throw new Error(result.error || "AI дүгнэлт үүссэнгүй.");
+      if (projectSummaryRequestRef.current === requestId && requestKey === allProjectSummaryKey) {
+        setGeneratedProjectSummary({ key: requestKey, summary, source: result.source === "groq" ? "groq" : "local" });
+      }
+    } catch (loadError) {
+      if (controller.signal.aborted || projectSummaryRequestRef.current !== requestId) return;
+      setProjectSummaryError({ key: requestKey, message: loadError instanceof Error ? loadError.message : "AI дүгнэлт үүссэнгүй." });
+    } finally {
+      if (projectSummaryRequestRef.current === requestId) setProjectSummaryLoadingKey(null);
+    }
+  }
 
   function updateFilter<Key extends keyof DevReportFilters>(key: Key, value: DevReportFilters[Key]) {
     setFilters(current => ({ ...current, [key]: value }));
@@ -472,11 +531,17 @@ export default function DevAllProjectDashboard() {
         </section>
 
         <section className="dev-panel all-project-summary-panel" aria-labelledby="all-project-summary-title">
-          <header><div><span className="all-project-section-kicker">PROJECT SUMMARY</span><h2 id="all-project-summary-title">{summaryPeriod} төслийн гүйцэтгэлийн дүгнэлт</h2><p>Сонгосон ClickUp шүүлтүүрийн үндсэн төслүүдээр автоматаар нэгтгэв</p></div><span className="all-project-summary-badge"><Sparkles size={14} /> Шинэчлэгдсэн дүгнэлт</span></header>
+          <header><div><span className="all-project-section-kicker">GROQ AI · PROJECT SUMMARY</span><h2 id="all-project-summary-title">{summaryPeriod} төслийн гүйцэтгэлийн дүгнэлт</h2><p>AI найруулга болон ClickUp-аас баталгаажсан үндсэн төслийн үзүүлэлт</p></div><button className="all-project-summary-badge" type="button" disabled={projectSummaryLoading || !projectRoots.length} onClick={() => void generateAllProjectSummary()}>{projectSummaryLoading ? <RefreshCw className="spin" size={14} /> : <Sparkles size={14} />}{projectSummaryLoading ? "Нэгтгэж байна" : currentProjectSummary ? "Дахин нэгтгэх" : "Дүгнэлт гаргах"}</button></header>
           <div className="all-project-summary-content">
             <aside><span>Гүйцэтгэл</span><strong>{completion}%</strong><small>{done} / {projectRoots.length} төсөл Done</small><i><b style={{ width: `${completion}%` }} /></i></aside>
             <article>
               {projectRoots.length ? <>
+                <div className="all-project-summary-ai-lead" data-source={currentProjectSummary?.source || "ready"} aria-live="polite">
+                  <span><Sparkles size={13} />{currentProjectSummary?.source === "groq" ? "GROQ AI НЭГТГЭЛ" : currentProjectSummary ? "БАТАЛГААЖСАН НӨӨЦ ДҮГНЭЛТ" : "GROQ AI-Д БЭЛЭН"}</span>
+                  <p>{currentProjectSummary?.summary.introduction || ALL_PROJECT_SUMMARY_INTRO}</p>
+                  <small>{currentProjectSummary?.source === "groq" ? "Groq найруулсан · Тоон үзүүлэлтийг сервер баталгаажуулсан" : currentProjectSummary ? "Groq холболтгүй үед ашиглах баталгаажсан найруулга" : "Дүгнэлт гаргах товчоор одоогийн шүүлтүүрийг нэгтгэнэ"}</small>
+                </div>
+                {currentProjectSummaryError && <p className="all-project-summary-error" role="alert">{currentProjectSummaryError}</p>}
                 <p className="all-project-summary-intro">Тайлант хугацаанд нийт <strong>{projectRoots.length} төсөл</strong> төлөвлөгдөн хийгдсэнээс гүйцэтгэлийн явц <strong>{completion}%</strong>-ийн биелэлттэй байна. Доорх төлөв дээр дарж үндсэн таскуудыг харна уу.</p>
                 {([
                   { key: "done", heading: "Дууссан төслүүд", description: `Нийт ${done} төсөл бүрэн дууссан.${doneEstimateMs > 0 ? ` Эдгээр төслийн шууд ажлуудад нийт ${formatNarrativeDuration(doneEstimateMs)} тооцоолсон байна.` : ""}` },
