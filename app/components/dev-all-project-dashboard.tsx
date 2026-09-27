@@ -278,14 +278,8 @@ export default function DevAllProjectDashboard() {
     const selected = allProjectData ? selectDevTasks(allProjectData, filters) : [];
     return filters.sprintIds.length ? selected : filterDevTasksByMonthKeys(selected, periodMonthKeys);
   }, [allProjectData, filters, periodMonthKeys]);
-  const allProjectRoots = useMemo(() => topLevelDevTasks(allProjectData?.tasks || []), [allProjectData]);
-  const sprints = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const task of allProjectRoots) for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
-    return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
-  }, [allProjectRoots, data?.sprints]);
+  const sprints = useMemo(() => data?.sprints || [], [data?.sprints]);
   const periods = useMemo(() => buildSprintPeriods(sprints, periodMode), [periodMode, sprints]);
-  const periodProjectCounts = useMemo(() => new Map(periods.map(period => [period.id, allProjectRoots.filter(task => period.sprintIds.some(id => task.sprintIds.includes(id))).length])), [allProjectRoots, periods]);
   const selectedPeriods = useMemo(() => periods.filter(period => period.sprintIds.every(id => filters.sprintIds.includes(id))), [filters.sprintIds, periods]);
   const selectionLabel = !selectedPeriods.length ? `All ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}`;
   const matchingRecordIds = useMemo(() => new Set(matchingRecords.map(task => task.id)), [matchingRecords]);
@@ -464,10 +458,7 @@ export default function DevAllProjectDashboard() {
               <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint болон segment олон сонголт">
                 <div className="dev-period-mode" role="group" aria-label="Sprint эсвэл segment"><button type="button" aria-pressed={periodMode === "segment"} onClick={() => { setPeriodMode("segment"); applySprints([]); }}>Segments</button><button type="button" aria-pressed={periodMode === "sprint"} onClick={() => { setPeriodMode("sprint"); applySprints([]); }}>Sprints</button></div>
                 <label><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All {periodMode === "segment" ? "Segments" : "Sprints"}</span></label>
-                <div className="dev-sprint-options">{periods.map(item => {
-                  const count = periodProjectCounts.get(item.id) || 0;
-                  return <label key={item.id} title={item.complete ? `${item.label} · ${count} төсөл · ${formatSprintDateRange(item.startDate, item.endDate)}` : `Sprint ${item.missingNumbers.join(", ")} дутуу`}><input type="checkbox" checked={selectedPeriods.some(period => period.id === item.id)} disabled={!item.complete} onChange={() => toggleSprintPeriod(item.id)} /><span>{item.label}<small>{item.complete ? `${count} төсөл` : "Хүлээгдэж байна"}</small></span></label>;
-                })}</div>
+                <div className="dev-sprint-options">{periods.map(item => <label key={item.id} title={item.complete ? `${item.label} · ${formatSprintDateRange(item.startDate, item.endDate)}` : `Sprint ${item.missingNumbers.join(", ")} дутуу`}><input type="checkbox" checked={selectedPeriods.some(period => period.id === item.id)} disabled={!item.complete} onChange={() => toggleSprintPeriod(item.id)} /><span>{item.label}{!item.complete && <small>Хүлээгдэж байна</small>}</span></label>)}</div>
                 {periodMode === "segment" && <p>2 sprint = 1 segment · 11–12, 13–14, …</p>}
               </div>
             </details>
