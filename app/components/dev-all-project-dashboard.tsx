@@ -23,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { clickUpReportLoader, isClickUpSnapshotStale } from "../lib/clickup-report-loader";
+import { clickUpReportLoader, isClickUpSnapshotStale, needsClickUpSprintRefresh } from "../lib/clickup-report-loader";
 import {
   parseAllProjectSummary,
   type AllProjectSummary,
@@ -210,7 +210,9 @@ export default function DevAllProjectDashboard() {
   const loadData = useCallback(async (refresh: boolean) => {
     setLoading(true);
     setError("");
+    let refreshSprints = false;
     function applyPayload(payload: DevReportData) {
+      refreshSprints ||= needsClickUpSprintRefresh(payload);
       const normalizeTasks = (tasks: DevTask[]) => tasks.map(task => ({ ...task, tags: Array.isArray(task.tags) ? task.tags : [], sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [], updatedAt: task.updatedAt || null, priority: task.priority || "" }));
       const normalizedPayload: DevReportData = {
         ...payload,
@@ -235,6 +237,11 @@ export default function DevAllProjectDashboard() {
         payload = await clickUpReportLoader.read(refreshPath, isDevReportData);
         clickUpReportLoader.remember(path, payload);
         applyPayload(payload);
+      }
+      if (refreshSprints || needsClickUpSprintRefresh(payload)) {
+        const sprintPayload = await clickUpReportLoader.read("/api/clickup/dev?refresh=recent-sprints&view=all-project", isDevReportData);
+        clickUpReportLoader.remember(path, sprintPayload);
+        applyPayload(sprintPayload);
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "All Projects list-ийн мэдээлэл татагдсангүй.");
