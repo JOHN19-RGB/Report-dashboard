@@ -454,7 +454,7 @@ export default function DevAllProjectDashboard() {
               </div>
             </details>
             <details className="dev-select-filter dev-sprint-filter dev-period-multiselect">
-              <summary><Flag size={17} /><span>{periodMode === "segment" ? "Segment:" : "Sprint:"}</span><b>{selectionLabel}</b><ChevronDown size={14} /></summary>
+              <summary><Flag size={17} /><span>Sprint:</span><b>{selectionLabel}</b><ChevronDown size={14} /></summary>
               <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint болон segment олон сонголт">
                 <div className="dev-period-mode" role="group" aria-label="Sprint эсвэл segment"><button type="button" aria-pressed={periodMode === "segment"} onClick={() => { setPeriodMode("segment"); applySprints([]); }}>Segments</button><button type="button" aria-pressed={periodMode === "sprint"} onClick={() => { setPeriodMode("sprint"); applySprints([]); }}>Sprints</button></div>
                 <label><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All {periodMode === "segment" ? "Segments" : "Sprints"}</span></label>
