@@ -281,7 +281,7 @@ export default function DevAllProjectDashboard() {
   const sprints = useMemo(() => data?.sprints || [], [data?.sprints]);
   const periods = useMemo(() => buildSprintPeriods(sprints, periodMode), [periodMode, sprints]);
   const selectedPeriods = useMemo(() => periods.filter(period => period.sprintIds.every(id => filters.sprintIds.includes(id))), [filters.sprintIds, periods]);
-  const selectionLabel = !selectedPeriods.length ? `All ${periodMode === "segment" ? "Segments" : "Sprints"}` : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} ${periodMode === "segment" ? "Segments" : "Sprints"}`;
+  const selectionLabel = !selectedPeriods.length ? "All Sprints" : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} Sprint groups`;
   const matchingRecordIds = useMemo(() => new Set(matchingRecords.map(task => task.id)), [matchingRecords]);
   const projects = useMemo(() => {
     const context = allProjectData?.tasks || [];
@@ -455,11 +455,11 @@ export default function DevAllProjectDashboard() {
             </details>
             <details className="dev-select-filter dev-sprint-filter dev-period-multiselect">
               <summary><Flag size={17} /><span>Sprint:</span><b>{selectionLabel}</b><ChevronDown size={14} /></summary>
-              <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint болон segment олон сонголт">
-                <div className="dev-period-mode" role="group" aria-label="Sprint эсвэл segment"><button type="button" aria-pressed={periodMode === "segment"} onClick={() => { setPeriodMode("segment"); applySprints([]); }}>Segments</button><button type="button" aria-pressed={periodMode === "sprint"} onClick={() => { setPeriodMode("sprint"); applySprints([]); }}>Sprints</button></div>
-                <label><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All {periodMode === "segment" ? "Segments" : "Sprints"}</span></label>
+              <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint олон сонголт">
+                <div className="dev-period-mode" role="group" aria-label="Sprint бүлэглэл"><button type="button" aria-pressed={periodMode === "segment"} onClick={() => { setPeriodMode("segment"); applySprints([]); }}>2 Sprints</button><button type="button" aria-pressed={periodMode === "sprint"} onClick={() => { setPeriodMode("sprint"); applySprints([]); }}>1 Sprint</button></div>
+                <label><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All Sprints</span></label>
                 <div className="dev-sprint-options">{periods.map(item => <label key={item.id} title={item.complete ? `${item.label} · ${formatSprintDateRange(item.startDate, item.endDate)}` : `Sprint ${item.missingNumbers.join(", ")} дутуу`}><input type="checkbox" checked={selectedPeriods.some(period => period.id === item.id)} disabled={!item.complete} onChange={() => toggleSprintPeriod(item.id)} /><span>{item.label}{!item.complete && <small>Хүлээгдэж байна</small>}</span></label>)}</div>
-                {periodMode === "segment" && <p>2 sprint = 1 segment · 11–12, 13–14, …</p>}
+                {periodMode === "segment" && <p>2 sprint-ээр бүлэглэсэн · 11–12, 13–14, …</p>}
               </div>
             </details>
             {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
