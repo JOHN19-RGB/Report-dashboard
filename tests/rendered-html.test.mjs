@@ -165,7 +165,7 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../public/cody-logo.svg", import.meta.url), "utf8"),
   ]);
-  assert.match(dashboard, /groupDevAllProjectTasks\(matchingRecords, context\)/);
+  assert.match(dashboard, /new Set\(topLevelDevTasks\(matchingRecords\)\.map\(task => task\.id\)\)/);
   assert.match(dashboard, /projectRoots\.filter\(task => devProjectStatus\(task\) === "todo"\)/);
   assert.match(dashboard, /"\/api\/clickup\/dev\?view=all-project"/);
   assert.match(dashboard, /"\/api\/clickup\/dev\?refresh=all-project&view=all-project"/);

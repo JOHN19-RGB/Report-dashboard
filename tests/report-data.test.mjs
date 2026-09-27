@@ -220,6 +220,31 @@ test("All Projects uses exact B2C relationships before root-level site sprint fa
   assert.deepEqual(connected.find(item => item.id === "unmatched").sprintIds, []);
 });
 
+test("All Projects keeps generic subtask sprint links inside the correct project", () => {
+  const task = (id, name, parentId = null, parentName = "", sprint = "", sprintIds = []) => ({
+    id, name, parentId, parentName, project: "", sprint, sprintIds, customFields: {}, type: "Task", tags: [], assignees: [], status: { name: "done", type: "closed", done: true },
+  });
+  const allProjects = [
+    task("alpha", "Alpha.mn"),
+    task("alpha-footer", "Footer", "alpha", "Alpha.mn"),
+    task("beta", "Beta.mn"),
+    task("beta-footer", "Footer", "beta", "Beta.mn"),
+  ];
+  const master = [
+    task("master-alpha", "Footer", "master-alpha-parent", "Alpha.mn | UI UX Design", "Sprint 19", ["s19"]),
+    task("master-beta", "Footer", "master-beta-parent", "Beta.mn | UI UX Design", "Sprint 20", ["s20"]),
+  ];
+  const connected = connectDevAllProjectSprints(allProjects, master);
+  assert.deepEqual(connected.find(item => item.id === "alpha-footer").sprintIds, ["s19"]);
+  assert.deepEqual(connected.find(item => item.id === "beta-footer").sprintIds, ["s20"]);
+  assert.deepEqual(connected.find(item => item.id === "alpha").sprintIds, ["s19"]);
+  assert.deepEqual(connected.find(item => item.id === "beta").sprintIds, ["s20"]);
+
+  const selected = selectDevTasks({ tasks: connected }, { search: "", startDate: "", endDate: "", taskType: "all", sprintIds: ["s19"] });
+  assert.deepEqual(topLevelDevTasks(selected).map(item => item.id), ["alpha"]);
+  assert.deepEqual(groupDevAllProjectTasks(topLevelDevTasks(selected), connected).map(project => project.id), ["alpha"]);
+});
+
 test("multiple sprint choices use a unique union and do not use task dates as membership", () => {
   const tasks = [
     { id: "one", dueDate: "2025-01-01", sprintIds: ["s1"] },

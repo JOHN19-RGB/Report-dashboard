@@ -3385,13 +3385,6 @@ button {
 .all-project-summary-content > aside > i b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #74a5ff, #63ddb7); transform-origin: left; animation: growWidth .7s cubic-bezier(.2,.8,.2,1) backwards; }
 .all-project-summary-content > article { padding: 17px 21px; border: 1px solid #e6e8f1; border-radius: 15px; background: rgb(255 255 255 / 84%); box-shadow: 0 10px 28px rgb(47 53 84 / 5%); }
 .all-project-summary-content > article > p { margin: 0; color: #5f6b80; font-size: 12px; line-height: 1.72; }
-.all-project-summary-ai-lead { position: relative; margin: -5px -9px 15px; overflow: hidden; padding: 13px 15px; border: 1px solid #e2def7; border-radius: 12px; background: linear-gradient(120deg, #f8f7ff, #f7fbff 62%, #fff); box-shadow: inset 3px 0 #7468ff; }
-.all-project-summary-ai-lead::after { position: absolute; width: 90px; height: 90px; top: -58px; right: -34px; border: 15px solid rgb(116 104 255 / 5%); border-radius: 50%; content: ""; pointer-events: none; }
-.all-project-summary-ai-lead > span { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px; color: #6558ce; font-size: 9px; font-weight: 800; letter-spacing: .11em; }
-.all-project-summary-ai-lead > p { position: relative; z-index: 1; margin: 7px 0 0; color: #36435b; font-size: 12px; font-weight: 620; line-height: 1.6; }
-.all-project-summary-ai-lead > small { position: relative; z-index: 1; display: block; margin-top: 6px; color: #8790a2; font-size: 9px; }
-.all-project-summary-ai-lead[data-source="groq"] { border-color: #d9d2ff; background: linear-gradient(120deg, #f5f2ff, #f5f9ff 62%, #fff); }
-.all-project-summary-ai-lead[data-source="groq"] > span { color: #5d4fd2; }
 .all-project-summary-error { margin: 0 0 13px !important; padding: 9px 11px; border: 1px solid #f1d2cc; border-radius: 9px; background: #fff6f4; color: #b85546 !important; font-size: 10px !important; }
 .all-project-summary-intro { padding-bottom: 13px; color: #354259 !important; font-size: 13px !important; }
 .all-project-summary-content > article strong,

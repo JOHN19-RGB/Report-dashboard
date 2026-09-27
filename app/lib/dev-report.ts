@@ -278,6 +278,14 @@ function devTaskConnectionKey(value: string) {
   return `${devProjectConnectionKey(site)}|${work}`;
 }
 
+function devTaskConnectionKeys(task: DevTask, projectName = devProjectName(task), includeStandaloneName = false) {
+  const keys = new Set<string>();
+  if (task.name.includes("|") || includeStandaloneName) keys.add(devTaskConnectionKey(task.name));
+  const contextualKey = devTaskConnectionKey(`${projectName} | ${task.name.split("|").at(-1)?.trim() || task.name}`);
+  if (projectName && contextualKey) keys.add(contextualKey);
+  return Array.from(keys).filter(Boolean);
+}
+
 /** Connect All Projects records to exact Master tasks, with a site fallback for project roots. */
 export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTasks: DevTask[]) {
   const sprintByProject = new Map<string, { ids: Set<string>; names: Set<string> }>();
@@ -291,8 +299,7 @@ export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTa
       if (task.sprint) connection.names.add(task.sprint);
       sprintByProject.set(projectKey, connection);
     }
-    const taskKey = devTaskConnectionKey(task.name);
-    if (taskKey) {
+    for (const taskKey of devTaskConnectionKeys(task, devProjectName(task), !task.parentId)) {
       const connection = sprintByTask.get(taskKey) || { ids: new Set<string>(), names: new Set<string>() };
       task.sprintIds.forEach(id => connection.ids.add(id));
       if (task.sprint) connection.names.add(task.sprint);
@@ -311,10 +318,9 @@ export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTa
       root = parent;
     }
     const relationship = Object.entries(task.customFields || {}).find(([name]) => /relationship\s+b2c/i.test(name))?.[1] || "";
-    const relationshipConnection = relationship
-      ? sprintByTask.get(devTaskConnectionKey(relationship))
-      : undefined;
-    const directConnection = relationshipConnection || sprintByTask.get(devTaskConnectionKey(task.name));
+    const relationshipConnection = relationship ? sprintByTask.get(devTaskConnectionKey(relationship)) : undefined;
+    const directKeys = task.parentId ? devTaskConnectionKeys(task, devProjectName(root)) : [devTaskConnectionKey(task.name)];
+    const directConnection = relationshipConnection || directKeys.map(key => sprintByTask.get(key)).find(Boolean);
     const projectConnection = !task.parentId && !task.name.includes("|")
       ? sprintByProject.get(devProjectConnectionKey(devProjectName(root)))
       : undefined;
