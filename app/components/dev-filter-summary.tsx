@@ -94,8 +94,8 @@ export default function DevFilterSummary({ input, syncedAt }: { input: DevFilter
       {!current ? <div className="dev-filter-summary-empty"><span><Sparkles size={20} /></span><div><strong>{input.imp.count} Imp · {input.bug.count} Bug таскийг нэгтгэхэд бэлэн</strong><p>Одоогийн шүүлтүүрээр priority, time estimate болон өмнөх sprint-ийн өөрчлөлтийг нэгтгэнэ.</p></div><div className="dev-filter-summary-ready-stats" aria-hidden="true"><span><b>{input.imp.count}</b>Imp</span><i /><span><b>{input.bug.count}</b>Bug</span></div></div> : <div className="dev-filter-summary-body">
         <div className="dev-filter-summary-lead" aria-live="polite"><span><Sparkles size={14} /> AI НЭГТГЭЛ</span><p>{current.summary.introduction}</p><small>Шүүлтүүртэй ClickUp өгөгдлөөс баталгаажуулсан тоонууд</small></div>
         <div className="dev-filter-breakdown" aria-label="Шүүсэн таскуудын төрөл болон ClickUp төлөв">
-          <BreakdownGroup title="Task type" subtitle="ClickUp-ийн бодит төрөл" items={current.summary.facts.breakdown.types} kind="type" />
-          <BreakdownGroup title="ClickUp status" subtitle="ClickUp-ийн бодит төлөв" items={current.summary.facts.breakdown.statuses} kind="status" />
+          <BreakdownGroup title="Task type" subtitle="Үүсгэсэн таскуудын төрөл" items={current.summary.facts.breakdown.types} kind="type" />
+          <BreakdownGroup title="ClickUp status" subtitle="Гүйцэтгэсэн таскуудын төлөв" items={current.summary.facts.breakdown.statuses} kind="status" />
         </div>
         <div className="dev-filter-template">
           <article className="imp">

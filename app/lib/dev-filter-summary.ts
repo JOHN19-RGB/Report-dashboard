@@ -174,12 +174,10 @@ function comparisonText(input: DevFilterSummaryInput, label: "Imp" | "Bug", curr
 
 function priorityText(priorities: DevPriorityCounts) {
   return [
-    priorities.urgent ? `URGENT – ${number(priorities.urgent)}` : "",
+    `URGENT – ${number(priorities.urgent)}`,
     `HIGH – ${number(priorities.high)}`,
-    `MEDIUM – ${number(priorities.medium)}`,
-    `LOW – ${number(priorities.low)}`,
-    priorities.unspecified ? `ТОДОРХОЙГҮЙ – ${number(priorities.unspecified)}` : "",
-  ].filter(Boolean).join(", ");
+    `NORMAL – ${number(priorities.medium)}`,
+  ].join(", ");
 }
 
 export const DEV_FILTER_SUMMARY_INTRO = "Сонгосон шүүлтүүрийн Imp болон Bug таскийн бүртгэл, priority, time estimate, өмнөх үеийн харьцуулалтыг нэгтгэв.";
@@ -200,7 +198,7 @@ export function buildDevFilterSummary(input: DevFilterSummaryInput, introduction
   const bugChange = summaryPercentChange(input.bug.count, input.bug.previousCount);
   return {
     introduction,
-    impText: `Тухайн ${input.period}-д нийт нэмэлт хүсэлтийн ${number(input.imp.count)} таск бүртгэгдсэн. ClickUp Priority талбараар ангилбал ${priorityText(input.imp.priorities)} бөгөөд нийт time estimate ${summaryDuration(input.imp.estimateMinutes)} байна. ${comparisonText(input, "Imp", input.imp.count, input.imp.previousCount)}${partialNote}`,
+    impText: `Тухайн ${input.period}-д нийт нэмэлт хүсэлтийн ${number(input.imp.count)} таск бүртгэгдсэн. ClickUp Priority талбарын URGENT, HIGH, NORMAL ангиллаар авч үзвэл ${priorityText(input.imp.priorities)} бөгөөд нийт time estimate ${summaryDuration(input.imp.estimateMinutes)} байна. ${comparisonText(input, "Imp", input.imp.count, input.imp.previousCount)}${partialNote}`,
     bugText: `Тухайн ${input.period}-д нийт Bug ${number(input.bug.count)} бүртгэгдсэн бөгөөд нийт time estimate ${summaryDuration(input.bug.estimateMinutes)} байна. ${comparisonText(input, "Bug", input.bug.count, input.bug.previousCount)}${partialNote}`,
     facts: {
       breakdown: {

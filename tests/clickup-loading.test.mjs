@@ -81,7 +81,7 @@ test("cached data is delivered before a slow refresh finishes", async () => {
   assert.deepEqual(seen, [stale, fresh]);
 });
 
-test("simultaneous consumers share requests and navigation reuses the last result immediately", async () => {
+test("simultaneous consumers share requests and fresh navigation avoids another snapshot download", async () => {
   const calls = [];
   const loader = createClickUpReportLoader(async url => { calls.push(url); return Response.json(fresh); }, () => now);
   await Promise.all([loader.load("/report", options(() => {})), loader.load("/report", options(() => {}))]);
@@ -90,7 +90,9 @@ test("simultaneous consumers share requests and navigation reuses the last resul
   const navigation = loader.load("/report", options(data => seen.push(data)));
   assert.deepEqual(seen, [fresh]);
   await navigation;
-  assert.deepEqual(calls, ["/report", "/report"]);
+  assert.deepEqual(calls, ["/report"]);
+  await loader.load("/report", { ...options(() => {}), refresh: true });
+  assert.deepEqual(calls, ["/report", "/report?refresh=1"]);
 });
 
 test("refresh errors preserve displayed snapshots and do not poison the retry", async () => {

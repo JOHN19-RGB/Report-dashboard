@@ -144,6 +144,8 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
   assert.match(dashboard, /aria-label=\{`\$\{item.label\}\$\{item.dateRange \? ` \(\$\{item.dateRange\}\)` : ""\}: \$\{item.count\}/);
   assert.doesNotMatch(dashboard, /dev-bar-tooltip|dev-bar-cap/);
   assert.match(css, /\.dev-cx-chart \.bar-group \.bar-value \{[^}]*color: transparent;/);
+  assert.match(css, /\.dev-donut-layout ul \{[^}]*grid-template-columns: 1fr;/);
+  assert.match(css, /\.dev-filter-template \{[^}]*font-family: "Helvetica Neue", Arial, sans-serif;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-value,[\s\S]*?\.dev-cx-chart \.bar-group:focus-visible \.bar-value \{ color: var\(--ink\); \}/);
   assert.doesNotMatch(css, /\.dev-cx-chart \.bar-group\.active \.bar-value/);
   assert.match(css, /\.dev-performance-panel \{ --series-color: #ff876d;/);
@@ -212,7 +214,10 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.doesNotMatch(page, /GROQ_API_KEY|CLICKUP_API_TOKEN|api\.groq\.com|pk_[A-Za-z0-9_]+/);
   assert.match(route, /process\.env\.GROQ_API_KEY/);
   assert.match(devSummaryRoute, /process\.env\.GROQ_API_KEY/);
+  assert.match(devSummaryRoute, /зөвхөн URGENT, HIGH, NORMAL ангиллыг харуулна/);
   assert.match(devDashboard, /<DevFilterSummary input=\{summaryInput\}/);
+  assert.match(devSummary, /Үүсгэсэн таскуудын төрөл/);
+  assert.match(devSummary, /Гүйцэтгэсэн таскуудын төлөв/);
   assert.match(devSummary, />ТАЙЛБАР</);
   assert.doesNotMatch(devSummary, />AI ТАЙЛБАР</);
   assert.match(clickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
@@ -226,8 +231,11 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(devClickUpRoute, /custom_item_id/);
   assert.match(devClickUpRoute, /\/custom_item/);
   assert.match(devClickUpRoute, /task\.tags/);
+  assert.match(devClickUpRoute, /refresh === "tasks" && snapshot\?\.schemaVersion === SNAPSHOT_VERSION/);
+  assert.match(devClickUpRoute, /const taskResult = await getListTasks\(snapshotList\.id/);
   assert.match(devDashboard, /clickUpReportLoader\.load\("\/api\/clickup\/dev"/);
   assert.match(devDashboard, /refreshPath: "\/api\/clickup\/dev\?refresh=tasks"/);
+  assert.match(devDashboard, /let refreshSprints = false/);
   assert.match(devDashboard, /\/api\/clickup\/dev\?refresh=recent-sprints/);
   assert.match(devDashboard, /sprintId/);
   assert.match(devReport, /DEV_REPORT_START_YEAR = 2025/);

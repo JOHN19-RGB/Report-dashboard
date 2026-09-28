@@ -12,7 +12,7 @@ export function needsClickUpSprintRefresh(report: Snapshot & {
   return Boolean(report.sprintNeedsFullRefresh || report.sprintSyncErrors || !report.sprints?.length || isClickUpSnapshotStale(report.sprintSyncedAt || report.syncedAt, now));
 }
 
-/** Browser-memory reuse only; all data is rechecked against the server on navigation. */
+/** Browser-memory reuse avoids redundant snapshot downloads during the freshness window. */
 export function createClickUpReportLoader(fetcher: typeof fetch = fetch, now = Date.now) {
   const snapshots = new Map<string, Snapshot>();
   const pending = new Map<string, Promise<unknown>>();
@@ -46,7 +46,10 @@ export function createClickUpReportLoader(fetcher: typeof fetch = fetch, now = D
     onData: (data: T) => void;
   }) {
     const cached = snapshots.get(path);
-    if (cached && options.validate(cached)) options.onData(cached);
+    if (cached && options.validate(cached)) {
+      options.onData(cached);
+      if (!options.refresh && !isClickUpSnapshotStale(cached.taskSyncedAt || cached.syncedAt, now())) return cached;
+    }
     const publish = (payload: T) => { remember(path, payload); options.onData(payload); return payload; };
     let payload = publish(await read(options.refresh ? options.refreshPath : path, options.validate));
     if (!options.refresh && isClickUpSnapshotStale(payload.taskSyncedAt || payload.syncedAt, now())) {

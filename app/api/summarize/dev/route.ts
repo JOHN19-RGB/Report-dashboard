@@ -24,6 +24,7 @@ export async function POST(request: Request) {
   const models = Array.from(new Set([process.env.GROQ_MODEL || defaultModel, defaultModel]));
   const prompt = `Та Монгол хэлний ажлын тайлангийн редактор. Шүүсэн ClickUp өгөгдлийн тайлбарын нэг өгүүлбэртэй оршил бич.
 Imp болон Bug гэсэн нэрийг хоёуланг нь яг хэвээр оруул.
+Priority нэр, ангиллыг оршилд бүү оруул. Үндсэн тайлбар зөвхөн URGENT, HIGH, NORMAL ангиллыг харуулна.
 Тоон утга, хувь, хугацаа, шалтгаан, таамаг, өсөлт/бууралт, зөвлөмж бүү бич.
 Зөвхөн {"introduction":"..."} JSON буцаа.
 Fallback өгүүлбэр: ${DEV_FILTER_SUMMARY_INTRO}`;

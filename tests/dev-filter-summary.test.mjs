@@ -41,7 +41,8 @@ test("filtered Dev summary reproduces the Imp and Bug template with exact facts"
   assert.ok(parsed);
   const summary = buildDevFilterSummary(parsed);
   assert.match(summary.impText, /нэмэлт хүсэлтийн 99 таск/);
-  assert.match(summary.impText, /HIGH – 21, MEDIUM – 14, LOW – 42, ТОДОРХОЙГҮЙ – 22/);
+  assert.match(summary.impText, /URGENT – 0, HIGH – 21, NORMAL – 14/);
+  assert.doesNotMatch(summary.impText, /MEDIUM|LOW|ТОДОРХОЙГҮЙ/);
   assert.match(summary.impText, /528 цаг 57 минут/);
   assert.match(summary.impText, /43\.5%-иар өссөн/);
   assert.match(summary.bugText, /нийт Bug 11/);

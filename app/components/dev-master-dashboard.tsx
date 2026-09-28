@@ -24,7 +24,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import TeamSidebar from "./team-sidebar";
 import DevTeamProductivity from "./dev-team-productivity";
 import DevFilterSummary from "./dev-filter-summary";
@@ -172,7 +172,7 @@ export default function DevMasterDashboard() {
   const loadData = useCallback(async (refresh: boolean) => {
     setLoading(true);
     setError("");
-    let refreshSprints = refresh;
+    let refreshSprints = false;
     function applyPayload(payload: DevReportData) {
       // Remember stale sprint data even when a task-only refresh updates syncedAt next.
       refreshSprints ||= needsClickUpSprintRefresh(payload);
@@ -510,7 +510,7 @@ export default function DevMasterDashboard() {
             <header><div><h2>Task Type</h2><p>Төрөл тус бүрийн ажлын тоо</p></div></header>
             <div className="dev-donut-layout">
               <div className="dev-donut" style={{ background: totalTypeCount ? `conic-gradient(${donut})` : "#edf1f6" }}><span><strong>{totalTypeCount}</strong><small>tasks</small></span></div>
-              <ul aria-label="Таск төрлийн тайлбар">{typeTotals.map((item, index) => <li key={item.type}><span style={{ background: taskTypeColor(item.type, index) }} /><b>{item.type}</b><strong>{item.count}</strong></li>)}</ul>
+              <ul aria-label="Таск төрлийн тайлбар">{typeTotals.map((item, index) => <li key={item.type} style={{ "--task-type-color": taskTypeColor(item.type, index) } as CSSProperties}><span style={{ background: taskTypeColor(item.type, index) }} /><b>{item.type}</b><strong>{item.count}</strong></li>)}</ul>
             </div>
           </article>
         </section>
