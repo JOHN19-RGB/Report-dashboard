@@ -2783,9 +2783,11 @@ button {
 .dev-change-panel > header h2 { margin-top: 5px; }
 .dev-change-panel > header p { margin-top: 7px; }
 .dev-change-kicker { color: #7468ff; font-size: 9px; font-weight: 800; letter-spacing: .16em; }
-.dev-change-count { display: grid; min-width: 104px; padding: 11px 15px; border: 1px solid #e5e1f7; border-radius: 11px; background: rgb(255 255 255 / 80%); box-shadow: 0 6px 18px rgb(66 54 118 / 6%); text-align: right; }
-.dev-change-count strong { color: var(--ink); font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; }
-.dev-change-count span { margin-top: 5px; color: var(--dev-muted); font-size: 10px; }
+.dev-change-count { position: relative; isolation: isolate; display: grid; min-width: 154px; min-height: 68px; grid-template-columns: auto minmax(62px, 1fr); align-items: center; gap: 13px; padding: 11px 15px 11px 18px; overflow: hidden; border: 1px solid #dcd7f4; border-radius: 15px; background: linear-gradient(135deg, #fff 0%, #faf9ff 64%, #f2efff 100%); box-shadow: 0 10px 24px rgb(66 54 118 / 9%); text-align: left; }
+.dev-change-count::before { position: absolute; top: 18px; left: 0; width: 4px; height: 32px; border-radius: 0 999px 999px 0; background: linear-gradient(180deg, #7468ff, #a597ff); content: ""; }
+.dev-change-count::after { position: absolute; z-index: -1; width: 70px; height: 70px; right: -35px; bottom: -45px; border: 13px solid rgb(116 104 255 / 6%); border-radius: 50%; content: ""; }
+.dev-change-count strong { color: var(--ink); font-size: 27px; font-weight: 760; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums; }
+.dev-change-count span { align-self: center; color: #6f7890; font-size: 9px; font-weight: 720; letter-spacing: .06em; line-height: 1.35; text-transform: uppercase; }
 .dev-change-panel .dev-table-wrap { padding-top: 14px; }
 .dev-change-panel table { min-width: 760px; border-collapse: separate; border-spacing: 0 8px; }
 .dev-change-panel table th { height: 28px; padding: 0 15px; border: 0; font-size: 10px; letter-spacing: .025em; }
@@ -3528,6 +3530,8 @@ button {
   .dev-reset-filter { width: 100%; }
   .dev-reset-filter { justify-content: center; }
   .dev-panel > header { padding: 20px 18px 0; }
+  .dev-change-panel > header { align-items: stretch; flex-direction: column; }
+  .dev-change-count { width: 100%; }
   .dev-chart-context { padding-right: 18px; padding-left: 18px; }
   .dev-cx-chart-scroll { margin-right: 18px; margin-left: 18px; }
   .dev-performance-panel .chart-summary { margin-right: 18px; margin-left: 18px; }
