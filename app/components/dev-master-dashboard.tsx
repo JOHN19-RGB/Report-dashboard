@@ -50,6 +50,7 @@ import {
   reportMetrics,
   scopeDevReportTasks,
   selectDevTasks,
+  sprintConnectedDevTasks,
   taskDate,
   taskTypeTotals,
   teamCompletionAverage,
@@ -256,13 +257,14 @@ export default function DevMasterDashboard() {
   }, []);
 
   const periodMonthKeys = useMemo(() => periodYears.flatMap(year => periodMonths.map(month => `${year}-${month}`)).sort(), [periodMonths, periodYears]);
+  const sprintConnectedData = useMemo(() => data ? { ...data, tasks: sprintConnectedDevTasks(data.tasks) } : null, [data]);
   const taskRecords = useMemo(() => {
-    const selectedTasks = data ? selectDevTasks(data, filters) : [];
+    const selectedTasks = sprintConnectedData ? selectDevTasks(sprintConnectedData, filters) : [];
     if (filters.sprintIds.length) return selectedTasks;
     return filterDevTasksByMonthKeys(selectedTasks, periodMonthKeys);
-  }, [data, filters, periodMonthKeys]);
+  }, [filters, periodMonthKeys, sprintConnectedData]);
   const tasks = useMemo(() => topLevelDevTasks(taskRecords), [taskRecords]);
-  const allDevTasks = useMemo(() => data ? topLevelDevTasks(selectDevTasks(data, DEFAULT_FILTERS)) : [], [data]);
+  const allDevTasks = useMemo(() => sprintConnectedData ? topLevelDevTasks(selectDevTasks(sprintConnectedData, DEFAULT_FILTERS)) : [], [sprintConnectedData]);
   const typeTotals = useMemo(() => taskTypeTotals(tasks), [tasks]);
   const team = useMemo(() => devTeamProductivity(tasks), [tasks]);
   const distributionMembers = useMemo(() => devProductivityDistributionMembers(tasks), [tasks]);
@@ -273,15 +275,15 @@ export default function DevMasterDashboard() {
   const changes = useMemo(() => changeRequestRows(taskRecords), [taskRecords]);
   const metrics = useMemo(() => reportMetrics(tasks), [tasks]);
   const teamAverage = useMemo(() => teamCompletionAverage(tasks), [tasks]);
-  const assigneeCount = useMemo(() => new Set((data?.tasks || []).flatMap(task => task.assignees.map(assignee => assignee.id || assignee.name.trim().toLocaleLowerCase("en-US")))).size, [data]);
-  const taskTypes = useMemo(() => Array.from(new Set(topLevelDevTasks(data?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [data]);
+  const assigneeCount = useMemo(() => new Set((sprintConnectedData?.tasks || []).flatMap(task => task.assignees.map(assignee => assignee.id || assignee.name.trim().toLocaleLowerCase("en-US")))).size, [sprintConnectedData]);
+  const taskTypes = useMemo(() => Array.from(new Set(topLevelDevTasks(sprintConnectedData?.tasks || []).map(task => task.type).filter(type => type !== "Тодорхойгүй"))).sort(), [sprintConnectedData]);
   const sprints = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const task of topLevelDevTasks(data?.tasks || [])) {
+    for (const task of topLevelDevTasks(sprintConnectedData?.tasks || [])) {
       for (const sprintId of task.sprintIds) counts.set(sprintId, (counts.get(sprintId) || 0) + 1);
     }
     return (data?.sprints || []).map(sprint => ({ ...sprint, taskCount: counts.get(sprint.id) || 0 }));
-  }, [data]);
+  }, [data, sprintConnectedData]);
   const periods = useMemo(() => buildSprintPeriods(sprints, "segment"), [sprints]);
   const selectedPeriods = useMemo(() => periods.filter(period => period.sprintIds.every(id => filters.sprintIds.includes(id))), [filters.sprintIds, periods]);
   const selectionLabel = !selectedPeriods.length ? "All Sprints" : selectedPeriods.length <= 2 ? selectedPeriods.map(period => period.label.replace(/^Sprint /, "")).join(", ") : `${selectedPeriods.length} Sprints`;
@@ -293,7 +295,7 @@ export default function DevMasterDashboard() {
   }, [data?.taskPartial, periods, selectedPeriods]);
   const showPreviousComparison = selectedPeriods.length === 1 && comparison.available;
   const showPercentageComparison = selectedPeriods.length >= 2;
-  const previousTasks = useMemo(() => data && comparison.available ? topLevelDevTasks(selectDevTasks(data, { ...filters, sprintIds: comparison.periods.flatMap(period => period.sprintIds) })) : [], [comparison, data, filters]);
+  const previousTasks = useMemo(() => sprintConnectedData && comparison.available ? topLevelDevTasks(selectDevTasks(sprintConnectedData, { ...filters, sprintIds: comparison.periods.flatMap(period => period.sprintIds) })) : [], [comparison, filters, sprintConnectedData]);
   const previousMetrics = useMemo(() => reportMetrics(previousTasks), [previousTasks]);
   const previousAverage = useMemo(() => teamCompletionAverage(previousTasks), [previousTasks]);
   const completionRate = tasks.length ? metrics.doneTasks / tasks.length * 100 : 0;
@@ -303,15 +305,15 @@ export default function DevMasterDashboard() {
     if (!selectedPeriods.length) return monthly.map(item => ({ key: item.key, label: item.month, short: item.month, dateRange: "", count: chartType === "Bug" ? item.bug : item.imp, selected: false, sprintIds: [] as string[] }));
     const visible = [...selectedPeriods, ...(showPreviousComparison ? comparison.periods : [])].sort((a, b) => a.firstNumber - b.firstNumber);
     return visible.map(period => {
-      const periodTasks = data ? topLevelDevTasks(selectDevTasks(data, { ...filters, sprintIds: period.sprintIds })) : [];
+      const periodTasks = sprintConnectedData ? topLevelDevTasks(selectDevTasks(sprintConnectedData, { ...filters, sprintIds: period.sprintIds })) : [];
       return { key: period.id, label: period.label, short: period.label.replace(/^Sprint /, ""), dateRange: formatSprintDateRange(period.startDate, period.endDate), count: periodTasks.filter(task => task.type === chartType).length, selected: selectedPeriods.some(selected => selected.id === period.id), sprintIds: period.sprintIds };
     });
-  }, [chartType, comparison, data, filters, monthly, selectedPeriods, showPreviousComparison]);
+  }, [chartType, comparison, filters, monthly, selectedPeriods, showPreviousComparison, sprintConnectedData]);
   const chartPeak = Math.max(1, ...chartItems.map(item => item.count));
   const chartStep = chartPeak <= 20 ? 4 : chartPeak <= 100 ? 20 : 100;
   const chartMax = Math.ceil(chartPeak / chartStep) * chartStep;
   const chartTotal = tasks.filter(task => task.type === chartType).length;
-  const selectedChartCounts = useMemo(() => [...selectedPeriods].sort((a, b) => a.firstNumber - b.firstNumber).map(period => data ? topLevelDevTasks(selectDevTasks(data, { ...filters, sprintIds: period.sprintIds })).filter(task => task.type === chartType).length : 0), [chartType, data, filters, selectedPeriods]);
+  const selectedChartCounts = useMemo(() => [...selectedPeriods].sort((a, b) => a.firstNumber - b.firstNumber).map(period => sprintConnectedData ? topLevelDevTasks(selectDevTasks(sprintConnectedData, { ...filters, sprintIds: period.sprintIds })).filter(task => task.type === chartType).length : 0), [chartType, filters, selectedPeriods, sprintConnectedData]);
   const previousChartTotal = showPercentageComparison ? selectedChartCounts[0] : null;
   const selectedChartTotal = showPercentageComparison ? selectedChartCounts.at(-1)! : chartTotal;
   const chartChange = previousChartTotal === null ? null : previousChartTotal === 0 ? (selectedChartTotal ? null : 0) : ((selectedChartTotal - previousChartTotal) / previousChartTotal) * 100;
@@ -460,16 +462,16 @@ export default function DevMasterDashboard() {
             <details className="dev-select-filter dev-sprint-filter dev-period-multiselect">
               <summary><Flag size={17} /><span>Sprints:</span><b>{selectionLabel}</b><ChevronDown size={14} /></summary>
               <div className="dev-period-menu dev-sprint-menu" aria-label="ClickUp sprint олон сонголт">
-                <label title="Sprint-ийн шүүлтүүргүй. Sprint холбогдоогүй Master ажлууд мөн багтана."><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All Sprints</span></label>
+                <label title="ClickUp-ийн Sprint баганад холбогдсон бүх Master ажлыг харуулна."><input type="checkbox" checked={!filters.sprintIds.length} onChange={() => applySprints([])} /><span>All Sprints</span></label>
                 <div className="dev-sprint-options">{periods.map(item => <label key={item.id} title={item.complete ? `${item.label} · ${formatDateRange(item.startDate || "", item.endDate || "")}` : `Sprint ${item.missingNumbers.join(", ")} хараахан байхгүй — sprint хос бүрдэхийг хүлээж байна`}><input type="checkbox" value={item.id} checked={selectedPeriods.some(period => period.id === item.id)} disabled={!item.complete} onChange={() => toggleSprintPeriod(item.id)} /><span>{item.label}{!item.complete && <small>Хүлээгдэж байна</small>}</span></label>)}</div>
-                <p>Sprint-үүдийг хосоор сонгоно · 11–12, 13–14, …</p>
+                <p>Зөвхөн Sprint баганад холбогдсон ажлууд · 11–12, 13–14, …</p>
                 {!loading && !sprints.length && <p>ClickUp sprint олдсонгүй</p>}
               </div>
             </details>
             <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Таск төрөл:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
             {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
             <div className="dev-dashboard-actions" role="group" aria-label="Dev тайлангийн үйлдлүүд">
-              <button className="icon-button dev-download-filter" type="button" onClick={() => downloadAllDevData(allDevTasks)} disabled={loading || !allDevTasks.length} aria-label="All data татах" title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны бүх assignee-ийн өгөгдөл татах`}><Download size={18} /></button>
+              <button className="icon-button dev-download-filter" type="button" onClick={() => downloadAllDevData(allDevTasks)} disabled={loading || !allDevTasks.length} aria-label="All data татах" title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны Sprint баганад холбогдсон өгөгдөл татах`}><Download size={18} /></button>
               <button className="icon-button dev-refresh-filter" type="button" onClick={() => void loadData(true)} disabled={loading} aria-label={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"} aria-busy={loading} title={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"}><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
             </div>
           </div>

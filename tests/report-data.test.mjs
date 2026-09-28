@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, taskTypeTotals, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, sprintConnectedDevTasks, taskTypeTotals, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -85,6 +85,14 @@ test("Dev task type totals include the time estimate shown in the category list"
     { type: "Bug", count: 2, estimateMs: 180_000 },
     { type: "Imp", count: 1, estimateMs: 0 },
   ]);
+});
+
+test("Dev Master includes only tasks explicitly connected through the ClickUp Sprint column", () => {
+  const connected = { id: "connected", sprint: "Sprint 41", sprintIds: ["s41"] };
+  const unconnected = { id: "unconnected", sprint: "", sprintIds: [] };
+  const textOnly = { id: "text-only", sprint: "Sprint 42", sprintIds: [] };
+  const malformed = { id: "malformed", sprint: "Sprint 43", sprintIds: null };
+  assert.deepEqual(sprintConnectedDevTasks([connected, unconnected, textOnly, malformed]).map(task => task.id), ["connected"]);
 });
 
 test("Dev counts each parent task once and never counts its subtasks", () => {

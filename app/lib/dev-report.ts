@@ -425,6 +425,11 @@ export function topLevelDevTasks(tasks: DevTask[]) {
   return tasks.filter(task => !task.parentId);
 }
 
+/** Keep only tasks that ClickUp explicitly connects to at least one Sprint list. */
+export function sprintConnectedDevTasks(tasks: DevTask[]) {
+  return tasks.filter(task => Array.isArray(task.sprintIds) && task.sprintIds.length > 0);
+}
+
 export function scopeDevReportTasks(tasks: DevTask[]) {
   return tasks.filter(task => {
     const date = taskDate(task);

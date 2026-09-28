@@ -58,6 +58,8 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /Sprints:/);
   assert.match(masterHtml, /All Sprints/);
   assert.match(masterHtml, /aria-label="ClickUp sprint олон сонголт"/);
+  assert.match(masterHtml, /Зөвхөн Sprint баганад холбогдсон ажлууд/);
+  assert.doesNotMatch(masterHtml, /Sprint холбогдоогүй Master ажлууд мөн багтана/);
   assert.doesNotMatch(masterHtml, /dev-period-mode|>Segments<|>Sprints<\/button>/);
   assert.match(masterHtml, /11–12, 13–14/);
   assert.match(masterHtml, /data-kpi="completion"/);
