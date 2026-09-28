@@ -183,7 +183,7 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   assert.match(dashboard, /className="all-project-plan-empty"/);
   assert.match(route, /refresh === "all-project"/);
   assert.match(route, /connectDevAllProjectSprints/);
-  assert.doesNotMatch(route, /includeSubtasks: false/);
+  assert.match(route, /getListTasks\(sprint\.id, token, \{ includeTiml: true, includeSubtasks: false, batchSize: 1 \}\)/);
   assert.match(route, /tasks: \[\],/);
   assert.match(localProxy, /compactView = requestUrl\.searchParams\.get\("view"\) === "all-project"/);
   assert.match(localProxy, /if \(!compactView && typeof payload\.syncedAt/);

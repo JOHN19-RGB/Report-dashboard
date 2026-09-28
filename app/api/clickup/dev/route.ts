@@ -70,7 +70,7 @@ type ClickUpListLocation = {
   taskCount: number;
 };
 const SNAPSHOT_ID = 2;
-const SNAPSHOT_VERSION = 11;
+const SNAPSHOT_VERSION = 12;
 const reportDateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" });
 
 async function readSnapshot() {
@@ -342,7 +342,9 @@ async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], toke
     const batch = sprintLists.slice(start, start + concurrency);
     const results = await Promise.all(batch.map(async sprint => {
       try {
-        const result = await getListTasks(sprint.id, token, { includeTiml: true, batchSize: 1 });
+        // ClickUp includes parent/context rows when subtasks are requested. Those rows are
+        // not direct members of the Sprint column and must never receive sprint IDs.
+        const result = await getListTasks(sprint.id, token, { includeTiml: true, includeSubtasks: false, batchSize: 1 });
         const taskIds = Array.from(new Set(result.tasks.map(task => safeText(task.id)).filter(Boolean)));
         return { sprint, taskIds, partial: result.partial, failed: false };
       } catch (error) {
