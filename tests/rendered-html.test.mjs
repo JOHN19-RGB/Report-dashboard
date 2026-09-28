@@ -144,7 +144,7 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
   assert.match(dashboard, /aria-label=\{`\$\{item.label\}\$\{item.dateRange \? ` \(\$\{item.dateRange\}\)` : ""\}: \$\{item.count\}/);
   assert.doesNotMatch(dashboard, /dev-bar-tooltip|dev-bar-cap/);
   assert.match(css, /\.dev-cx-chart \.bar-group \.bar-value \{[^}]*color: transparent;/);
-  assert.match(css, /\.dev-donut-layout ul \{[^}]*grid-template-columns: 1fr;/);
+  assert.match(css, /\.dev-type-row \{[^}]*grid-template-columns: 36px minmax\(0, 1fr\) 76px;/);
   assert.match(css, /\.dev-filter-template \{[^}]*font-family: "Helvetica Neue", Arial, sans-serif;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-value,[\s\S]*?\.dev-cx-chart \.bar-group:focus-visible \.bar-value \{ color: var\(--ink\); \}/);
   assert.doesNotMatch(css, /\.dev-cx-chart \.bar-group\.active \.bar-value/);

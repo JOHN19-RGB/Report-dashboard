@@ -451,12 +451,13 @@ export function selectDevTasks(data: DevReportData, filters: DevReportFilters) {
 }
 
 export function taskTypeTotals(tasks: DevTask[]) {
-  const counts = new Map<string, { type: string; count: number; color: string }>();
+  const counts = new Map<string, { type: string; count: number; estimateMs: number; color: string }>();
   for (const task of tasks) {
     const type = task.type || "Тодорхойгүй";
     if (type === "Тодорхойгүй") continue;
-    const current = counts.get(type) || { type, count: 0, color: "" };
+    const current = counts.get(type) || { type, count: 0, estimateMs: 0, color: "" };
     current.count += 1;
+    current.estimateMs += task.timeEstimateMs || 0;
     counts.set(type, current);
   }
   return Array.from(counts.values()).sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));

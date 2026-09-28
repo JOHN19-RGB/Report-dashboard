@@ -4,6 +4,7 @@ import {
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
+  Bug,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -20,11 +21,12 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Sparkles,
   TimerReset,
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TeamSidebar from "./team-sidebar";
 import DevTeamProductivity from "./dev-team-productivity";
 import DevFilterSummary from "./dev-filter-summary";
@@ -62,6 +64,13 @@ const TASK_TYPE_COLORS: Record<string, string> = { Bug: "#ff876d", Imp: "#6d9eff
 
 function taskTypeColor(type: string, index: number) {
   return TASK_TYPE_COLORS[type] || TYPE_PALETTE[index % TYPE_PALETTE.length];
+}
+
+function taskTypeIcon(type: string) {
+  if (/bug/i.test(type)) return Bug;
+  if (/imp|improvement|performance/i.test(type)) return Sparkles;
+  if (/milestone|sprint/i.test(type)) return Flag;
+  return ClipboardCheck;
 }
 
 const DEFAULT_FILTERS: DevReportFilters = { search: "", startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE, taskType: "all", sprintIds: [] };
@@ -308,15 +317,9 @@ export default function DevMasterDashboard() {
   const chartChange = previousChartTotal === null ? null : previousChartTotal === 0 ? (selectedChartTotal ? null : 0) : ((selectedChartTotal - previousChartTotal) / previousChartTotal) * 100;
   const chartChangeDirection = chartChange === null || chartChange > 0 ? "positive" : chartChange < 0 ? "negative" : "neutral";
   const ChartChangeIcon = chartChangeDirection === "positive" ? ArrowUpRight : chartChangeDirection === "negative" ? ArrowDownRight : Minus;
-  const totalTypeCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
+  const maxTypeCount = Math.max(1, ...typeTotals.map(item => item.count));
   const hasPeriodFilter = periodYears.length !== REPORT_YEARS.length || periodMonths.length !== REPORT_MONTHS.length;
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) || hasPeriodFilter;
-  let donutPosition = 0;
-  const donut = typeTotals.map((item, index) => {
-    const start = donutPosition;
-    donutPosition += totalTypeCount ? (item.count / totalTypeCount) * 100 : 0;
-    return `${taskTypeColor(item.type, index)} ${start}% ${donutPosition}%`;
-  }).join(", ");
   const summaryInput = useMemo(() => {
     const summarizeType = (type: "Imp" | "Bug") => {
       const current = tasks.filter(task => task.type === type);
@@ -366,7 +369,7 @@ export default function DevMasterDashboard() {
       },
       partial: Boolean(data?.partial),
     };
-  }, [comparison.available, comparison.periods, data?.partial, filters.search, filters.taskType, periodLabel, previousTasks, selectedPeriods.length, selectionLabel, tasks, typeTotals]);
+  }, [comparison, data?.partial, filters, periodLabel, previousTasks, selectedPeriods, selectionLabel, tasks, typeTotals]);
 
   function updateFilter<Key extends keyof DevReportFilters>(key: Key, value: DevReportFilters[Key]) {
     setFilters(current => ({ ...current, [key]: value }));
@@ -508,10 +511,15 @@ export default function DevMasterDashboard() {
 
           <article className="dev-panel dev-type-panel">
             <header><div><h2>Task Type</h2><p>Төрөл тус бүрийн ажлын тоо</p></div></header>
-            <div className="dev-donut-layout">
-              <div className="dev-donut" style={{ background: totalTypeCount ? `conic-gradient(${donut})` : "#edf1f6" }}><span><strong>{totalTypeCount}</strong><small>tasks</small></span></div>
-              <ul aria-label="Таск төрлийн тайлбар">{typeTotals.map((item, index) => <li key={item.type} style={{ "--task-type-color": taskTypeColor(item.type, index) } as CSSProperties}><span style={{ background: taskTypeColor(item.type, index) }} /><b>{item.type}</b><strong>{item.count}</strong></li>)}</ul>
-            </div>
+            <div className="dev-type-list" aria-label="Таск төрлийн тайлбар">{typeTotals.length ? typeTotals.slice(0, 8).map((item, index) => {
+              const color = taskTypeColor(item.type, index);
+              const Icon = taskTypeIcon(item.type);
+              return <div className="dev-type-row" key={item.type}>
+                <span className="dev-type-icon" style={{ color, background: `${color}14` }}><Icon size={17} /></span>
+                <span className="dev-type-info"><strong>{item.type}</strong><span className="dev-type-track"><i style={{ width: `${item.count / maxTypeCount * 100}%`, background: color }} /></span></span>
+                <span className="dev-type-number"><strong>{item.count}</strong><small>{formatDuration(item.estimateMs)}</small></span>
+              </div>;
+            }) : <p className="dev-type-empty">Одоогийн шүүлтүүрт Task Type өгөгдөл алга.</p>}</div>
           </article>
         </section>
 

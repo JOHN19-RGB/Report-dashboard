@@ -2748,17 +2748,20 @@ button {
 .dev-performance-panel .legend-dot { background: var(--series-color); }
 .dev-performance-panel .chart-summary { flex-wrap: wrap; margin: 15px 24px 20px; }
 
-.dev-donut-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: 22px; padding: 24px 28px 28px; }
-.dev-donut { display: grid; width: min(175px, 100%); aspect-ratio: 1; place-items: center; justify-self: center; border-radius: 50%; }
-.dev-donut > span { display: flex; width: 69%; height: 69%; flex-direction: column; align-items: center; justify-content: center; border-radius: 50%; background: #fff; color: #45465a; }
-.dev-donut strong { font-size: 24px; line-height: 1; }
-.dev-donut small { margin-top: 5px; color: #a2a4ae; font-size: 9px; }
-.dev-donut-layout ul { display: grid; width: min(100%, 300px); grid-template-columns: 1fr; gap: 7px; justify-self: center; margin: 0; padding: 0; list-style: none; }
-.dev-donut-layout li { position: relative; display: grid; min-height: 38px; grid-template-columns: 9px minmax(65px, 1fr) auto; align-items: center; gap: 10px; padding: 0 11px; overflow: hidden; border: 1px solid #e8ebf1; border-radius: 9px; background: #fafbfc; color: #59657a; font-size: 10px; }
-.dev-donut-layout li::after { position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 3px 0 0 var(--task-type-color, transparent); content: ""; pointer-events: none; }
-.dev-donut-layout li > span { width: 8px; height: 8px; border-radius: 50%; }
-.dev-donut-layout li b { min-width: 0; font-weight: 650; overflow-wrap: anywhere; }
-.dev-donut-layout li strong { display: grid; min-width: 35px; height: 24px; padding: 0 7px; place-items: center; border-radius: 7px; background: #f0f2f6; color: #344057; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dev-type-list { display: grid; gap: 2px; padding: 13px 18px 20px; }
+.dev-type-row { display: grid; min-height: 52px; grid-template-columns: 36px minmax(0, 1fr) 76px; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 9px; transition: background .18s ease, transform .18s ease; }
+.dev-type-row:hover { background: #f7f8fc; transform: translateX(2px); }
+.dev-type-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; }
+.dev-type-info { min-width: 0; }
+.dev-type-info > strong { display: block; overflow: hidden; margin-bottom: 7px; color: #303a50; font-size: 11px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+.dev-type-track { display: block; width: 100%; height: 4px; overflow: hidden; border-radius: 999px; background: #edf0f5; }
+.dev-type-track i { display: block; height: 100%; border-radius: inherit; transform-origin: left; animation: growWidth .65s ease both; }
+.dev-type-number { text-align: right; }
+.dev-type-number strong,
+.dev-type-number small { display: block; font-variant-numeric: tabular-nums; }
+.dev-type-number strong { color: #263248; font-size: 14px; line-height: 1; }
+.dev-type-number small { margin-top: 5px; color: #929baa; font-size: 9px; white-space: nowrap; }
+.dev-type-empty { margin: 28px 10px; color: #929baa; font-size: 11px; text-align: center; }
 
 .dev-table-panel { margin-bottom: 24px; overflow: hidden; }
 .dev-table-panel > header { padding-bottom: 10px; }
@@ -2784,11 +2787,11 @@ button {
 .dev-change-panel > header h2 { margin-top: 5px; }
 .dev-change-panel > header p { margin-top: 7px; }
 .dev-change-kicker { color: #7468ff; font-size: 9px; font-weight: 800; letter-spacing: .16em; }
-.dev-change-count { position: relative; isolation: isolate; display: grid; min-width: 154px; min-height: 68px; grid-template-columns: auto minmax(62px, 1fr); align-items: center; gap: 13px; padding: 11px 15px 11px 18px; overflow: hidden; border: 1px solid #dcd7f4; border-radius: 15px; background: linear-gradient(135deg, #fff 0%, #faf9ff 64%, #f2efff 100%); box-shadow: 0 10px 24px rgb(66 54 118 / 9%); text-align: left; }
-.dev-change-count::before { position: absolute; top: 18px; left: 0; width: 4px; height: 32px; border-radius: 0 999px 999px 0; background: linear-gradient(180deg, #7468ff, #a597ff); content: ""; }
-.dev-change-count::after { position: absolute; z-index: -1; width: 70px; height: 70px; right: -35px; bottom: -45px; border: 13px solid rgb(116 104 255 / 6%); border-radius: 50%; content: ""; }
-.dev-change-count strong { color: var(--ink); font-size: 27px; font-weight: 760; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums; }
-.dev-change-count span { align-self: center; color: #6f7890; font-size: 9px; font-weight: 720; letter-spacing: .06em; line-height: 1.35; text-transform: uppercase; }
+.dev-change-count { position: relative; isolation: isolate; display: grid; min-width: 136px; min-height: 58px; grid-template-columns: auto minmax(54px, 1fr); align-items: center; gap: 10px; padding: 9px 12px 9px 15px; overflow: hidden; border: 1px solid #dcd7f4; border-radius: 13px; background: linear-gradient(135deg, #fff 0%, #faf9ff 64%, #f2efff 100%); box-shadow: 0 8px 20px rgb(66 54 118 / 8%); text-align: left; }
+.dev-change-count::before { position: absolute; top: 14px; left: 0; width: 4px; height: 30px; border-radius: 0 999px 999px 0; background: linear-gradient(180deg, #7468ff, #a597ff); content: ""; }
+.dev-change-count::after { position: absolute; z-index: -1; width: 60px; height: 60px; right: -32px; bottom: -40px; border: 11px solid rgb(116 104 255 / 6%); border-radius: 50%; content: ""; }
+.dev-change-count strong { color: var(--ink); font-size: 23px; font-weight: 760; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums; }
+.dev-change-count span { align-self: center; color: #6f7890; font-size: 8px; font-weight: 720; letter-spacing: .06em; line-height: 1.35; text-transform: uppercase; }
 .dev-change-panel .dev-table-wrap { padding-top: 14px; }
 .dev-change-panel table { min-width: 760px; border-collapse: separate; border-spacing: 0 8px; }
 .dev-change-panel table th { height: 28px; padding: 0 15px; border: 0; font-size: 10px; letter-spacing: .025em; }
@@ -2954,6 +2957,7 @@ button {
 .dev-filter-breakdown-group.status li i { background: #35a98b; }
 .dev-filter-breakdown-group.status li:nth-child(2n) i { background: #f0a820; }
 .dev-filter-breakdown-group.status li:nth-child(3n) i { background: #8190a8; }
+.dev-filter-breakdown-group.status ul { max-height: 69px; align-content: flex-start; overflow-y: auto; padding-right: 5px; scrollbar-color: #cfd5df transparent; scrollbar-width: thin; }
 .dev-filter-breakdown-group li span { min-width: 0; overflow-wrap: anywhere; }
 .dev-filter-breakdown-group li b { color: #2f3a50; font-size: .76rem; font-variant-numeric: tabular-nums; }
 .dev-filter-breakdown-empty { margin: 0; color: #8a94a5; font-size: .78rem; }
@@ -3009,7 +3013,6 @@ button {
 .dev-member-completion b,
 .dev-kpi-progress i,
 .dev-mom-track i { transform-origin: left; animation: growWidth .65s cubic-bezier(.2,.8,.2,1) backwards; transition: width .5s cubic-bezier(.2,.8,.2,1); }
-.dev-donut,
 .dev-member-pie-visual { animation: dev-chart-enter .6s 200ms cubic-bezier(.2,.8,.2,1) backwards; }
 .dev-summary-insight,
 .dev-summary-stats article { animation: reveal .45s ease backwards; }
@@ -3071,7 +3074,6 @@ button {
 .dev-kpi-comparison.unavailable,
 .dev-sprint-options small,
 .dev-chart-context > span:last-child,
-.dev-donut small,
 .dev-count,
 .dev-member-pie-legend small,
 .dev-distribution-note,
@@ -3080,13 +3082,11 @@ button {
 .dev-select-filter select,
 .dev-period-multiselect summary b,
 .dev-member-identity h3,
-.dev-donut-layout li,
 .dev-view-toggle button,
 .dev-chart-type button,
 .dev-panel header p,
 .dev-table-panel th,
 .dev-table-panel td,
-.dev-donut-layout li strong,
 .dev-member-pie-legend span,
 .dev-summary-controls select,
 .dev-summary-empty { font-size: 12px; }
@@ -3122,8 +3122,7 @@ button {
 .dev-member-completion > strong,
 .dev-member-pie-legend b,
 .dev-pie-caption strong,
-.dev-distribution-heading h3,
-.dev-donut strong { color: var(--ink); }
+.dev-distribution-heading h3 { color: var(--ink); }
 .dev-member-identity div > span,
 .dev-kpi-card small,
 .dev-kpi-comparison,
@@ -3138,8 +3137,6 @@ button {
 .dev-panel header p,
 .dev-table-panel th,
 .dev-chart-context > span:last-child,
-.dev-donut small,
-.dev-donut-layout li,
 .dev-view-toggle button,
 .dev-member-completion > span,
 .dev-member-card dt,
@@ -3536,8 +3533,7 @@ button {
   .dev-chart-context { padding-right: 18px; padding-left: 18px; }
   .dev-cx-chart-scroll { margin-right: 18px; margin-left: 18px; }
   .dev-performance-panel .chart-summary { margin-right: 18px; margin-left: 18px; }
-  .dev-donut-layout { grid-template-columns: 1fr; gap: 20px; padding: 25px 30px 30px; }
-  .dev-donut { width: 175px; }
+  .dev-type-list { padding-right: 12px; padding-left: 12px; }
   .dev-table-wrap { padding-right: 18px; padding-left: 18px; }
   .dev-member-cards { grid-template-columns: 1fr; padding: 18px; }
   .dev-productivity-distribution { margin: 0 18px; }

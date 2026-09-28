@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, taskTypeTotals, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -73,6 +73,18 @@ test("Dev period multi-select keeps exact year-month connections", () => {
   const selected = filterDevTasksByMonthKeys(devTasks, selectedKeys);
   assert.deepEqual(selected.map(task => task.id), ["jan-2025", "jun-2026"]);
   assert.deepEqual(monthlyTaskPerformance(selected, "2025-01-01", "2026-12-31", selectedKeys).map(month => month.key), selectedKeys);
+});
+
+test("Dev task type totals include the time estimate shown in the category list", () => {
+  const totals = taskTypeTotals([
+    { type: "Bug", timeEstimateMs: 60_000 },
+    { type: "Bug", timeEstimateMs: 120_000 },
+    { type: "Imp", timeEstimateMs: null },
+  ]);
+  assert.deepEqual(totals.map(({ type, count, estimateMs }) => ({ type, count, estimateMs })), [
+    { type: "Bug", count: 2, estimateMs: 180_000 },
+    { type: "Imp", count: 1, estimateMs: 0 },
+  ]);
 });
 
 test("Dev counts each parent task once and never counts its subtasks", () => {
