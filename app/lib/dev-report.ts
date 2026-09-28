@@ -257,76 +257,14 @@ export function devProjectName(task: DevTask) {
   return source.split("|")[0].trim() || "Төсөл тодорхойгүй";
 }
 
-function devProjectConnectionKey(value: string) {
-  return value
-    .split("|")[0]
-    .normalize("NFKD")
-    .toLocaleLowerCase("en-US")
-    .replace(/\b(?:v\s*)?\d+(?:\.\d+)*\b/g, "")
-    .replace(/\b(?:www|mn|com|net|org)\b/g, "")
-    .replace(/[^a-z0-9\u0400-\u04ff]+/g, "");
-}
-
-function devTaskConnectionKey(value: string) {
-  const [site = "", ...workParts] = value.split("|");
-  const work = workParts.join("|")
-    .normalize("NFKD")
-    .toLocaleLowerCase("en-US")
-    .replace(/front[\s_-]*end\s+(?:dev(?:elopment)?|хөгжүүлэлт)/g, "frontend")
-    .replace(/ui\s*ux\s*design/g, "design")
-    .replace(/[^a-z0-9\u0400-\u04ff]+/g, "");
-  return `${devProjectConnectionKey(site)}|${work}`;
-}
-
-function devTaskConnectionKeys(task: DevTask, projectName = devProjectName(task), includeStandaloneName = false) {
-  const keys = new Set<string>();
-  if (task.name.includes("|") || includeStandaloneName) keys.add(devTaskConnectionKey(task.name));
-  const contextualKey = devTaskConnectionKey(`${projectName} | ${task.name.split("|").at(-1)?.trim() || task.name}`);
-  if (projectName && contextualKey) keys.add(contextualKey);
-  return Array.from(keys).filter(Boolean);
-}
-
-/** Connect All Projects records to exact Master tasks, with a site fallback for project roots. */
+/** Copy sprint membership only between records with the same ClickUp task ID. */
 export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTasks: DevTask[]) {
-  const sprintByProject = new Map<string, { ids: Set<string>; names: Set<string> }>();
-  const sprintByTask = new Map<string, { ids: Set<string>; names: Set<string> }>();
-  for (const task of masterTasks) {
-    if (!task.sprintIds?.length) continue;
-    const projectKey = devProjectConnectionKey(devProjectName(task));
-    if (projectKey) {
-      const connection = sprintByProject.get(projectKey) || { ids: new Set<string>(), names: new Set<string>() };
-      task.sprintIds.forEach(id => connection.ids.add(id));
-      if (task.sprint) connection.names.add(task.sprint);
-      sprintByProject.set(projectKey, connection);
-    }
-    for (const taskKey of devTaskConnectionKeys(task, devProjectName(task), !task.parentId)) {
-      const connection = sprintByTask.get(taskKey) || { ids: new Set<string>(), names: new Set<string>() };
-      task.sprintIds.forEach(id => connection.ids.add(id));
-      if (task.sprint) connection.names.add(task.sprint);
-      sprintByTask.set(taskKey, connection);
-    }
-  }
-
-  const byId = new Map(allProjectTasks.map(task => [task.id, task]));
+  const masterById = new Map(masterTasks.map(task => [task.id, task]));
   return allProjectTasks.map(task => {
-    let root = task;
-    const visited = new Set([task.id]);
-    while (root.parentId) {
-      const parent = byId.get(root.parentId);
-      if (!parent || visited.has(parent.id)) break;
-      visited.add(parent.id);
-      root = parent;
-    }
-    const relationship = Object.entries(task.customFields || {}).find(([name]) => /relationship\s+b2c/i.test(name))?.[1] || "";
-    const relationshipConnection = relationship ? sprintByTask.get(devTaskConnectionKey(relationship)) : undefined;
-    const directKeys = task.parentId ? devTaskConnectionKeys(task, devProjectName(root)) : [devTaskConnectionKey(task.name)];
-    const directConnection = relationshipConnection || directKeys.map(key => sprintByTask.get(key)).find(Boolean);
-    const projectConnection = !task.parentId && !task.name.includes("|")
-      ? sprintByProject.get(devProjectConnectionKey(devProjectName(root)))
-      : undefined;
-    const connection = directConnection || projectConnection;
-    const sprintIds = connection ? Array.from(connection.ids) : [];
-    const sprint = connection ? Array.from(connection.names).join(", ") : "";
+    const exactMasterTask = masterById.get(task.id);
+    const source = exactMasterTask || task;
+    const sprintIds = Array.isArray(source.sprintIds) ? Array.from(new Set(source.sprintIds)) : [];
+    const sprint = sprintIds.length ? source.sprint : "";
     return { ...task, sprintIds, sprint };
   });
 }

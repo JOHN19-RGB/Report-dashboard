@@ -70,7 +70,7 @@ type ClickUpListLocation = {
   taskCount: number;
 };
 const SNAPSHOT_ID = 2;
-const SNAPSHOT_VERSION = 10;
+const SNAPSHOT_VERSION = 11;
 const reportDateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ulaanbaatar", year: "numeric", month: "2-digit", day: "2-digit" });
 
 async function readSnapshot() {
@@ -360,6 +360,7 @@ export async function GET(request: Request) {
     const refresh = requestUrl.searchParams.get("refresh") || "";
     const allProjectView = requestUrl.searchParams.get("view") === "all-project";
     const snapshot = await readSnapshot();
+    const schemaChanged = Boolean(snapshot && snapshot.schemaVersion !== SNAPSHOT_VERSION);
     const hasAllProjectSnapshot = Boolean(snapshot?.allProjectList && Array.isArray(snapshot.allProjectTasks));
     const hasAllProjectSubtasks = Boolean(Array.isArray(snapshot?.allProjectTasks) && (snapshot.allProjectTasks as DevTask[]).some(task => task.parentId));
     const refreshAllProject = refresh === "all-project" || (!refresh && snapshot?.schemaVersion === SNAPSHOT_VERSION && hasAllProjectSnapshot && !hasAllProjectSubtasks);
@@ -486,12 +487,12 @@ export async function GET(request: Request) {
       const snapshotTasks = scopeDevReportTasks(snapshot.tasks as DevTask[]);
       const previousSprints = Array.isArray(snapshot.sprints) ? snapshot.sprints as DevSprint[] : [];
       const { tasks, sprints, state } = mergeSprintMemberships(snapshotTasks, previousSprints, rawSprintAssignments, previousState);
-      const sprintMembershipByTaskId = new Map(tasks.map(task => [task.id, { sprint: task.sprint, sprintIds: task.sprintIds }]));
-      const sprintLinkedAllProjectTasks = (Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : []).map(task => {
-        const membership = sprintMembershipByTaskId.get(task.id);
-        return membership ? { ...task, sprint: membership.sprint, sprintIds: membership.sprintIds } : task;
-      });
-      const allProjectTasks = connectDevAllProjectSprints(sprintLinkedAllProjectTasks, tasks);
+      const directAllProjectTasks = mergeSprintMemberships(
+        Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as DevTask[] : [],
+        previousSprints,
+        rawSprintAssignments,
+      ).tasks;
+      const allProjectTasks = connectDevAllProjectSprints(directAllProjectTasks, tasks);
       const taskPartial = snapshot.taskPartial === true;
       const sprintSyncErrors = Object.values(state).filter(item => item.failed).length;
       const payload = {
@@ -538,7 +539,7 @@ export async function GET(request: Request) {
     const rawAllProjectTasks = Array.from(new Map((allProjectTaskResult?.tasks || []).filter(task => task.id).map(task => [task.id, task])).values());
     const previousTasks = [
       ...(snapshot && Array.isArray(snapshot.tasks) ? snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : []),
-      ...(snapshot && Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : []),
+      ...(!schemaChanged && snapshot && Array.isArray(snapshot.allProjectTasks) ? snapshot.allProjectTasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }> : []),
     ];
     const previousSprintByTaskId = new Map(previousTasks.map(task => [safeText(task.id), { sprint: safeText(task.sprint), sprintIds: Array.isArray(task.sprintIds) ? task.sprintIds : [] }]));
     const sprints = snapshot && Array.isArray(snapshot.sprints) ? snapshot.sprints : [];
@@ -570,7 +571,7 @@ export async function GET(request: Request) {
       sprints,
       sprintSyncState: snapshot?.sprintSyncState || {},
       sprintDiscoveryPartial: snapshot?.sprintDiscoveryPartial === true,
-      sprintNeedsFullRefresh: snapshot?.sprintNeedsFullRefresh === true || !snapshot?.masterIncludesTiml || tasks.some(task => !previousSprintByTaskId.has(task.id)),
+      sprintNeedsFullRefresh: schemaChanged || snapshot?.sprintNeedsFullRefresh === true || !snapshot?.masterIncludesTiml || tasks.some(task => !previousSprintByTaskId.has(task.id)),
       masterIncludesTiml: true,
       masterFetchedTaskCount: rawTasks.length,
       allProjectFetchedTaskCount: rawAllProjectTasks.length,

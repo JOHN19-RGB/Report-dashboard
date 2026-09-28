@@ -212,35 +212,33 @@ test("All Project directory groups every task under its root project without mer
   assert.deepEqual(groups.find(group => group.id === "root-a").subtasks.map(task => task.id), ["child-a"]);
 });
 
-test("All Projects uses exact B2C relationships before root-level site sprint fallback", () => {
+test("All Projects uses only direct ClickUp task IDs for sprint membership", () => {
   const task = (id, name, parentId = null, sprint = "", sprintIds = [], customFields = {}) => ({
     id, name, parentId, parentName: "", project: "", sprint, sprintIds, customFields,
   });
   const allProjects = [
-    task("root", "Gadget.mn 2.0", null, "Old sprint", ["stale"], { "Relationship B2C": "Gadget.mn | Checkout" }),
-    task("design", "Gadget.mn 2.0 | UI UX Design", "root", "Old sprint", ["stale"], { "Relationship B2C": "Gadget.mn | UI UX Design" }),
-    task("frontend", "Gadget.mn 2.0 | Front-end Dev", "root", "Old sprint", ["stale"], { "Relationship B2C": "Removed relationship" }),
-    task("training", "Gadget.mn 2.0 | Training", "root", "Old sprint", ["stale"]),
-    task("fallback-root", "Store.mn 2.0"),
+    task("direct", "Gadget.mn 2.0", null, "", [], { "Relationship B2C": "Gadget.mn | Checkout" }),
+    task("design", "Gadget.mn 2.0 | UI UX Design", "direct", "", [], { "Relationship B2C": "Gadget.mn | UI UX Design" }),
+    task("own", "Store.mn 2.0", null, "Sprint 50", ["s50"]),
+    task("ayanchin", "Ayanchin.mn V2"),
     task("unmatched", "Other.mn"),
   ];
   const master = [
-    task("master-project", "Gadget.mn | Checkout", null, "Sprint 47", ["s47"]),
+    task("direct", "Gadget.mn | Checkout", null, "Sprint 47", ["s47"]),
     task("master-design", "Gadget.mn | UI UX Design", null, "Sprint 48", ["s48"]),
     task("master-frontend", "Gadget.mn | Front-end development", null, "Sprint 48", ["s48"]),
     task("master-store", "Store.mn | Header", null, "Sprint 49", ["s49"]),
+    task("master-ayanchin", "Ayanchin.mn | Storepay", null, "Sprint 19", ["s19"]),
   ];
   const connected = connectDevAllProjectSprints(allProjects, master);
-  assert.deepEqual(connected.find(item => item.id === "root").sprintIds, ["s47"]);
-  assert.deepEqual(connected.find(item => item.id === "design").sprintIds, ["s48"]);
-  assert.equal(connected.find(item => item.id === "design").sprint, "Sprint 48");
-  assert.deepEqual(connected.find(item => item.id === "frontend").sprintIds, ["s48"]);
-  assert.deepEqual(connected.find(item => item.id === "training").sprintIds, []);
-  assert.deepEqual(connected.find(item => item.id === "fallback-root").sprintIds, ["s49"]);
+  assert.deepEqual(connected.find(item => item.id === "direct").sprintIds, ["s47"]);
+  assert.deepEqual(connected.find(item => item.id === "design").sprintIds, []);
+  assert.deepEqual(connected.find(item => item.id === "own").sprintIds, ["s50"]);
+  assert.deepEqual(connected.find(item => item.id === "ayanchin").sprintIds, []);
   assert.deepEqual(connected.find(item => item.id === "unmatched").sprintIds, []);
 });
 
-test("All Projects keeps generic subtask sprint links inside the correct project", () => {
+test("All Projects never inherits sprint membership from matching project or subtask names", () => {
   const task = (id, name, parentId = null, parentName = "", sprint = "", sprintIds = []) => ({
     id, name, parentId, parentName, project: "", sprint, sprintIds, customFields: {}, type: "Task", tags: [], assignees: [], status: { name: "done", type: "closed", done: true },
   });
@@ -255,14 +253,11 @@ test("All Projects keeps generic subtask sprint links inside the correct project
     task("master-beta", "Footer", "master-beta-parent", "Beta.mn | UI UX Design", "Sprint 20", ["s20"]),
   ];
   const connected = connectDevAllProjectSprints(allProjects, master);
-  assert.deepEqual(connected.find(item => item.id === "alpha-footer").sprintIds, ["s19"]);
-  assert.deepEqual(connected.find(item => item.id === "beta-footer").sprintIds, ["s20"]);
-  assert.deepEqual(connected.find(item => item.id === "alpha").sprintIds, ["s19"]);
-  assert.deepEqual(connected.find(item => item.id === "beta").sprintIds, ["s20"]);
+  assert.ok(connected.every(item => item.sprintIds.length === 0));
 
   const selected = selectDevTasks({ tasks: connected }, { search: "", startDate: "", endDate: "", taskType: "all", sprintIds: ["s19"] });
-  assert.deepEqual(topLevelDevTasks(selected).map(item => item.id), ["alpha"]);
-  assert.deepEqual(groupDevAllProjectTasks(topLevelDevTasks(selected), connected).map(project => project.id), ["alpha"]);
+  assert.deepEqual(topLevelDevTasks(selected), []);
+  assert.deepEqual(groupDevAllProjectTasks(topLevelDevTasks(selected), connected), []);
 });
 
 test("multiple sprint choices use a unique union and do not use task dates as membership", () => {
