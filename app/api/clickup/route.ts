@@ -90,7 +90,7 @@ async function clickUpFetch(path: string, token: string) {
   return requestClickUp(path, token);
 }
 
-async function getCompletedSubtasks(parentId: string, workspaceId: string, token: string) {
+async function getCompletedSubtasks(token: string) {
   const reportStart = Date.UTC(REPORT_YEAR, 0, 1);
   const reportEnd = Date.UTC(REPORT_YEAR + 1, 0, 1);
 
@@ -101,14 +101,11 @@ async function getCompletedSubtasks(parentId: string, workspaceId: string, token
       reverse: "true",
       subtasks: "true",
       include_closed: "true",
-      parent: parentId,
       due_date_gt: String(reportStart - 1),
       due_date_lt: String(reportEnd),
     });
     query.append("statuses[]", "complete");
-    query.append("list_ids[]", CX_DEV_TEAM_LIST_ID);
-
-    const response = await clickUpFetch(`/team/${encodeURIComponent(workspaceId)}/task?${query}`, token);
+    const response = await clickUpFetch(`/list/${CX_DEV_TEAM_LIST_ID}/task?${query}`, token);
     if (!response.ok) throw new Error(`ClickUp subtask page failed: ${response.status}`);
 
     return response.json() as Promise<{ tasks?: ClickUpTask[]; last_page?: boolean }>;
@@ -141,7 +138,7 @@ export async function GET(request: Request) {
     });
     parentQuery.append("statuses[]", "daily task");
 
-    const [teamsResponse, parentPageResult] = await Promise.all([
+    const [teamsResponse, parentPageResult, completedSubtaskResult] = await Promise.all([
       clickUpFetch("/team", token),
       readClickUpTaskPages<ClickUpTask>(async page => {
         const query = new URLSearchParams(parentQuery);
@@ -151,6 +148,7 @@ export async function GET(request: Request) {
         if (!response.ok) throw new Error(`ClickUp parent page failed: ${response.status}`);
         return response.json() as Promise<{ tasks?: ClickUpTask[]; last_page?: boolean }>;
       }),
+      getCompletedSubtasks(token),
     ]);
 
     if (!teamsResponse.ok) {
@@ -167,15 +165,16 @@ export async function GET(request: Request) {
     }
 
     const dailyTaskParents = parentPageResult.tasks;
-    const workspaceId = workspace.id;
-    const parentResults: Array<{ parent: ClickUpTask; subtasks: ClickUpTask[]; partial: boolean }> = [];
-    // Bound concurrency so a large parent list does not flood ClickUp's per-token rate limit.
-    for (let start = 0; start < dailyTaskParents.length; start += 2) {
-      parentResults.push(...await Promise.all(dailyTaskParents.slice(start, start + 2).map(async parent => {
-        const result = await getCompletedSubtasks(parent.id!, workspaceId, token);
-        return { parent, subtasks: result.tasks, partial: result.partial };
-      })));
+    const parentIds = new Set(dailyTaskParents.map(parent => safeText(parent.id)).filter(Boolean));
+    const subtasksByParent = new Map<string, ClickUpTask[]>();
+    for (const task of completedSubtaskResult.tasks) {
+      const parentId = safeText(task.parent);
+      if (!parentIds.has(parentId)) continue;
+      const siblings = subtasksByParent.get(parentId) || [];
+      siblings.push(task);
+      subtasksByParent.set(parentId, siblings);
     }
+    const parentResults = dailyTaskParents.map(parent => ({ parent, subtasks: subtasksByParent.get(safeText(parent.id)) || [] }));
 
     const parents = parentResults.map(({ parent, subtasks }) => ({
       id: safeText(parent.id),
@@ -290,7 +289,7 @@ export async function GET(request: Request) {
         estimateMs,
       },
       dataQuality,
-      partial: parentPageResult.partial || parentResults.some(result => result.partial),
+      partial: parentPageResult.partial || completedSubtaskResult.partial,
       syncedAt: new Date().toISOString(),
     } satisfies ClickUpSnapshot;
 

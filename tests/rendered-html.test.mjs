@@ -225,6 +225,9 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(clickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
   assert.match(clickUpRoute, /requestClickUp/);
   assert.match(clickUpRoute, /readClickUpTaskPages/);
+  assert.match(clickUpRoute, /getCompletedSubtasks\(token\)/);
+  assert.match(clickUpRoute, /\/list\/\$\{CX_DEV_TEAM_LIST_ID\}\/task/);
+  assert.doesNotMatch(clickUpRoute, /getCompletedSubtasks\(parent\.id/);
   assert.match(devClickUpRoute, /process\.env\.CLICKUP_API_TOKEN/);
   assert.match(devClickUpRoute, /B2C Master/);
   assert.match(devClickUpRoute, /include_timl/);

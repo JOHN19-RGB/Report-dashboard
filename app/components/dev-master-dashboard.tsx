@@ -19,7 +19,6 @@ import {
   Menu,
   Minus,
   RefreshCw,
-  RotateCcw,
   Search,
   Sparkles,
   TimerReset,
@@ -176,6 +175,7 @@ export default function DevMasterDashboard() {
   const [periodYears, setPeriodYears] = useState(REPORT_YEARS);
   const [periodMonths, setPeriodMonths] = useState(REPORT_MONTHS);
   const [chartType, setChartType] = useState<"Bug" | "Imp">("Bug");
+  const [showTaskTypePopup, setShowTaskTypePopup] = useState(false);
   const filterBarRef = useRef<HTMLDivElement>(null);
   const periodRangeRef = useRef({ startDate: DEV_REPORT_START_DATE, endDate: DEV_REPORT_END_DATE });
 
@@ -256,6 +256,20 @@ export default function DevMasterDashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!showTaskTypePopup) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowTaskTypePopup(false);
+    };
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [showTaskTypePopup]);
+
   const periodMonthKeys = useMemo(() => periodYears.flatMap(year => periodMonths.map(month => `${year}-${month}`)).sort(), [periodMonths, periodYears]);
   const sprintConnectedData = useMemo(() => data ? { ...data, tasks: sprintConnectedDevTasks(data.tasks) } : null, [data]);
   const taskRecords = useMemo(() => {
@@ -320,6 +334,15 @@ export default function DevMasterDashboard() {
   const chartChangeDirection = chartChange === null || chartChange > 0 ? "positive" : chartChange < 0 ? "negative" : "neutral";
   const ChartChangeIcon = chartChangeDirection === "positive" ? ArrowUpRight : chartChangeDirection === "negative" ? ArrowDownRight : Minus;
   const maxTypeCount = Math.max(1, ...typeTotals.map(item => item.count));
+  const typeTotalCount = typeTotals.reduce((sum, item) => sum + item.count, 0);
+  const hasMoreTaskTypes = typeTotals.length > 3;
+  const leadingTaskType = typeTotals[0] || null;
+  const leadingTaskTypeShare = leadingTaskType && typeTotalCount ? leadingTaskType.count / typeTotalCount * 100 : 0;
+  const taskTypePie = typeTotalCount ? `conic-gradient(${typeTotals.map((item, index) => {
+    const start = typeTotals.slice(0, index).reduce((sum, entry) => sum + entry.count, 0) / typeTotalCount * 100;
+    const end = start + item.count / typeTotalCount * 100;
+    return `${taskTypeColor(item.type, index)} ${start}% ${end}%`;
+  }).join(", ")})` : "#edf0f5";
   const hasPeriodFilter = periodYears.length !== REPORT_YEARS.length || periodMonths.length !== REPORT_MONTHS.length;
   const hasFilters = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS) || hasPeriodFilter;
   const summaryInput = useMemo(() => {
@@ -469,7 +492,7 @@ export default function DevMasterDashboard() {
               </div>
             </details>
             <label className="dev-select-filter dev-type-filter"><ListFilter size={17} /><span>Таск төрөл:</span><select value={filters.taskType} onChange={event => updateFilter("taskType", event.target.value)}><option value="all">All Types</option>{taskTypes.map(type => <option key={type} value={type}>{type}</option>)}</select><ChevronDown size={14} /></label>
-            {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
+            {hasFilters && <button className="dev-reset-filter" type="button" onClick={resetFilters} aria-label="Шүүлтүүр цэвэрлэх" title="Шүүлтүүр цэвэрлэх"><X size={16} /></button>}
             <div className="dev-dashboard-actions" role="group" aria-label="Dev тайлангийн үйлдлүүд">
               <button className="icon-button dev-download-filter" type="button" onClick={() => downloadAllDevData(allDevTasks)} disabled={loading || !allDevTasks.length} aria-label="All data татах" title={`${DEV_REPORT_START_YEAR}–${DEV_REPORT_END_YEAR} оны Sprint баганад холбогдсон өгөгдөл татах`}><Download size={18} /></button>
               <button className="icon-button dev-refresh-filter" type="button" onClick={() => void loadData(true)} disabled={loading} aria-label={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"} aria-busy={loading} title={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"}><RefreshCw className={loading ? "spin" : ""} size={18} /></button>
@@ -512,18 +535,61 @@ export default function DevMasterDashboard() {
           </article>
 
           <article className="dev-panel dev-type-panel">
-            <header><div><h2>Task Type</h2><p>Төрөл тус бүрийн ажлын тоо</p></div></header>
-            <div className="dev-type-list" aria-label="Таск төрлийн тайлбар">{typeTotals.length ? typeTotals.slice(0, 8).map((item, index) => {
-              const color = taskTypeColor(item.type, index);
-              const Icon = taskTypeIcon(item.type);
-              return <div className="dev-type-row" key={item.type}>
-                <span className="dev-type-icon" style={{ color, background: `${color}14` }}><Icon size={17} /></span>
-                <span className="dev-type-info"><strong>{item.type}</strong><span className="dev-type-track"><i style={{ width: `${item.count / maxTypeCount * 100}%`, background: color }} /></span></span>
-                <span className="dev-type-number"><strong>{item.count}</strong><small>{formatDuration(item.estimateMs)}</small></span>
-              </div>;
-            }) : <p className="dev-type-empty">Одоогийн шүүлтүүрт Task Type өгөгдөл алга.</p>}</div>
+            <header><div><span className="dev-type-kicker">Task distribution</span><h2>Task Type</h2><p>{hasMoreTaskTypes ? "Хамгийн олон төрөл болон нийт ажлын харьцаа" : "Төрөл тус бүрийн ажлын тоо"}</p></div><span className="dev-type-total-badge">{typeTotals.length} төрөл</span></header>
+            <div className="dev-type-content">
+              <button className="dev-type-pie-toggle" type="button" onClick={() => setShowTaskTypePopup(true)} aria-haspopup="dialog" aria-label="Task Type дэлгэрэнгүй харах">
+                <span className="dev-type-pie" style={{ background: taskTypePie }} aria-hidden="true"><span><strong>{typeTotalCount}</strong><small>таск</small></span></span>
+                <span className="dev-type-pie-label">{hasMoreTaskTypes ? `Дэлгэрэнгүй · ${typeTotals.length} төрөл` : "Дэлгэрэнгүй харах"}<ArrowRight size={12} /></span>
+              </button>
+              <div className="dev-type-list-block">
+                <div className="dev-type-list-heading"><strong>Топ 3 төрөл</strong><span>Тоо · эзлэх хувь</span></div>
+                <div id="dev-task-type-list" className="dev-type-list" aria-label="Таск төрлийн тайлбар">{typeTotals.length ? typeTotals.slice(0, 3).map((item, index) => {
+                  const color = taskTypeColor(item.type, index);
+                  const Icon = taskTypeIcon(item.type);
+                  const share = typeTotalCount ? item.count / typeTotalCount * 100 : 0;
+                  return <div className="dev-type-row" key={item.type}>
+                    <span className="dev-type-icon" style={{ color, background: `${color}14` }}><Icon size={17} /></span>
+                    <span className="dev-type-info"><strong>{item.type}</strong><span className="dev-type-track"><i style={{ width: `${item.count / maxTypeCount * 100}%`, background: color }} /></span></span>
+                    <span className="dev-type-number"><strong>{item.count}</strong><small>{share.toFixed(1)}%</small></span>
+                  </div>;
+                }) : <p className="dev-type-empty">Одоогийн шүүлтүүрт Task Type өгөгдөл алга.</p>}</div>
+              </div>
+            </div>
           </article>
         </section>
+
+        {showTaskTypePopup && <div className="dev-type-modal-backdrop" onMouseDown={() => setShowTaskTypePopup(false)}>
+          <section className="dev-type-modal" role="dialog" aria-modal="true" aria-labelledby="dev-type-modal-title" onMouseDown={event => event.stopPropagation()}>
+            <header>
+              <div><span>Task Type overview</span><h2 id="dev-type-modal-title">Таск төрлийн дэлгэрэнгүй</h2><p>{typeTotalCount} таск · {typeTotals.length} төрөл</p></div>
+              <button type="button" onClick={() => setShowTaskTypePopup(false)} aria-label="Цонх хаах" title="Хаах" autoFocus><X size={18} /></button>
+            </header>
+            <div className="dev-type-modal-body">
+              <div className="dev-type-modal-chart">
+                <span className="dev-type-modal-pie" style={{ background: taskTypePie }} aria-hidden="true"><span><strong>{typeTotalCount}</strong><small>нийт таск</small></span></span>
+                {leadingTaskType && <div className="dev-type-modal-highlight">
+                  <span style={{ background: taskTypeColor(leadingTaskType.type, 0) }} />
+                  <div><small>Хамгийн их төрөл</small><strong>{leadingTaskType.type}</strong></div>
+                  <b>{leadingTaskTypeShare.toFixed(1)}%</b>
+                </div>}
+                <p>Сонгосон шүүлтүүрийн бүх Task Type</p>
+              </div>
+              <div className="dev-type-modal-list-wrap">
+                <div className="dev-type-modal-list-heading"><div><strong>Бүх төрөл</strong><span>Тоо · хувь · хугацаа</span></div>{hasMoreTaskTypes && <small><ChevronDown size={13} /> Доош гүйлгэх</small>}</div>
+                <div className="dev-type-modal-list" aria-label="Бүх таск төрөл" tabIndex={hasMoreTaskTypes ? 0 : -1}>{typeTotals.length ? typeTotals.map((item, index) => {
+                  const color = taskTypeColor(item.type, index);
+                  const Icon = taskTypeIcon(item.type);
+                  const share = typeTotalCount ? item.count / typeTotalCount * 100 : 0;
+                  return <div className="dev-type-modal-row" key={item.type}>
+                    <span className="dev-type-icon" style={{ color, background: `${color}14` }}><Icon size={17} /></span>
+                    <span className="dev-type-info"><strong>{item.type}</strong><span className="dev-type-track"><i style={{ width: `${share}%`, background: color }} /></span></span>
+                    <span className="dev-type-number"><strong>{item.count}</strong><small>{share.toFixed(1)}% · {formatDuration(item.estimateMs)}</small></span>
+                  </div>;
+                }) : <p className="dev-type-empty">Одоогийн шүүлтүүрт Task Type өгөгдөл алга.</p>}</div>
+              </div>
+            </div>
+          </section>
+        </div>}
 
         <DevFilterSummary input={summaryInput} syncedAt={data?.taskSyncedAt || data?.syncedAt} />
 
