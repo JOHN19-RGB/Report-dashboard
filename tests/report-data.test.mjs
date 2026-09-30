@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, sprintConnectedDevTasks, taskTypeTotals, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devProjectWorkstream, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, sprintConnectedDevTasks, taskTypeTotals, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -210,6 +210,14 @@ test("All Project directory groups every task under its root project without mer
   assert.ok(groups.every(group => group.name === "Store"));
   assert.equal(groups.find(group => group.id === "root-a").completion, 100);
   assert.deepEqual(groups.find(group => group.id === "root-a").subtasks.map(task => task.id), ["child-a"]);
+});
+
+test("All Project card recognizes Dev and Design name suffixes when ClickUp omits the workstream field", () => {
+  const task = (name, customFields = {}) => ({ name, customFields });
+  assert.equal(devProjectWorkstream(task("Ayanchin.mn | UI UX Design")), "design");
+  assert.equal(devProjectWorkstream(task("Ayanchin.mn | Front-end")), "dev");
+  assert.equal(devProjectWorkstream(task("Xiaomi | Front-end Dev")), "dev");
+  assert.equal(devProjectWorkstream(task("Explicit field wins | UI UX Design", { "B2C All Projects": "Training" })), "project");
 });
 
 test("All Projects uses only direct ClickUp task IDs for sprint membership", () => {

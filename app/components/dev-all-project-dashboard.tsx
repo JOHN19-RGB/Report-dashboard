@@ -38,6 +38,7 @@ import {
   DEV_REPORT_START_YEAR,
   devProjectName,
   devProjectStatus,
+  devProjectWorkstream,
   filterDevTasksByMonthKeys,
   formatSprintDateRange,
   groupDevAllProjectTasks,
@@ -81,13 +82,6 @@ function initials(value: string) {
   return value.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toLocaleUpperCase("mn-MN") || "—";
 }
 
-function projectWorkstream(task: DevTask) {
-  const value = Object.entries(task.customFields || {}).find(([name]) => /b2c\s+all\s+projects?/i.test(name))?.[1]?.toLocaleLowerCase("en-US") || "";
-  if (/design/.test(value)) return "design";
-  if (/development|front[ -]?end|dev\b/.test(value)) return "dev";
-  return "project";
-}
-
 function formatEstimate(value: number) {
   if (!value) return "—";
   const hours = Math.floor(value / 3_600_000);
@@ -116,7 +110,7 @@ function ProjectDetail({ project, subtasks }: { project: AllProjectDirectoryItem
   return <div className={`all-project-detail${cardDetail ? " all-project-card-detail" : ""}`}>
     {detailTasks.length ? <div className="all-project-subtasks">
       {cardDetail ? <div className="all-project-card-detail-heading">
-        <div><span><ListTodo size={16} /></span><div><strong>Dev / Design ажлууд</strong><small>Ажил дээр дарж дэлгэрэнгүй мэдээллийг харна уу</small></div></div>
+        <div><span><ListTodo size={16} /></span><div><strong>Dev / Design ажлууд</strong><small>Хариуцагч болон ажлын хугацааны мэдээлэл</small></div></div>
         <b>{detailTasks.length} ажил</b>
       </div> : <div className="all-project-subtasks-heading">
         <div className="all-project-subtasks-title">
@@ -128,12 +122,28 @@ function ProjectDetail({ project, subtasks }: { project: AllProjectDirectoryItem
           {detailStatus && <i className={`status-${detailStatus.key}`}><em style={{ background: detailStatus.color }} />{detailStatus.label}</i>}
         </div>
       </div>}
-      <div className="all-project-subtasks-columns" aria-hidden="true"><span /><span>Ажил</span><span>Хариуцагч</span><span>Төлөв</span><span /></div>
-      {detailTasks.map((task, index) => {
+      {cardDetail ? <div className="all-project-card-task-grid">{detailTasks.map((task, index) => {
+        const status = DEV_PROJECT_STATUSES.find(item => item.key === devProjectStatus(task))!;
+        const title = task.name.includes("|") ? task.name.split("|").slice(1).join("|").trim() : task.name;
+        const assignees = task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
+        const workstream = devProjectWorkstream(task) === "dev" ? "DEV" : "DESIGN";
+        return <article className="all-project-card-task" style={{ animationDelay: `${Math.min(index, 5) * 45}ms` }} key={task.id}>
+          <header>
+            <span className="all-project-subtask-index">{String(index + 1).padStart(2, "0")}</span>
+            <span className="all-project-subtask-copy"><small>{workstream}</small><strong>{title || "Дэд ажил"}</strong></span>
+            <span className={`all-project-task-status status-${devProjectStatus(task)}`}><i style={{ background: status.color }} />{status.label}</span>
+          </header>
+          <dl>
+            <div><dt>Хариуцагч</dt><dd>{assignees}</dd></div>
+            <div><dt>Эхэлсэн</dt><dd>{formatDate(task.startDate || task.createdDate)}</dd></div>
+            <div><dt>Дуусах</dt><dd>{formatDate(task.dueDate)}</dd></div>
+          </dl>
+        </article>;
+      })}</div> : <><div className="all-project-subtasks-columns" aria-hidden="true"><span /><span>Ажил</span><span>Хариуцагч</span><span>Төлөв</span><span /></div>{detailTasks.map((task, index) => {
       const status = DEV_PROJECT_STATUSES.find(item => item.key === devProjectStatus(task))!;
       const title = task.name.includes("|") ? task.name.split("|").slice(1).join("|").trim() : task.name;
       const assignees = task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
-      const workstream = projectWorkstream(task) === "dev" ? "DEV" : projectWorkstream(task) === "design" ? "DESIGN" : "PROJECT";
+      const workstream = devProjectWorkstream(task) === "dev" ? "DEV" : devProjectWorkstream(task) === "design" ? "DESIGN" : "PROJECT";
       return <details className="all-project-subtask" key={task.id}>
         <summary>
           <span className="all-project-subtask-index">{String(index + 1).padStart(2, "0")}</span>
@@ -154,7 +164,7 @@ function ProjectDetail({ project, subtasks }: { project: AllProjectDirectoryItem
           {task.url && <a href={task.url} target="_blank" rel="noreferrer">ClickUp дээр нээх <ExternalLink size={12} /></a>}
         </div>
       </details>;
-    })}</div> : <div className="all-project-detail-empty"><span><ListTodo size={18} /></span><div><strong>{cardDetail ? "Dev / Design ажил алга" : "Дэд ажил алга"}</strong><small>{cardDetail ? "Энэ төсөлд харуулах Dev эсвэл Design ажил одоогоор бүртгэгдээгүй байна." : "Энэ төсөлд бүртгэлтэй дэд ажил одоогоор алга."}</small></div></div>}
+    })}</>}</div> : <div className="all-project-detail-empty"><span><ListTodo size={18} /></span><div><strong>{cardDetail ? "Dev / Design ажил алга" : "Дэд ажил алга"}</strong><small>{cardDetail ? "Энэ төсөлд харуулах Dev эсвэл Design ажил одоогоор бүртгэгдээгүй байна." : "Энэ төсөлд бүртгэлтэй дэд ажил одоогоор алга."}</small></div></div>}
   </div>;
 }
 
@@ -318,7 +328,7 @@ export default function DevAllProjectDashboard() {
   const projectRoots = useMemo(() => projects.map(project => project.rootTask), [projects]);
   const chartProjects = useMemo(() => workstream === "project"
     ? projects
-    : projects.filter(project => project.subtasks.some(task => matchingRecordIds.has(task.id) && projectWorkstream(task) === workstream)), [matchingRecordIds, projects, workstream]);
+    : projects.filter(project => project.subtasks.some(task => matchingRecordIds.has(task.id) && devProjectWorkstream(task) === workstream)), [matchingRecordIds, projects, workstream]);
   const chartTasks = useMemo(() => chartProjects.map(project => project.rootTask), [chartProjects]);
   const projectStatusCounts = useMemo(() => {
     const counts = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, 0])) as Record<DevProjectStatusKey, number>;
@@ -530,13 +540,14 @@ export default function DevAllProjectDashboard() {
             </details>)}</div>
             {!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}
           </div> : <div className="all-project-card-scroll"><div className="all-project-cards">{projects.map(project => {
-            const cardSubtasks = project.subtasks.filter(task => ["dev", "design"].includes(projectWorkstream(task)));
+            const cardSubtasks = project.subtasks.filter(task => ["dev", "design"].includes(devProjectWorkstream(task)));
             const cardDone = cardSubtasks.filter(task => devProjectStatus(task) === "done").length;
             const cardCompletion = cardSubtasks.length ? Math.round(cardDone / cardSubtasks.length * 100) : 0;
+            const projectOwner = project.rootTask.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
             return <details className="dev-member-card all-project-card" key={project.id}>
               <summary><div className="all-project-card-heading"><span className="all-project-card-icon"><FolderKanban size={18} /></span><div><h3>{project.name}</h3><span>{cardSubtasks.length} Dev / Design ажил · {cardDone} Done</span></div><span className="all-project-card-disclosure"><small>Дэлгэрэнгүй</small><ChevronDown size={15} /></span></div>
               <div className="all-project-card-completion"><span><b>Dev / Design гүйцэтгэл</b><strong>{cardCompletion}%</strong></span><i><b style={{ width: `${cardCompletion}%` }} /></i></div>
-              <footer><span>Шинэчлэгдсэн</span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></footer></summary><ProjectDetail project={project} subtasks={cardSubtasks} />
+              <dl className="all-project-card-meta"><div className="owner"><dt>Хариуцагч</dt><dd title={projectOwner}><i>{initials(projectOwner)}</i><span>{projectOwner}</span></dd></div><div><dt>Эхэлсэн</dt><dd>{formatDate(project.rootTask.startDate || project.rootTask.createdDate)}</dd></div><div><dt>Дуусах</dt><dd>{formatDate(project.rootTask.dueDate)}</dd></div></dl></summary><ProjectDetail project={project} subtasks={cardSubtasks} />
             </details>;
           })}</div>{!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}</div>}
         </section>

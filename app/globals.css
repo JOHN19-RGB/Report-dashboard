@@ -3354,11 +3354,13 @@ button {
 .all-project-card-detail-heading strong { color: #2c374d; font-size: 11px; }
 .all-project-card-detail-heading small { margin-top: 4px; color: #8d95a6; font-size: 9px; }
 .all-project-card-detail-heading > b { display: inline-flex; min-height: 28px; flex: 0 0 auto; align-items: center; padding: 0 10px; border: 1px solid #e0dcf4; border-radius: 999px; background: #f7f5ff; color: #6559cd; font-size: 9px; }
-.all-project-card-detail .all-project-subtask { animation: cardDetailRow .32s ease backwards; }
-.all-project-card-detail .all-project-subtask:nth-of-type(2) { animation-delay: 45ms; }
-.all-project-card-detail .all-project-subtask:nth-of-type(3) { animation-delay: 90ms; }
-.all-project-card-detail .all-project-subtask:nth-of-type(4) { animation-delay: 135ms; }
-.all-project-card-detail .all-project-subtask:nth-of-type(5) { animation-delay: 180ms; }
+.all-project-card-task-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; background: #f8f9fc; }
+.all-project-card-task { min-width: 0; padding: 12px; border: 1px solid #e4e7ef; border-radius: 12px; background: #fff; box-shadow: 0 5px 15px rgb(43 49 76 / 4%); animation: cardDetailRow .32s ease backwards; }
+.all-project-card-task > header { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.all-project-card-task > dl { display: grid; grid-template-columns: minmax(0, 1.25fr) repeat(2, minmax(0, .8fr)); gap: 8px; margin: 12px 0 0; padding-top: 11px; border-top: 1px solid #edf0f4; }
+.all-project-card-task > dl > div { min-width: 0; padding: 8px 9px; border-radius: 8px; background: #f7f8fb; }
+.all-project-card-task dt { color: #99a1b0; font-size: 8px; font-weight: 700; }
+.all-project-card-task dd { margin: 5px 0 0; overflow: hidden; color: #4b586d; font-size: 10px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
 .all-project-subtasks-columns { display: grid; grid-template-columns: 34px minmax(220px, 1.55fr) minmax(120px, .8fr) auto 26px; min-height: 30px; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid #edf0f4; background: #fafbfd; color: #98a1b1; font-size: 8px; font-weight: 720; letter-spacing: .035em; text-transform: uppercase; }
 .all-project-subtask { border-top: 1px solid #edf0f4; interpolate-size: allow-keywords; }
 .all-project-subtask::details-content { block-size: 0; overflow: hidden; opacity: 0; transition: block-size .32s cubic-bezier(.2,.8,.2,1), content-visibility .32s allow-discrete, opacity .2s ease; }
@@ -3402,7 +3404,7 @@ button {
 .all-project-detail-empty small { max-width: 430px; margin-top: 4px; color: #929bad; font-size: 9px; line-height: 1.45; }
 .all-project-card-scroll { max-height: 548px; margin: 20px 28px 28px; padding-right: 5px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: #ccd3df transparent; animation: dev-chart-enter .32s cubic-bezier(.2,.8,.2,1) backwards; }
 .all-project-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.all-project-card { display: flex; min-height: 190px; overflow: hidden; flex-direction: column; padding: 18px; background: linear-gradient(155deg, #fff 45%, #fafbff 100%); interpolate-size: allow-keywords; }
+.all-project-card { display: flex; min-height: 226px; overflow: hidden; flex-direction: column; padding: 18px; background: linear-gradient(155deg, #fff 45%, #fafbff 100%); interpolate-size: allow-keywords; }
 .all-project-card::details-content { block-size: 0; overflow: hidden; opacity: 0; transition: block-size .35s cubic-bezier(.2,.8,.2,1), content-visibility .35s allow-discrete, opacity .2s ease; }
 .all-project-card[open]::details-content { block-size: auto; opacity: 1; }
 .all-project-card > summary { display: block; border-radius: 10px; list-style: none; cursor: pointer; transition: background .2s ease; }
@@ -3427,8 +3429,13 @@ button {
 .all-project-card-completion > span strong { color: var(--ink); font-size: 14px; }
 .all-project-card-completion > i { display: block; height: 7px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: #e8ecf3; }
 .all-project-card-completion > i b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6d9eff, #7468ff); }
-.all-project-card footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 15px; color: #919aaa; font-size: 10px; }
-.all-project-card footer time { color: #5f6a7e; font-weight: 650; }
+.all-project-card-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: auto 0 0; padding-top: 13px; border-top: 1px solid #edf0f5; }
+.all-project-card-meta > div { display: block; min-width: 0; padding: 8px 9px; border: 1px solid #edf0f5; border-radius: 9px; background: #fafbfe; }
+.all-project-card-meta > div.owner { grid-column: 1 / -1; background: linear-gradient(100deg, #f8f9ff, #fbfbff); }
+.all-project-card-meta dt { color: #9aa2b1; font-size: 8px; font-weight: 700; letter-spacing: .02em; }
+.all-project-card-meta dd { display: flex; min-width: 0; align-items: center; gap: 7px; margin: 5px 0 0; overflow: hidden; color: #4d5a70; font-size: 9px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.all-project-card-meta dd > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.all-project-card-meta dd > i { display: grid; width: 22px; height: 22px; flex: 0 0 22px; place-items: center; border: 1px solid #ddd9f6; border-radius: 50%; background: #f0edff; color: #675bd2; font-size: 7px; font-style: normal; font-weight: 800; }
 @keyframes cardDetailEnter {
   from { opacity: 0; transform: translateY(-7px); }
   to { opacity: 1; transform: translateY(0); }
@@ -3545,6 +3552,7 @@ button {
   .all-project-list-head,
   .all-project-row > summary { min-width: 820px; }
   .all-project-detail { min-width: 820px; }
+  .all-project-card-detail { min-width: 0; }
   .all-project-subtask-body { grid-template-columns: 1fr; }
   .all-project-subtask-body dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .all-project-subtask-body > a { width: fit-content; }
@@ -3591,6 +3599,9 @@ button {
   .all-project-card-detail { padding: 9px; }
   .all-project-card-detail-heading { min-height: 54px; padding: 8px 10px; }
   .all-project-card-detail-heading small { display: none; }
+  .all-project-card-task-grid { grid-template-columns: 1fr; padding: 9px; }
+  .all-project-card-task > dl { grid-template-columns: 1fr; }
+  .all-project-card-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .all-project-detail { padding: 9px; }
   .all-project-subtasks-heading { min-height: 58px; padding: 9px 11px; }
   .all-project-subtasks-title > span { width: 32px; height: 32px; flex-basis: 32px; }

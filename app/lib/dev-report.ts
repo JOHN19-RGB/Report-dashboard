@@ -257,6 +257,16 @@ export function devProjectName(task: DevTask) {
   return source.split("|")[0].trim() || "Төсөл тодорхойгүй";
 }
 
+/** Prefer the explicit All Projects field, then use the task-name suffix when ClickUp omits it on a subtask. */
+export function devProjectWorkstream(task: DevTask): "design" | "dev" | "project" {
+  const explicit = Object.entries(task.customFields || {}).find(([name]) => /b2c\s+all\s+projects?/i.test(name))?.[1]?.trim();
+  const nameHint = task.name.includes("|") ? task.name.split("|").slice(1).join("|").trim() : task.name.trim();
+  const value = (explicit || nameHint).toLocaleLowerCase("en-US");
+  if (/\bdesign\b|ui[\s/-]*ux/.test(value)) return "design";
+  if (/development|front[ -]?end|back[ -]?end|full[ -]?stack|developer|\bdev\b/.test(value)) return "dev";
+  return "project";
+}
+
 /** Copy sprint membership only between records with the same ClickUp task ID. */
 export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTasks: DevTask[]) {
   const masterById = new Map(masterTasks.map(task => [task.id, task]));

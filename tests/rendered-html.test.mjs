@@ -187,6 +187,10 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   assert.match(dashboard, /className="all-project-card-disclosure"/);
   assert.match(dashboard, /all-project-card-detail-heading/);
   assert.match(dashboard, /cardDetail = subtasks !== undefined/);
+  assert.match(dashboard, /className="all-project-card-task-grid"/);
+  assert.match(dashboard, /className="all-project-card-meta"/);
+  assert.doesNotMatch(dashboard, /<footer><span>Шинэчлэгдсэн<\/span>/);
+  assert.match(dashboard, /<dt>Хариуцагч<\/dt><dd>\{assignees\}<\/dd>/);
   assert.doesNotMatch(dashboard, /эхний 5 төсөл харагдана/);
   assert.doesNotMatch(dashboard, /all-project-detail-stats/);
   assert.doesNotMatch(dashboard, /all-project-detail-summary/);
