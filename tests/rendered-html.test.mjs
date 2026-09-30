@@ -75,6 +75,8 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.match(masterHtml, /2025–2026/);
   assert.match(masterHtml, /Жил/);
   assert.match(masterHtml, /Сар/);
+  assert.match(masterHtml, /Хугацааны бүх сонголтыг арилгах/);
+  assert.match(projectsHtml, /Хугацааны бүх сонголтыг арилгах/);
   assert.doesNotMatch(masterHtml, /class="dev-date-filter"/);
   assert.match(masterHtml, /All data/);
   assert.match(masterHtml, /<header class="topbar">/);
@@ -108,6 +110,7 @@ test("renders the Dev master dashboard and keeps all-project separate", async ()
   assert.doesNotMatch(masterHtml, /dev-topbar|Hello, Baigalmaa|Хэрэглэгчийн цэс/);
   assert.match(projectsHtml, /Dev\.All Project/);
   assert.match(projectsHtml, /Төслийн гүйцэтгэлийн төлөв/);
+  assert.match(projectsHtml, /data-sort-key="status" class="active"/);
   assert.match(projectsHtml, /Төслүүдийн жагсаалт/);
   assert.match(projectsHtml, /Шинэ төслийн төлөвлөгөө/);
   assert.match(projectsHtml, />To do</);
@@ -180,6 +183,16 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   assert.match(dashboard, /name="project-summary-status"/);
   assert.match(dashboard, /summaryProjectsByStatus\[section\.key\]/);
   assert.match(dashboard, /<ProjectDetail project=\{project\} \/>/);
+  assert.match(dashboard, /className="all-project-subtasks-columns"/);
+  assert.match(dashboard, /className="all-project-card-disclosure"/);
+  assert.match(dashboard, /all-project-card-detail-heading/);
+  assert.match(dashboard, /cardDetail = subtasks !== undefined/);
+  assert.doesNotMatch(dashboard, /эхний 5 төсөл харагдана/);
+  assert.doesNotMatch(dashboard, /all-project-detail-stats/);
+  assert.doesNotMatch(dashboard, /all-project-detail-summary/);
+  assert.doesNotMatch(dashboard, /all-project-card-statuses/);
+  assert.match(dashboard, /subtasks=\{cardSubtasks\}/);
+  assert.match(dashboard, /aria-label="Шүүлтүүр цэвэрлэх"/);
   assert.match(dashboard, /className="all-project-plan-empty"/);
   assert.match(route, /refresh === "all-project"/);
   assert.match(route, /connectDevAllProjectSprints/);

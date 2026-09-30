@@ -106,8 +106,9 @@ function personInitials(value: string) {
 }
 
 function periodSelectionLabel(years: string[], months: string[]) {
-  const yearLabel = years.length === REPORT_YEARS.length ? `${REPORT_YEARS[0]}–${REPORT_YEARS.at(-1)}` : years.join(", ");
-  const monthLabel = months.length === REPORT_MONTHS.length ? "Бүх сар" : months.length === 1 ? `${Number(months[0])}-р сар` : `${months.length} сар`;
+  if (!years.length && !months.length) return "Сонголтгүй";
+  const yearLabel = !years.length ? "Жил сонгоогүй" : years.length === REPORT_YEARS.length ? `${REPORT_YEARS[0]}–${REPORT_YEARS.at(-1)}` : years.join(", ");
+  const monthLabel = !months.length ? "Сар сонгоогүй" : months.length === REPORT_MONTHS.length ? "Бүх сар" : months.length === 1 ? `${Number(months[0])}-р сар` : `${months.length} сар`;
   return `${yearLabel} · ${monthLabel}`;
 }
 
@@ -401,16 +402,17 @@ export default function DevMasterDashboard() {
   }
 
   function applyPeriodSelection(years: string[], months: string[]) {
-    if (!years.length || !months.length) return;
     const sortedYears = [...years].sort();
     const sortedMonths = [...months].sort();
+    const firstYear = sortedYears[0] || REPORT_YEARS[0];
+    const lastYear = sortedYears.at(-1) || REPORT_YEARS.at(-1)!;
     setPeriodYears(sortedYears);
     setPeriodMonths(sortedMonths);
-    periodRangeRef.current = { startDate: `${sortedYears[0]}-01-01`, endDate: `${sortedYears.at(-1)}-12-31` };
+    periodRangeRef.current = { startDate: `${firstYear}-01-01`, endDate: `${lastYear}-12-31` };
     setFilters(current => ({
       ...current,
-      startDate: `${sortedYears[0]}-01-01`,
-      endDate: `${sortedYears.at(-1)}-12-31`,
+      startDate: `${firstYear}-01-01`,
+      endDate: `${lastYear}-12-31`,
       sprintIds: [],
     }));
   }
@@ -427,7 +429,9 @@ export default function DevMasterDashboard() {
 
   function applySprints(sprintIds: string[]) {
     if (!sprintIds.length) {
-      setFilters(current => ({ ...current, startDate: `${periodYears[0]}-01-01`, endDate: `${periodYears.at(-1)}-12-31`, sprintIds: [] }));
+      const firstYear = periodYears[0] || REPORT_YEARS[0];
+      const lastYear = periodYears.at(-1) || REPORT_YEARS.at(-1)!;
+      setFilters(current => ({ ...current, startDate: `${firstYear}-01-01`, endDate: `${lastYear}-12-31`, sprintIds: [] }));
       return;
     }
     const selected = sprints.filter(item => sprintIds.includes(item.id));
@@ -478,8 +482,9 @@ export default function DevMasterDashboard() {
             <details className="dev-select-filter dev-period-filter dev-period-multiselect" title={filters.sprintIds.length ? "Sprint сонгосон үед жил/сар үйлчлэхгүй. Жил эсвэл сар соливол sprint сонголтыг цэвэрлэнэ." : undefined}>
               <summary><Clock3 size={17} /><span>Хугацаа:</span><b>{periodSelectionLabel(periodYears, periodMonths)}</b><ChevronDown size={14} /></summary>
               <div className="dev-period-menu">
-                <fieldset><legend><span>Жил</span><button type="button" onClick={() => applyPeriodSelection(REPORT_YEARS, periodMonths)}>Бүгд</button></legend><div className="dev-period-years">{REPORT_YEARS.map(year => <label key={year}><input type="checkbox" checked={periodYears.includes(year)} disabled={periodYears.length === 1 && periodYears.includes(year)} onChange={() => togglePeriodYear(year)} /><span>{year}</span></label>)}</div></fieldset>
-                <fieldset><legend><span>Сар</span><button type="button" onClick={() => applyPeriodSelection(periodYears, REPORT_MONTHS)}>Бүгд</button></legend><div className="dev-period-months">{REPORT_MONTHS.map(month => <label key={month}><input type="checkbox" checked={periodMonths.includes(month)} disabled={periodMonths.length === 1 && periodMonths.includes(month)} onChange={() => togglePeriodMonth(month)} /><span>{Number(month)} сар</span></label>)}</div></fieldset>
+                <div className="dev-period-menu-actions"><span>Хугацааны сонголт</span><button type="button" onClick={() => applyPeriodSelection([], [])} disabled={!periodYears.length && !periodMonths.length} aria-label="Хугацааны бүх сонголтыг арилгах"><X size={12} />Бүгдийг арилгах</button></div>
+                <fieldset><legend><span>Жил</span><button type="button" onClick={() => applyPeriodSelection(REPORT_YEARS, periodMonths)}>Бүгд</button></legend><div className="dev-period-years">{REPORT_YEARS.map(year => <label key={year}><input type="checkbox" checked={periodYears.includes(year)} onChange={() => togglePeriodYear(year)} /><span>{year}</span></label>)}</div></fieldset>
+                <fieldset><legend><span>Сар</span><button type="button" onClick={() => applyPeriodSelection(periodYears, REPORT_MONTHS)}>Бүгд</button></legend><div className="dev-period-months">{REPORT_MONTHS.map(month => <label key={month}><input type="checkbox" checked={periodMonths.includes(month)} onChange={() => togglePeriodMonth(month)} /><span>{Number(month)} сар</span></label>)}</div></fieldset>
               </div>
             </details>
             <details className="dev-select-filter dev-sprint-filter dev-period-multiselect">

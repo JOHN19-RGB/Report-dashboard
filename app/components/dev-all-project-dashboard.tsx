@@ -108,20 +108,28 @@ function priorityLabel(value: string | undefined) {
 
 type AllProjectDirectoryItem = ReturnType<typeof groupDevAllProjectTasks>[number];
 
-function ProjectDetail({ project }: { project: AllProjectDirectoryItem }) {
-  const estimate = project.subtasks.reduce((sum, task) => sum + (task.timeEstimateMs || 0), 0);
-  const completed = project.subtasks.filter(task => devProjectStatus(task) === "done").length;
-  return <div className="all-project-detail">
-    <header><div><span className="all-project-section-kicker">PROJECT DETAIL</span><h3>{project.name}</h3></div><span>{project.subtasks.length} дэд ажил</span></header>
-    <div className="all-project-detail-stats">
-      <span><small>Ажлын урсгал</small><strong>{project.subtasks.length}</strong></span>
-      <span><small>Дууссан</small><strong>{completed}/{project.subtasks.length || 0}</strong></span>
-      <span><small>Нийт цаг</small><strong>{formatEstimate(estimate)}</strong></span>
-      <span><small>Үе шат</small><strong>{currentProjectStatus(project.statuses).label}</strong></span>
-    </div>
-    {project.subtasks.length ? <div className="all-project-subtasks">
-      <div className="all-project-subtasks-heading"><div><ListTodo size={15} /><span>Дэд ажлууд</span></div><small>Дэлгэрэнгүй мэдээллийг харахын тулд таск дээр дарна уу</small></div>
-      {project.subtasks.map((task, index) => {
+function ProjectDetail({ project, subtasks }: { project: AllProjectDirectoryItem; subtasks?: DevTask[] }) {
+  const cardDetail = subtasks !== undefined;
+  const detailTasks = subtasks ?? project.subtasks;
+  const detailStatuses = Object.fromEntries(DEV_PROJECT_STATUSES.map(status => [status.key, detailTasks.filter(task => devProjectStatus(task) === status.key).length])) as Record<DevProjectStatusKey, number>;
+  const detailStatus = detailTasks.length ? currentProjectStatus(detailStatuses) : null;
+  return <div className={`all-project-detail${cardDetail ? " all-project-card-detail" : ""}`}>
+    {detailTasks.length ? <div className="all-project-subtasks">
+      {cardDetail ? <div className="all-project-card-detail-heading">
+        <div><span><ListTodo size={16} /></span><div><strong>Dev / Design ажлууд</strong><small>Ажил дээр дарж дэлгэрэнгүй мэдээллийг харна уу</small></div></div>
+        <b>{detailTasks.length} ажил</b>
+      </div> : <div className="all-project-subtasks-heading">
+        <div className="all-project-subtasks-title">
+          <span><ListTodo size={16} /></span>
+          <div><small>ТӨСЛИЙН ДЭД АЖЛУУД</small><strong>{project.name}</strong></div>
+        </div>
+        <div className="all-project-subtasks-meta">
+          <b>{detailTasks.length} ажил</b>
+          {detailStatus && <i className={`status-${detailStatus.key}`}><em style={{ background: detailStatus.color }} />{detailStatus.label}</i>}
+        </div>
+      </div>}
+      <div className="all-project-subtasks-columns" aria-hidden="true"><span /><span>Ажил</span><span>Хариуцагч</span><span>Төлөв</span><span /></div>
+      {detailTasks.map((task, index) => {
       const status = DEV_PROJECT_STATUSES.find(item => item.key === devProjectStatus(task))!;
       const title = task.name.includes("|") ? task.name.split("|").slice(1).join("|").trim() : task.name;
       const assignees = task.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
@@ -146,13 +154,14 @@ function ProjectDetail({ project }: { project: AllProjectDirectoryItem }) {
           {task.url && <a href={task.url} target="_blank" rel="noreferrer">ClickUp дээр нээх <ExternalLink size={12} /></a>}
         </div>
       </details>;
-    })}</div> : <p className="all-project-detail-empty">Энэ төсөлд бүртгэлтэй дэд ажил алга.</p>}
+    })}</div> : <div className="all-project-detail-empty"><span><ListTodo size={18} /></span><div><strong>{cardDetail ? "Dev / Design ажил алга" : "Дэд ажил алга"}</strong><small>{cardDetail ? "Энэ төсөлд харуулах Dev эсвэл Design ажил одоогоор бүртгэгдээгүй байна." : "Энэ төсөлд бүртгэлтэй дэд ажил одоогоор алга."}</small></div></div>}
   </div>;
 }
 
 function periodSelectionLabel(years: string[], months: string[]) {
-  const yearLabel = years.length === REPORT_YEARS.length ? `${REPORT_YEARS[0]}–${REPORT_YEARS.at(-1)}` : years.join(", ");
-  const monthLabel = months.length === REPORT_MONTHS.length ? "Бүх сар" : months.length === 1 ? `${Number(months[0])}-р сар` : `${months.length} сар`;
+  if (!years.length && !months.length) return "Сонголтгүй";
+  const yearLabel = !years.length ? "Жил сонгоогүй" : years.length === REPORT_YEARS.length ? `${REPORT_YEARS[0]}–${REPORT_YEARS.at(-1)}` : years.join(", ");
+  const monthLabel = !months.length ? "Сар сонгоогүй" : months.length === REPORT_MONTHS.length ? "Бүх сар" : months.length === 1 ? `${Number(months[0])}-р сар` : `${months.length} сар`;
   return `${yearLabel} · ${monthLabel}`;
 }
 
@@ -198,7 +207,7 @@ export default function DevAllProjectDashboard() {
   const [periodMonths, setPeriodMonths] = useState(REPORT_MONTHS);
   const [periodMode, setPeriodMode] = useState<DevSprintPeriodMode>("segment");
   const [projectView, setProjectView] = useState<"list" | "card">("list");
-  const [projectSort, setProjectSort] = useState<DevProjectSort>(null);
+  const [projectSort, setProjectSort] = useState<DevProjectSort>({ key: "status", direction: "asc" });
   const [workstream, setWorkstream] = useState<"dev" | "design" | "project">("project");
   const [generatedProjectSummary, setGeneratedProjectSummary] = useState<{ key: string; summary: AllProjectSummary; source: "groq" | "local" } | null>(null);
   const [projectSummaryLoadingKey, setProjectSummaryLoadingKey] = useState<string | null>(null);
@@ -404,17 +413,20 @@ export default function DevAllProjectDashboard() {
   }
 
   function applyPeriodSelection(years: string[], months: string[]) {
-    if (!years.length || !months.length) return;
     const sortedYears = [...years].sort();
     const sortedMonths = [...months].sort();
+    const firstYear = sortedYears[0] || REPORT_YEARS[0];
+    const lastYear = sortedYears.at(-1) || REPORT_YEARS.at(-1)!;
     setPeriodYears(sortedYears);
     setPeriodMonths(sortedMonths);
-    setFilters(current => ({ ...current, startDate: `${sortedYears[0]}-01-01`, endDate: `${sortedYears.at(-1)}-12-31`, sprintIds: [] }));
+    setFilters(current => ({ ...current, startDate: `${firstYear}-01-01`, endDate: `${lastYear}-12-31`, sprintIds: [] }));
   }
 
   function applySprints(sprintIds: string[]) {
     if (!sprintIds.length) {
-      setFilters(current => ({ ...current, startDate: `${periodYears[0]}-01-01`, endDate: `${periodYears.at(-1)}-12-31`, sprintIds: [] }));
+      const firstYear = periodYears[0] || REPORT_YEARS[0];
+      const lastYear = periodYears.at(-1) || REPORT_YEARS.at(-1)!;
+      setFilters(current => ({ ...current, startDate: `${firstYear}-01-01`, endDate: `${lastYear}-12-31`, sprintIds: [] }));
       return;
     }
     const selected = sprints.filter(item => sprintIds.includes(item.id));
@@ -456,8 +468,9 @@ export default function DevAllProjectDashboard() {
             <details className="dev-select-filter dev-period-filter dev-period-multiselect">
               <summary><Clock3 size={17} /><span>Хугацаа:</span><b>{periodSelectionLabel(periodYears, periodMonths)}</b><ChevronDown size={14} /></summary>
               <div className="dev-period-menu">
-                <fieldset><legend><span>Жил</span><button type="button" onClick={() => applyPeriodSelection(REPORT_YEARS, periodMonths)}>Бүгд</button></legend><div className="dev-period-years">{REPORT_YEARS.map(year => <label key={year}><input type="checkbox" checked={periodYears.includes(year)} disabled={periodYears.length === 1 && periodYears.includes(year)} onChange={() => applyPeriodSelection(periodYears.includes(year) ? periodYears.filter(item => item !== year) : [...periodYears, year], periodMonths)} /><span>{year}</span></label>)}</div></fieldset>
-                <fieldset><legend><span>Сар</span><button type="button" onClick={() => applyPeriodSelection(periodYears, REPORT_MONTHS)}>Бүгд</button></legend><div className="dev-period-months">{REPORT_MONTHS.map(month => <label key={month}><input type="checkbox" checked={periodMonths.includes(month)} disabled={periodMonths.length === 1 && periodMonths.includes(month)} onChange={() => applyPeriodSelection(periodYears, periodMonths.includes(month) ? periodMonths.filter(item => item !== month) : [...periodMonths, month])} /><span>{Number(month)} сар</span></label>)}</div></fieldset>
+                <div className="dev-period-menu-actions"><span>Хугацааны сонголт</span><button type="button" onClick={() => applyPeriodSelection([], [])} disabled={!periodYears.length && !periodMonths.length} aria-label="Хугацааны бүх сонголтыг арилгах"><X size={12} />Бүгдийг арилгах</button></div>
+                <fieldset><legend><span>Жил</span><button type="button" onClick={() => applyPeriodSelection(REPORT_YEARS, periodMonths)}>Бүгд</button></legend><div className="dev-period-years">{REPORT_YEARS.map(year => <label key={year}><input type="checkbox" checked={periodYears.includes(year)} onChange={() => applyPeriodSelection(periodYears.includes(year) ? periodYears.filter(item => item !== year) : [...periodYears, year], periodMonths)} /><span>{year}</span></label>)}</div></fieldset>
+                <fieldset><legend><span>Сар</span><button type="button" onClick={() => applyPeriodSelection(periodYears, REPORT_MONTHS)}>Бүгд</button></legend><div className="dev-period-months">{REPORT_MONTHS.map(month => <label key={month}><input type="checkbox" checked={periodMonths.includes(month)} onChange={() => applyPeriodSelection(periodYears, periodMonths.includes(month) ? periodMonths.filter(item => item !== month) : [...periodMonths, month])} /><span>{Number(month)} сар</span></label>)}</div></fieldset>
               </div>
             </details>
             <details className="dev-select-filter dev-sprint-filter dev-period-multiselect">
@@ -469,7 +482,7 @@ export default function DevAllProjectDashboard() {
                 {periodMode === "segment" && <p>2 sprint-ээр бүлэглэсэн · 11–12, 13–14, …</p>}
               </div>
             </details>
-            {hasFilters && <button className="dev-reset-filter" onClick={resetFilters}><RotateCcw size={15} /> Цэвэрлэх</button>}
+            {hasFilters && <button className="dev-reset-filter" type="button" onClick={resetFilters} aria-label="Шүүлтүүр цэвэрлэх" title="Шүүлтүүр цэвэрлэх"><X size={16} /></button>}
             <div className="dev-dashboard-actions" role="group" aria-label="All Project тайлангийн үйлдлүүд"><button className="icon-button dev-download-filter" type="button" onClick={() => downloadProjects(matchingRecords)} disabled={loading || !matchingRecords.length} aria-label="Шүүсэн project data татах" title="Шүүсэн project data татах"><Download size={18} /></button><button className="icon-button dev-refresh-filter" type="button" onClick={() => void loadData(true)} disabled={loading} aria-label={loading ? "Өгөгдөл уншиж байна" : "ClickUp өгөгдөл шинэчлэх"} aria-busy={loading}><RefreshCw className={loading ? "spin" : ""} size={18} /></button></div>
           </div>
         </section>
@@ -494,7 +507,7 @@ export default function DevAllProjectDashboard() {
         </section>
 
         <section className="dev-panel all-project-list-panel" aria-labelledby="all-project-list-title">
-          <header><div><span className="all-project-section-kicker">PROJECT DIRECTORY</span><h2 id="all-project-list-title">Төслүүдийн жагсаалт</h2><p>{projects.length} төсөл · эхний 5 төсөл харагдана · баганын нэрийг дарж эрэмбэлнэ</p></div><div className="all-project-list-controls"><div className="dev-view-toggle" data-view={projectView} role="group" aria-label="Төслийн харагдац"><button type="button" aria-pressed={projectView === "list"} onClick={() => setProjectView("list")}><List size={14} />List</button><button type="button" aria-pressed={projectView === "card"} onClick={() => setProjectView("card")}><LayoutGrid size={14} />Card</button></div></div></header>
+          <header><div><span className="all-project-section-kicker">PROJECT DIRECTORY</span><h2 id="all-project-list-title">Төслүүдийн жагсаалт</h2><p>{projects.length} төсөл</p></div><div className="all-project-list-controls"><div className="dev-view-toggle" data-view={projectView} role="group" aria-label="Төслийн харагдац"><button type="button" aria-pressed={projectView === "list"} onClick={() => setProjectView("list")}><List size={14} />List</button><button type="button" aria-pressed={projectView === "card"} onClick={() => setProjectView("card")}><LayoutGrid size={14} />Card</button></div></div></header>
           {projectView === "list" ? <div className="all-project-list" role="table" aria-label="ClickUp төслүүд">
             <div className="all-project-list-head" role="row">
               {([[
@@ -516,12 +529,16 @@ export default function DevAllProjectDashboard() {
               <ProjectDetail project={project} />
             </details>)}</div>
             {!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}
-          </div> : <div className="all-project-card-scroll"><div className="all-project-cards">{projects.map(project => <details className="dev-member-card all-project-card" key={project.id}>
-            <summary><div className="all-project-card-heading"><span className="all-project-card-icon"><FolderKanban size={18} /></span><div><h3>{project.name}</h3><span>{project.subtasks.length} дэд ажил · {project.done} Done</span></div><ChevronDown size={16} /></div>
-            <div className="all-project-card-completion"><span><b>Гүйцэтгэл</b><strong>{project.completion}%</strong></span><i><b style={{ width: `${project.completion}%` }} /></i></div>
-            <div className="all-project-card-statuses">{DEV_PROJECT_STATUSES.map(status => <span key={status.key}><i style={{ background: status.color }} />{status.label}<b>{project.statuses[status.key]}</b></span>)}</div>
-            <footer><span>Шинэчлэгдсэн</span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></footer></summary><ProjectDetail project={project} />
-          </details>)}</div>{!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}</div>}
+          </div> : <div className="all-project-card-scroll"><div className="all-project-cards">{projects.map(project => {
+            const cardSubtasks = project.subtasks.filter(task => ["dev", "design"].includes(projectWorkstream(task)));
+            const cardDone = cardSubtasks.filter(task => devProjectStatus(task) === "done").length;
+            const cardCompletion = cardSubtasks.length ? Math.round(cardDone / cardSubtasks.length * 100) : 0;
+            return <details className="dev-member-card all-project-card" key={project.id}>
+              <summary><div className="all-project-card-heading"><span className="all-project-card-icon"><FolderKanban size={18} /></span><div><h3>{project.name}</h3><span>{cardSubtasks.length} Dev / Design ажил · {cardDone} Done</span></div><span className="all-project-card-disclosure"><small>Дэлгэрэнгүй</small><ChevronDown size={15} /></span></div>
+              <div className="all-project-card-completion"><span><b>Dev / Design гүйцэтгэл</b><strong>{cardCompletion}%</strong></span><i><b style={{ width: `${cardCompletion}%` }} /></i></div>
+              <footer><span>Шинэчлэгдсэн</span><time>{project.latestDate ? formatDate(project.latestDate) : "—"}</time></footer></summary><ProjectDetail project={project} subtasks={cardSubtasks} />
+            </details>;
+          })}</div>{!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}</div>}
         </section>
 
         <section className="dev-panel all-project-plan-panel" data-empty={!planningTasks.length} aria-labelledby="all-project-plan-title">
