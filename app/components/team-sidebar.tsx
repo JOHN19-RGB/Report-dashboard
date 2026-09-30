@@ -21,18 +21,18 @@ export default function TeamSidebar({
       <div className="brand"><span className="brand-logo-wrap"><img className="brand-logo" src="/cody-logo.svg" alt="Cody" width="151" height="59" /></span><button className="team-menu-close" aria-label="Цэс хаах" onClick={onClose}><X size={20} /></button></div>
       <nav className="nav-list" aria-label="Багууд">
         <span className="team-nav-label">БАГУУД</span>
-        <section className={`sidebar-section ${section === "cx" ? "active" : ""}`} aria-label="CX">
+        <section className={`sidebar-section ${section === "cx" ? "active" : ""}`} aria-label="CX хэлтэс">
           <Link href="/" className="sidebar-section-title sidebar-section-link" aria-current={section === "cx" ? "page" : undefined} onClick={onClose}>CX</Link>
         </section>
         <section className={`sidebar-section ${section === "dev" ? "active" : ""}`} aria-labelledby="dev-section-title">
-          <h2 className="sidebar-section-title" id="dev-section-title">Dev</h2>
+          <h2 className="sidebar-section-title" id="dev-section-title">Development</h2>
           <div className="sidebar-subnav">
             <Link href="/dev/master" className={`nav-item ${section === "dev" && page === "master" ? "active" : ""}`} aria-current={section === "dev" && page === "master" ? "page" : undefined} onClick={onClose}>Dev.Master</Link>
             <Link href="/dev/all-project" className={`nav-item ${section === "dev" && page === "all-project" ? "active" : ""}`} aria-current={section === "dev" && page === "all-project" ? "page" : undefined} onClick={onClose}>Dev.All project</Link>
           </div>
         </section>
       </nav>
-      <div className="sidebar-footer">Cody · Ажлын тайлан</div>
+      <div className="sidebar-footer">Cody · B2C · Ажлын тайлан</div>
     </aside>
     {open && <button className="menu-backdrop" onClick={onClose} aria-label="Цэс хаах" />}
   </>;

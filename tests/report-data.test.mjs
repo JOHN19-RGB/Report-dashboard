@@ -8,7 +8,7 @@ const { outputText } = ts.transpileModule(source, { compilerOptions: { module: t
 const { buildReport, filterTasks } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 const devSource = await readFile(new URL("../app/lib/dev-report.ts", import.meta.url), "utf8");
 const { outputText: devOutputText } = ts.transpileModule(devSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devProjectWorkstream, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, sprintConnectedDevTasks, taskTypeTotals, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
+const { buildSprintPeriods, connectDevAllProjectSprints, DEV_PROJECT_STATUSES, devProductivityDistributionMembers, devProjectStatus, devProjectWorkstream, devTeamProductivity, filterDevTasksByMonthKeys, formatSprintDateRange, groupDevAllProjectTasks, groupDevProjectTasks, latestSubtaskDueDate, memberProductivity, memberTaskDistribution, metricPercentChange, monthlyTaskPerformance, nextDevProjectSort, previousSprintPeriods, scopeDevReportTasks, selectDevAllProjectList, selectDevTasks, sprintConnectedDevTasks, taskTypeTotals, teamCompletionAverage, topLevelDevTasks } = await import(`data:text/javascript;base64,${Buffer.from(devOutputText).toString("base64")}`);
 async function importTypescriptLibrary(path) {
   const librarySource = await readFile(new URL(path, import.meta.url), "utf8");
   const { outputText: libraryOutput } = ts.transpileModule(librarySource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
@@ -218,6 +218,12 @@ test("All Project card recognizes Dev and Design name suffixes when ClickUp omit
   assert.equal(devProjectWorkstream(task("Ayanchin.mn | Front-end")), "dev");
   assert.equal(devProjectWorkstream(task("Xiaomi | Front-end Dev")), "dev");
   assert.equal(devProjectWorkstream(task("Explicit field wins | UI UX Design", { "B2C All Projects": "Training" })), "project");
+});
+
+test("All Project card uses the latest complete subtask due date", () => {
+  assert.equal(latestSubtaskDueDate([{ dueDate: "2026-09-18" }, { dueDate: "2026-10-03" }, { dueDate: "2026-08-01" }]), "2026-10-03");
+  assert.equal(latestSubtaskDueDate([{ dueDate: "2026-09-18" }, { dueDate: null }]), null);
+  assert.equal(latestSubtaskDueDate([]), null);
 });
 
 test("All Projects uses only direct ClickUp task IDs for sprint membership", () => {

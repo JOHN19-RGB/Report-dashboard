@@ -161,6 +161,7 @@ test("keeps Dev bar counts hover-only with CX-style bars and accessible labels",
   assert.match(css, /\.dev-cx-chart \.bar-fill \{ background: #dfe3e9;/);
   assert.match(css, /\.dev-cx-chart \.bar-group:hover \.bar-fill,[\s\S]*?background: var\(--series-color\)/);
   assert.match(css, /\.all-project-list-scroll \{ max-height: 345px; overflow-y: auto;/);
+  assert.match(css, /\.dev-dashboard \.main-content \.dev-filter-search input:focus-visible \{ outline: 0; \}/);
   assert.match(css, /\.all-project-cards \{ display: grid; grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
 });
 
@@ -189,6 +190,7 @@ test("All Project keeps projects and tasks distinct, refreshes only its source, 
   assert.match(dashboard, /cardDetail = subtasks !== undefined/);
   assert.match(dashboard, /className="all-project-card-task-grid"/);
   assert.match(dashboard, /className="all-project-card-meta"/);
+  assert.match(dashboard, /latestSubtaskDueDate\(cardSubtasks\)/);
   assert.doesNotMatch(dashboard, /<footer><span>Шинэчлэгдсэн<\/span>/);
   assert.match(dashboard, /<dt>Хариуцагч<\/dt><dd>\{assignees\}<\/dd>/);
   assert.doesNotMatch(dashboard, /эхний 5 төсөл харагдана/);

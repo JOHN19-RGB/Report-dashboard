@@ -43,6 +43,7 @@ import {
   formatSprintDateRange,
   groupDevAllProjectTasks,
   isDevReportData,
+  latestSubtaskDueDate,
   nextDevProjectSort,
   scopeDevReportTasks,
   selectDevTasks,
@@ -544,10 +545,11 @@ export default function DevAllProjectDashboard() {
             const cardDone = cardSubtasks.filter(task => devProjectStatus(task) === "done").length;
             const cardCompletion = cardSubtasks.length ? Math.round(cardDone / cardSubtasks.length * 100) : 0;
             const projectOwner = project.rootTask.assignees.map(person => person.name).join(", ") || "Хариуцагчгүй";
+            const projectDueDate = latestSubtaskDueDate(cardSubtasks);
             return <details className="dev-member-card all-project-card" key={project.id}>
               <summary><div className="all-project-card-heading"><span className="all-project-card-icon"><FolderKanban size={18} /></span><div><h3>{project.name}</h3><span>{cardSubtasks.length} Dev / Design ажил · {cardDone} Done</span></div><span className="all-project-card-disclosure"><small>Дэлгэрэнгүй</small><ChevronDown size={15} /></span></div>
               <div className="all-project-card-completion"><span><b>Dev / Design гүйцэтгэл</b><strong>{cardCompletion}%</strong></span><i><b style={{ width: `${cardCompletion}%` }} /></i></div>
-              <dl className="all-project-card-meta"><div className="owner"><dt>Хариуцагч</dt><dd title={projectOwner}><i>{initials(projectOwner)}</i><span>{projectOwner}</span></dd></div><div><dt>Эхэлсэн</dt><dd>{formatDate(project.rootTask.startDate || project.rootTask.createdDate)}</dd></div><div><dt>Дуусах</dt><dd>{formatDate(project.rootTask.dueDate)}</dd></div></dl></summary><ProjectDetail project={project} subtasks={cardSubtasks} />
+              <dl className="all-project-card-meta"><div className="owner"><dt>Хариуцагч</dt><dd title={projectOwner}><i>{initials(projectOwner)}</i><span>{projectOwner}</span></dd></div><div><dt>Эхэлсэн</dt><dd>{formatDate(project.rootTask.startDate || project.rootTask.createdDate)}</dd></div><div><dt>Дуусах</dt><dd>{formatDate(projectDueDate)}</dd></div></dl></summary><ProjectDetail project={project} subtasks={cardSubtasks} />
             </details>;
           })}</div>{!projects.length && !loading && <p className="dev-no-results">Сонгосон шүүлтүүрт тохирох төсөл олдсонгүй.</p>}</div>}
         </section>

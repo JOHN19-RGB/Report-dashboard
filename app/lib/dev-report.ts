@@ -267,6 +267,12 @@ export function devProjectWorkstream(task: DevTask): "design" | "dev" | "project
   return "project";
 }
 
+/** A project deadline is reliable only when every displayed subtask has one. */
+export function latestSubtaskDueDate(tasks: DevTask[]) {
+  if (!tasks.length || tasks.some(task => !task.dueDate)) return null;
+  return tasks.map(task => task.dueDate!).sort().at(-1) || null;
+}
+
 /** Copy sprint membership only between records with the same ClickUp task ID. */
 export function connectDevAllProjectSprints(allProjectTasks: DevTask[], masterTasks: DevTask[]) {
   const masterById = new Map(masterTasks.map(task => [task.id, task]));
