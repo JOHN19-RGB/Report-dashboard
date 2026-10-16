@@ -1607,15 +1607,9 @@ button {
   box-shadow: 0 10px 24px rgb(23 35 61 / 18%);
 }
 
-.ai-orb span {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 11px;
-  height: 11px;
-  border: 3px solid #eef3f9;
-  border-radius: 50%;
-  background: var(--accent);
+.hero h1 > span,
+.ai-orb > span {
+  display: none;
 }
 
 .ai-content {
@@ -1678,25 +1672,15 @@ button {
 .summary-text p {
   position: relative;
   margin: 0;
-  padding-left: 13px;
+  padding-left: 0;
   color: #4d596d;
   font-size: 11px;
   line-height: 1.63;
 }
 
 .summary-text p::before {
-  position: absolute;
-  top: 5px;
-  left: 0;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  content: "";
+  content: none;
 }
-
-.summary-text p:nth-child(2)::before { background: var(--violet); }
-.summary-text p:nth-child(3)::before { background: var(--green); }
 
 .ai-meta {
   display: flex;

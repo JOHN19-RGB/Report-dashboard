@@ -2,7 +2,8 @@ import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "
 import { proxyClickUpForLocalDevelopment } from "../../../lib/clickup-local-proxy";
 import { connectDevAllProjectSprints, DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, selectDevAllProjectList, type DevSprint, type DevTask } from "../../../lib/dev-report";
 import { requestClickUp } from "../../../lib/clickup-request";
-import { mergeClickUpTaskSnapshot, readClickUpTaskPages } from "../../../lib/clickup-pagination";
+import { mergeClickUpTaskSnapshot, readClickUpTaskPages, shareInFlightResponse } from "../../../lib/clickup-pagination";
+import { CLICKUP_DELTA_OVERLAP_MS, CLICKUP_FULL_SYNC_INTERVAL_MS } from "../../../lib/clickup-cx-sync";
 import { mergeSprintMemberships, type SprintAssignment, type SprintSyncState } from "../../../lib/clickup-sprint-sync";
 
 export const maxDuration = 300;
@@ -161,7 +162,7 @@ function customTaskTypeName(customItemId: ClickUpTask["custom_item_id"], customT
   return customTaskTypes.get(String(customItemId)) || "";
 }
 
-function resolveTaskType(task: ClickUpTask, fields: Record<string, string>, parent: ClickUpTask | undefined, customTaskTypes: Map<string, string>) {
+function resolveTaskType(task: ClickUpTask, fields: Record<string, string>, parent: ClickUpTask | undefined, customTaskTypes: Map<string, string>, inheritedType = "") {
   const typeName = customTaskTypeName(task.custom_item_id, customTaskTypes);
   const customFieldType = findField(fields, [/^type$/, /^task type$/, /төрөл/]);
   const currentSignals = [typeName, customFieldType, ...(task.tags || []).map(tag => safeText(tag.name)), safeText(task.status?.status)];
@@ -179,6 +180,8 @@ function resolveTaskType(task: ClickUpTask, fields: Record<string, string>, pare
     if (inheritedKnownType) return inheritedKnownType;
     if (parentTypeName && parentTypeName !== "Task") return parentTypeName;
     if (parentFieldType) return parentFieldType;
+  } else if (inheritedType) {
+    return inheritedType;
   }
 
   return typeName || "Task";
@@ -294,14 +297,16 @@ async function resolveB2cWorkspace(workspaceId: string, token: string) {
   return { list, allProjectList: allProjectList ? { id: allProjectList.id, name: allProjectList.name || "All Projects" } : null, sprintLists, partial };
 }
 
-async function getListTasks(listId: string, token: string, options: { includeTiml?: boolean; includeSubtasks?: boolean; pageLimit?: number; batchSize?: number } = {}) {
+async function getListTasks(listId: string, token: string, options: { includeTiml?: boolean; includeSubtasks?: boolean; updatedAfter?: number; pageLimit?: number; batchSize?: number } = {}) {
   return readClickUpTaskPages<ClickUpTask>(async page => {
       const query = new URLSearchParams({ archived: "false", include_closed: "true", subtasks: options.includeSubtasks === false ? "false" : "true", include_timl: options.includeTiml ? "true" : "false", page: String(page), order_by: "due_date", reverse: "true" });
+      if (options.updatedAfter) query.set("date_updated_gt", String(options.updatedAfter));
       return clickUpJson<{ tasks?: ClickUpTask[]; last_page?: boolean }>(`/list/${encodeURIComponent(listId)}/task?${query}`, token);
   }, options);
 }
 
-function mapClickUpTasks(rawTasks: ClickUpTask[], customTaskTypes: Map<string, string>, previousSprintByTaskId: Map<string, { sprint: string; sprintIds: string[] }>) {
+/** `previousTasks` supplies parent names and inherited types when a delta fetch omits the parent. */
+function mapClickUpTasks(rawTasks: ClickUpTask[], customTaskTypes: Map<string, string>, previousSprintByTaskId: Map<string, { sprint: string; sprintIds: string[] }>, previousTasks = new Map<string, DevTask>()) {
   const namesById = new Map(rawTasks.map(task => [safeText(task.id), safeText(task.name)]));
   const rawTasksById = new Map(rawTasks.map(task => [safeText(task.id), task]));
   return rawTasks.filter(task => task.id).map((task): DevTask => {
@@ -309,16 +314,20 @@ function mapClickUpTasks(rawTasks: ClickUpTask[], customTaskTypes: Map<string, s
     const statusName = safeText(task.status?.status, "Тодорхойгүй");
     const parentTask = task.parent ? rawTasksById.get(task.parent) : undefined;
     const previousSprint = previousSprintByTaskId.get(safeText(task.id));
+    const previousSelf = previousTasks.get(safeText(task.id));
+    const previousParent = task.parent ? previousTasks.get(task.parent) : undefined;
+    const sameParent = previousSelf?.parentId === (task.parent || null);
+    const inheritedType = !task.parent || parentTask ? "" : previousParent ? (previousParent.type !== "Task" ? previousParent.type : "") : sameParent ? previousSelf?.type || "" : "";
     return {
       id: safeText(task.id),
       name: safeText(task.name, "Нэргүй ажил"),
       parentId: safeText(task.parent) || null,
-      parentName: task.parent ? namesById.get(task.parent) || "" : "",
+      parentName: task.parent ? namesById.get(task.parent) || previousParent?.name || (sameParent ? previousSelf?.parentName : "") || "" : "",
       url: safeText(task.url),
       status: { name: statusName, color: safeColor(task.status?.color, "#64748b"), type: safeText(task.status?.type), done: normalize(task.status?.type) === "closed" || /complete|closed|done|дууссан/.test(normalize(statusName)) },
       assignees: mapAssignees(task.assignees),
       tags: (task.tags || []).map(tag => safeText(tag.name)).filter(Boolean),
-      type: resolveTaskType(task, fields, parentTask, customTaskTypes),
+      type: resolveTaskType(task, fields, parentTask, customTaskTypes, inheritedType),
       sprint: previousSprint?.sprint || findField(fields, [/sprint/, /спринт/]),
       sprintIds: previousSprint?.sprintIds || [],
       position: findField(fields, [/position/, /role/, /албан тушаал/]),
@@ -356,7 +365,7 @@ async function resolveSprintAssignments(sprintLists: ClickUpListLocation[], toke
   return assignments;
 }
 
-export async function GET(request: Request) {
+async function sync(request: Request) {
   try {
     const requestUrl = new URL(request.url);
     const refresh = requestUrl.searchParams.get("refresh") || "";
@@ -402,7 +411,11 @@ export async function GET(request: Request) {
       const customTaskTypeData = Array.isArray(snapshot.customTaskTypeDefinitions)
         ? { custom_items: snapshot.customTaskTypeDefinitions as ClickUpCustomTaskType[] }
         : await clickUpJson<{ custom_items?: ClickUpCustomTaskType[] }>(`/team/${encodeURIComponent(workspaceId)}/custom_item`, token);
-      const taskResult = await getListTasks(snapshotList.id, token, { includeTiml: true });
+      // Within the full-sync interval only tasks edited since the last sync are downloaded.
+      const lastFullSync = Date.parse(safeText(snapshot.taskFullSyncedAt));
+      const lastTaskSync = Date.parse(safeText(snapshot.taskSyncedAt) || snapshot.syncedAt);
+      const incremental = requestUrl.searchParams.get("full") !== "1" && Number.isFinite(lastFullSync) && Number.isFinite(lastTaskSync) && Date.now() - lastFullSync < CLICKUP_FULL_SYNC_INTERVAL_MS;
+      const taskResult = await getListTasks(snapshotList.id, token, { includeTiml: true, ...(incremental ? { updatedAfter: lastTaskSync - CLICKUP_DELTA_OVERLAP_MS } : {}) });
       const rawTasks = Array.from(new Map(taskResult.tasks.filter(task => task.id).map(task => [task.id, task])).values());
       const previousTasks = [
         ...(snapshot.tasks as Array<{ id?: string; sprint?: string; sprintIds?: string[] }>),
@@ -414,8 +427,9 @@ export async function GET(request: Request) {
           .map((item): [string, string] => [String(item.id), safeText(item.name)])
           .filter(([, name]) => Boolean(name)),
       );
-      const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId);
-      const tasks = scopeDevReportTasks(mergeClickUpTaskSnapshot(snapshot.tasks as DevTask[], mappedTasks, taskResult.partial));
+      const previousTaskById = new Map((snapshot.tasks as DevTask[]).map(task => [task.id, task]));
+      const mappedTasks = mapClickUpTasks(rawTasks, customTaskTypes, previousSprintByTaskId, incremental ? previousTaskById : undefined);
+      const tasks = scopeDevReportTasks(mergeClickUpTaskSnapshot(snapshot.tasks as DevTask[], mappedTasks, incremental || taskResult.partial));
       const syncedAt = new Date().toISOString();
       const sprintNeedsFullRefresh = snapshot.sprintNeedsFullRefresh === true || tasks.some(task => !previousSprintByTaskId.has(task.id));
       const taskPartial = taskResult.partial;
@@ -425,7 +439,10 @@ export async function GET(request: Request) {
         tasks,
         taskPartial,
         masterIncludesTiml: true,
-        masterFetchedTaskCount: rawTasks.length,
+        masterFetchedTaskCount: incremental ? snapshot.masterFetchedTaskCount : rawTasks.length,
+        taskSyncMode: incremental ? "delta" : "full",
+        taskDeltaCount: incremental ? rawTasks.length : undefined,
+        taskFullSyncedAt: incremental || taskResult.partial ? snapshot.taskFullSyncedAt : syncedAt,
         sprintNeedsFullRefresh,
         partial: Boolean(taskPartial || snapshot.allProjectPartial || snapshot.sprintDiscoveryPartial || sprintNeedsFullRefresh || Number(snapshot.sprintSyncErrors)),
         availableFields: Array.from(new Set(tasks.flatMap(task => Object.keys(task.customFields)))).sort(),
@@ -584,6 +601,7 @@ export async function GET(request: Request) {
       availableTaskTypes: Array.from(new Set(["Task", "Milestone", ...customTaskTypes.values()])).sort(),
       customTaskTypeDefinitions: customTaskTypeData.custom_items || [],
       taskSyncedAt: syncedAt,
+      taskFullSyncedAt: taskResult.partial ? snapshot?.taskFullSyncedAt : syncedAt,
       allProjectTaskSyncedAt: discovery.allProjectList ? syncedAt : snapshot?.allProjectTaskSyncedAt,
       sprintSyncedAt: snapshot?.sprintSyncedAt || (sprints.length ? snapshot?.syncedAt : null),
       syncedAt,
@@ -596,4 +614,8 @@ export async function GET(request: Request) {
     const message = error instanceof Error && error.message === "B2C Master list олдсонгүй." ? error.message : "ClickUp-ийн Dev мэдээллийг татаж чадсангүй.";
     return Response.json({ error: message }, { status: 502 });
   }
+}
+
+export async function GET(request: Request) {
+  return shareInFlightResponse(`dev:${new URL(request.url).search}`, () => sync(request));
 }

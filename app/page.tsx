@@ -604,14 +604,14 @@ export default function Home() {
             <div className="ai-orb"><Sparkles size={25} /><span /></div>
             <div className="ai-content">
               <div className="ai-heading">
-                <div><span className="ai-label">GROQ AI · CLICKUP SNAPSHOT</span><h2>{summaryIsCurrent ? month.label : "Сонгосон сар"} — гол дүгнэлт</h2></div>
+                <div><span className="ai-label">GROQ AI · CLICKUP SNAPSHOT</span><h2>{summaryIsCurrent ? month.label : "Сонгосон сар"}: гол дүгнэлт</h2></div>
                 <button className="summarize-button" onClick={generateSummary} disabled={isSummarizing}>
                   {isSummarizing ? <LoaderCircle className="spin" size={16} /> : <RefreshCw size={15} />}
                   {isSummarizing ? "Нэгтгэж байна" : summaryIsCurrent ? "Дахин нэгтгэх" : "Энэ сарыг нэгтгэх"}
                 </button>
               </div>
               <div className={`summary-text ${isSummarizing ? "loading" : ""}`}>
-                {summary.split(/\n\s*\n/).map((paragraph, index) => <p key={`${month.key}-${dashboardAssignment}-${index}`}>{paragraph}</p>)}
+                {summary.split(/\n\s*\n/).map((paragraph, index) => <p key={`${month.key}-${dashboardAssignment}-${index}`}>{paragraph.replace(/\s+—\s+/g, ", ")}</p>)}
               </div>
               <div className="ai-meta"><span className="online-dot" />{summarySource === "groq" ? "Groq загвараар шинээр боловсруулав" : summarySource === "local" ? "Бэлтгэсэн нэгтгэл ашиглав" : "Өгөгдөлд суурилсан бэлтгэсэн дүгнэлт"}<span className="meta-separator" />Тоон үзүүлэлтийг автоматаар шалгасан</div>
             </div>

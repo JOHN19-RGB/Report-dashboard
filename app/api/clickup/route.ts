@@ -1,7 +1,8 @@
 import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../db/clickup-snapshot";
 import { proxyClickUpForLocalDevelopment } from "../../lib/clickup-local-proxy";
 import { requestClickUp } from "../../lib/clickup-request";
-import { readClickUpTaskPages } from "../../lib/clickup-pagination";
+import { mapWithConcurrency, readClickUpTaskPages, shareInFlightResponse } from "../../lib/clickup-pagination";
+import { CLICKUP_DELTA_OVERLAP_MS, mergeCxDelta, reportMonthWindows, shouldRunCxDeltaSync } from "../../lib/clickup-cx-sync";
 
 export const maxDuration = 300;
 
@@ -86,42 +87,247 @@ function resolveType(task: ClickUpTask) {
   };
 }
 
+const CX_REQUEST_OPTIONS = { timeoutMs: 50_000 };
+
 async function clickUpFetch(path: string, token: string) {
-  return requestClickUp(path, token);
+  return requestClickUp(path, token, fetch, undefined, CX_REQUEST_OPTIONS);
 }
 
-async function getCompletedSubtasks(token: string) {
-  const reportStart = Date.UTC(REPORT_YEAR, 0, 1);
-  const reportEnd = Date.UTC(REPORT_YEAR + 1, 0, 1);
+type TaskPage = { tasks?: ClickUpTask[]; last_page?: boolean };
 
+async function readListPages(label: string, token: string, buildQuery: (page: number) => URLSearchParams) {
   return readClickUpTaskPages<ClickUpTask>(async page => {
-    const query = new URLSearchParams({
-      page: String(page),
-      order_by: "due_date",
-      reverse: "true",
-      subtasks: "true",
-      include_closed: "true",
-      due_date_gt: String(reportStart - 1),
-      due_date_lt: String(reportEnd),
-    });
-    query.append("statuses[]", "complete");
-    const response = await clickUpFetch(`/list/${CX_DEV_TEAM_LIST_ID}/task?${query}`, token);
-    if (!response.ok) throw new Error(`ClickUp subtask page failed: ${response.status}`);
-
-    return response.json() as Promise<{ tasks?: ClickUpTask[]; last_page?: boolean }>;
+    const response = await clickUpFetch(`/list/${CX_DEV_TEAM_LIST_ID}/task?${buildQuery(page)}`, token);
+    if (!response.ok) throw new Error(`ClickUp ${label} page ${page} failed: ${response.status}`);
+    return response.json() as Promise<TaskPage>;
   }, { batchSize: 1 });
 }
 
-export async function GET(request: Request) {
+function getDailyTaskParents(token: string) {
+  return readListPages("parent", token, page => {
+    const query = new URLSearchParams({ include_closed: "true", subtasks: "true", include_timl: "true", page: String(page) });
+    query.append("statuses[]", "daily task");
+    return query;
+  });
+}
+
+/** One heavy year-wide query timed out on ClickUp; monthly windows stay small and run two at a time. */
+async function getCompletedSubtasks(token: string) {
+  const windows = await mapWithConcurrency(reportMonthWindows(REPORT_YEAR), 2, ({ start, end }) =>
+    readListPages(`subtask ${new Date(start).toISOString().slice(0, 7)}`, token, page => {
+      const query = new URLSearchParams({
+        page: String(page),
+        order_by: "due_date",
+        reverse: "true",
+        subtasks: "true",
+        include_closed: "true",
+        due_date_gt: String(start - 1),
+        due_date_lt: String(end),
+      });
+      query.append("statuses[]", "complete");
+      return query;
+    }),
+  );
+  return { tasks: windows.flatMap(window => window.tasks), partial: windows.some(window => window.partial) };
+}
+
+function getUpdatedTasks(token: string, since: number) {
+  return readListPages("delta", token, page => new URLSearchParams({
+    page: String(page),
+    subtasks: "true",
+    include_closed: "true",
+    include_timl: "true",
+    date_updated_gt: String(since),
+  }));
+}
+
+type ParentRow = { id: string; name: string; assignees: ReturnType<typeof mapAssignees> };
+
+function mapParent(task: ClickUpTask): ParentRow {
+  return { id: safeText(task.id), name: safeText(task.name, "Daily Task"), assignees: mapAssignees(task.assignees) };
+}
+
+function mapSubtask(task: ClickUpTask, parent: ParentRow) {
+  const taskAssignees = mapAssignees(task.assignees);
+  return {
+    id: safeText(task.id),
+    name: safeText(task.name),
+    parentId: parent.id,
+    parentName: parent.name,
+    assignment: taskAssignees.length > 0 ? taskAssignees : parent.assignees,
+    status: {
+      name: safeText(task.status?.status, "complete"),
+      color: safeColor(task.status?.color, "#168c80"),
+      type: safeText(task.status?.type),
+    },
+    type: resolveType(task),
+    dueDate: task.due_date || null,
+    timeEstimate: task.time_estimate || null,
+  };
+}
+
+type SubtaskRow = ReturnType<typeof mapSubtask>;
+
+function buildReport(workspace: ClickUpSnapshot["workspace"], parentRows: ParentRow[], subtaskRows: SubtaskRow[]) {
+  const parentById = new Map(parentRows.map(parent => [parent.id, parent]));
+  const countByParent = new Map<string, number>();
+  const subtasks = subtaskRows
+    .filter(task => parentById.has(task.parentId))
+    .map(task => ({ ...task, parentName: parentById.get(task.parentId)!.name }))
+    .sort((a, b) => Number(b.dueDate || 0) - Number(a.dueDate || 0));
+  for (const task of subtasks) countByParent.set(task.parentId, (countByParent.get(task.parentId) || 0) + 1);
+
+  const parents = parentRows.map(parent => ({
+    id: parent.id,
+    name: parent.name,
+    assignees: parent.assignees,
+    completedCount: countByParent.get(parent.id) || 0,
+    fetchedCount: countByParent.get(parent.id) || 0,
+    fetched: true,
+  }));
+
+  const peopleMap = new Map<
+    string,
+    {
+      id: string;
+      name: string;
+      color: string;
+      avatar: string | null;
+      parentIds: Set<string>;
+      completeSubtasks: number;
+      withType: number;
+      withEstimate: number;
+      estimateMs: number;
+    }
+  >();
+  const personByParent = new Map<string, string>();
+
+  for (const parent of parents) {
+    const owner = parent.assignees[0];
+    if (!owner?.name || !CX_TEAM_MEMBERS.includes(owner.name)) continue;
+    const id = String(owner.id || owner.name);
+    const person = peopleMap.get(id) || {
+      id,
+      name: owner.name,
+      color: owner.color,
+      avatar: owner.avatar,
+      parentIds: new Set<string>(),
+      completeSubtasks: 0,
+      withType: 0,
+      withEstimate: 0,
+      estimateMs: 0,
+    };
+    person.parentIds.add(parent.id);
+    personByParent.set(parent.id, id);
+    peopleMap.set(id, person);
+  }
+
+  for (const task of subtasks) {
+    const person = peopleMap.get(personByParent.get(task.parentId) || "");
+    if (!person) continue;
+    person.completeSubtasks += 1;
+    person.withType += task.type ? 1 : 0;
+    person.withEstimate += task.timeEstimate ? 1 : 0;
+    person.estimateMs += task.timeEstimate || 0;
+  }
+
+  const people = Array.from(peopleMap.values())
+    .map(person => ({
+      ...person,
+      parentIds: Array.from(person.parentIds),
+    }))
+    .sort((a, b) => CX_TEAM_MEMBERS.indexOf(a.name) - CX_TEAM_MEMBERS.indexOf(b.name));
+
+  return {
+    workspace,
+    list: { id: CX_DEV_TEAM_LIST_ID, name: "CX Dev.Team" },
+    reportYear: REPORT_YEAR,
+    people,
+    parents,
+    subtasks,
+    summary: {
+      dailyTaskParents: parents.length,
+      completeSubtasks: subtasks.length,
+      withType: subtasks.filter(task => task.type).length,
+      withEstimate: subtasks.filter(task => task.timeEstimate).length,
+      estimateMs: subtasks.reduce((sum, task) => sum + (task.timeEstimate || 0), 0),
+    },
+    dataQuality: {
+      missingAssignment: subtasks.filter(task => task.assignment.length === 0).length,
+      missingStatus: subtasks.filter(task => !task.status.name).length,
+      missingType: subtasks.filter(task => !task.type).length,
+      missingDueDate: subtasks.filter(task => !task.dueDate).length,
+      missingTimeEstimate: subtasks.filter(task => !task.timeEstimate).length,
+    },
+  };
+}
+
+async function fullSync(token: string) {
+  const [teamsResponse, parentPageResult, completedSubtaskResult] = await Promise.all([
+    clickUpFetch("/team", token),
+    getDailyTaskParents(token),
+    getCompletedSubtasks(token),
+  ]);
+  if (!teamsResponse.ok) throw new Error(`ClickUp workspace request failed: ${teamsResponse.status}`);
+
+  const teamsData = (await teamsResponse.json()) as {
+    teams?: Array<{ id?: string; name?: string; color?: string; members?: unknown[] }>;
+  };
+  const configuredWorkspace = process.env.CLICKUP_WORKSPACE_ID;
+  const team = teamsData.teams?.find(item => item.id === configuredWorkspace) || teamsData.teams?.[0];
+  if (!team?.id) throw new Error("No accessible ClickUp workspace");
+  const workspace = {
+    id: team.id,
+    name: safeText(team.name, "ClickUp Workspace"),
+    color: safeColor(team.color, "#7b68ee"),
+    memberCount: Array.isArray(team.members) ? team.members.length : 0,
+  };
+
+  const parentRows = parentPageResult.tasks.filter(task => task.id).map(mapParent);
+  const parentById = new Map(parentRows.map(parent => [parent.id, parent]));
+  const subtaskRows = completedSubtaskResult.tasks.flatMap(task => {
+    const parent = parentById.get(safeText(task.parent));
+    return parent ? [mapSubtask(task, parent)] : [];
+  });
+  const syncedAt = new Date().toISOString();
+  return {
+    ...buildReport(workspace, parentRows, subtaskRows),
+    partial: parentPageResult.partial || completedSubtaskResult.partial,
+    syncMode: "full",
+    fullSyncedAt: syncedAt,
+    syncedAt,
+  } satisfies ClickUpSnapshot;
+}
+
+async function deltaSync(token: string, snapshot: ClickUpSnapshot) {
+  const since = Date.parse(snapshot.syncedAt) - CLICKUP_DELTA_OVERLAP_MS;
+  const delta = await getUpdatedTasks(token, since);
+  if (delta.partial) return null;
+  const merged = mergeCxDelta(
+    (snapshot.parents as ParentRow[]).map(({ id, name, assignees }) => ({ id, name, assignees })),
+    snapshot.subtasks as SubtaskRow[],
+    delta.tasks,
+    { year: REPORT_YEAR, mapParent, mapSubtask },
+  );
+  return {
+    ...buildReport(snapshot.workspace, merged.parents, merged.subtasks),
+    partial: snapshot.partial === true,
+    syncMode: "delta",
+    deltaTaskCount: delta.tasks.length,
+    fullSyncedAt: snapshot.fullSyncedAt,
+    syncedAt: new Date().toISOString(),
+  } satisfies ClickUpSnapshot;
+}
+
+async function sync(request: Request) {
   try {
-    const refresh = new URL(request.url).searchParams.get("refresh") === "1";
-    if (!refresh) {
-      const snapshot = await readSnapshot();
-      if (snapshot) {
-        return Response.json({ ...snapshot, cacheSource: "snapshot" }, {
-          headers: { "Cache-Control": "private, no-store" },
-        });
-      }
+    const params = new URL(request.url).searchParams;
+    const refresh = params.get("refresh") === "1";
+    const snapshot = await readSnapshot();
+    if (!refresh && snapshot) {
+      return Response.json({ ...snapshot, cacheSource: "snapshot" }, {
+        headers: { "Cache-Control": "private, no-store" },
+      });
     }
 
     const token = process.env.CLICKUP_API_TOKEN;
@@ -131,167 +337,7 @@ export async function GET(request: Request) {
       return Response.json({ error: "ClickUp API тохиргоо хийгдээгүй байна." }, { status: 503 });
     }
 
-    const parentQuery = new URLSearchParams({
-      include_closed: "true",
-      subtasks: "true",
-      page: "0",
-    });
-    parentQuery.append("statuses[]", "daily task");
-
-    const [teamsResponse, parentPageResult, completedSubtaskResult] = await Promise.all([
-      clickUpFetch("/team", token),
-      readClickUpTaskPages<ClickUpTask>(async page => {
-        const query = new URLSearchParams(parentQuery);
-        query.set("page", String(page));
-        query.set("include_timl", "true");
-        const response = await clickUpFetch(`/list/${CX_DEV_TEAM_LIST_ID}/task?${query}`, token);
-        if (!response.ok) throw new Error(`ClickUp parent page failed: ${response.status}`);
-        return response.json() as Promise<{ tasks?: ClickUpTask[]; last_page?: boolean }>;
-      }),
-      getCompletedSubtasks(token),
-    ]);
-
-    if (!teamsResponse.ok) {
-      return Response.json({ error: "ClickUp workspace мэдээлэл татаж чадсангүй." }, { status: teamsResponse.status });
-    }
-
-    const teamsData = (await teamsResponse.json()) as {
-      teams?: Array<{ id?: string; name?: string; color?: string; members?: unknown[] }>;
-    };
-    const configuredWorkspace = process.env.CLICKUP_WORKSPACE_ID;
-    const workspace = teamsData.teams?.find((team) => team.id === configuredWorkspace) || teamsData.teams?.[0];
-    if (!workspace?.id) {
-      return Response.json({ error: "Хандах боломжтой ClickUp workspace олдсонгүй." }, { status: 404 });
-    }
-
-    const dailyTaskParents = parentPageResult.tasks;
-    const parentIds = new Set(dailyTaskParents.map(parent => safeText(parent.id)).filter(Boolean));
-    const subtasksByParent = new Map<string, ClickUpTask[]>();
-    for (const task of completedSubtaskResult.tasks) {
-      const parentId = safeText(task.parent);
-      if (!parentIds.has(parentId)) continue;
-      const siblings = subtasksByParent.get(parentId) || [];
-      siblings.push(task);
-      subtasksByParent.set(parentId, siblings);
-    }
-    const parentResults = dailyTaskParents.map(parent => ({ parent, subtasks: subtasksByParent.get(safeText(parent.id)) || [] }));
-
-    const parents = parentResults.map(({ parent, subtasks }) => ({
-      id: safeText(parent.id),
-      name: safeText(parent.name, "Daily Task"),
-      assignees: mapAssignees(parent.assignees),
-      completedCount: subtasks.length,
-      fetchedCount: subtasks.length,
-      fetched: true,
-    }));
-
-    const subtasks = parentResults
-      .flatMap(({ parent, subtasks: children }) =>
-        children.map((task) => {
-          const taskAssignees = mapAssignees(task.assignees);
-          return {
-            id: safeText(task.id),
-            name: safeText(task.name),
-            parentId: safeText(parent.id),
-            parentName: safeText(parent.name, "Daily Task"),
-            assignment: taskAssignees.length > 0 ? taskAssignees : mapAssignees(parent.assignees),
-            status: {
-              name: safeText(task.status?.status, "complete"),
-              color: safeColor(task.status?.color, "#168c80"),
-              type: safeText(task.status?.type),
-            },
-            type: resolveType(task),
-            dueDate: task.due_date || null,
-            timeEstimate: task.time_estimate || null,
-          };
-        }),
-      )
-      .sort((a, b) => Number(b.dueDate || 0) - Number(a.dueDate || 0));
-
-    const peopleMap = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        color: string;
-        avatar: string | null;
-        parentIds: Set<string>;
-        completeSubtasks: number;
-        withType: number;
-        withEstimate: number;
-        estimateMs: number;
-      }
-    >();
-
-    for (const parent of parents) {
-      const owner = parent.assignees[0];
-      if (!owner?.name || !CX_TEAM_MEMBERS.includes(owner.name)) continue;
-      const id = String(owner.id || owner.name);
-      const person = peopleMap.get(id) || {
-        id,
-        name: owner.name,
-        color: owner.color,
-        avatar: owner.avatar,
-        parentIds: new Set<string>(),
-        completeSubtasks: 0,
-        withType: 0,
-        withEstimate: 0,
-        estimateMs: 0,
-      };
-      person.parentIds.add(parent.id);
-      peopleMap.set(id, person);
-    }
-
-    for (const task of subtasks) {
-      const person = Array.from(peopleMap.values()).find((item) => item.parentIds.has(task.parentId));
-      if (!person) continue;
-      person.completeSubtasks += 1;
-      person.withType += task.type ? 1 : 0;
-      person.withEstimate += task.timeEstimate ? 1 : 0;
-      person.estimateMs += task.timeEstimate || 0;
-    }
-
-    const people = Array.from(peopleMap.values())
-      .map((person) => ({
-        ...person,
-        parentIds: Array.from(person.parentIds),
-      }))
-      .sort((a, b) => CX_TEAM_MEMBERS.indexOf(a.name) - CX_TEAM_MEMBERS.indexOf(b.name));
-
-    const estimateMs = subtasks.reduce((sum, task) => sum + (task.timeEstimate || 0), 0);
-    const withType = subtasks.filter((task) => task.type).length;
-    const withEstimate = subtasks.filter((task) => task.timeEstimate).length;
-    const dataQuality = {
-      missingAssignment: subtasks.filter((task) => task.assignment.length === 0).length,
-      missingStatus: subtasks.filter((task) => !task.status.name).length,
-      missingType: subtasks.filter((task) => !task.type).length,
-      missingDueDate: subtasks.filter((task) => !task.dueDate).length,
-      missingTimeEstimate: subtasks.filter((task) => !task.timeEstimate).length,
-    };
-
-    const payload = {
-      workspace: {
-        id: workspace.id,
-        name: safeText(workspace.name, "ClickUp Workspace"),
-        color: safeColor(workspace.color, "#7b68ee"),
-        memberCount: Array.isArray(workspace.members) ? workspace.members.length : 0,
-      },
-      list: { id: CX_DEV_TEAM_LIST_ID, name: "CX Dev.Team" },
-      reportYear: REPORT_YEAR,
-      people,
-      parents,
-      subtasks,
-      summary: {
-        dailyTaskParents: parents.length,
-        completeSubtasks: subtasks.length,
-        withType,
-        withEstimate,
-        estimateMs,
-      },
-      dataQuality,
-      partial: parentPageResult.partial || completedSubtaskResult.partial,
-      syncedAt: new Date().toISOString(),
-    } satisfies ClickUpSnapshot;
+    const payload = (params.get("full") !== "1" && snapshot && shouldRunCxDeltaSync(snapshot) && await deltaSync(token, snapshot)) || await fullSync(token);
 
     // Never replace the last complete report with a truncated refresh.
     if (!payload.partial) await saveSnapshot(payload);
@@ -301,7 +347,14 @@ export async function GET(request: Request) {
         "Cache-Control": "private, no-store",
       },
     });
-  } catch {
-    return Response.json({ error: "ClickUp API-тай холбогдоход алдаа гарлаа." }, { status: 502 });
+  } catch (error) {
+    console.error("CX ClickUp sync failed", error);
+    const detail = process.env.NODE_ENV === "development" && error instanceof Error ? { detail: error.message } : {};
+    return Response.json({ error: "ClickUp API-тай холбогдоход алдаа гарлаа.", ...detail }, { status: 502 });
   }
+}
+
+export async function GET(request: Request) {
+  const params = new URL(request.url).searchParams;
+  return shareInFlightResponse(`cx:${params.get("refresh") || ""}:${params.get("full") || ""}`, () => sync(request));
 }

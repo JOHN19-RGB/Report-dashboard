@@ -29,3 +29,29 @@ export async function readClickUpTaskPages<T extends { id?: string }>(
   }
   return { tasks: [...tasks.values()], partial: true, pagesRead };
 }
+
+/** Runs `run` over `items` with at most `limit` requests in flight, preserving input order. */
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, run: (item: T, index: number) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await run(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+const inFlightResponses = new Map<string, Promise<Response>>();
+
+/** Concurrent identical sync requests on one instance share a single ClickUp run. */
+export async function shareInFlightResponse(key: string, run: () => Promise<Response>) {
+  let pending = inFlightResponses.get(key);
+  if (!pending) {
+    pending = run().finally(() => inFlightResponses.delete(key));
+    inFlightResponses.set(key, pending);
+  }
+  return (await pending).clone();
+}

@@ -69,7 +69,7 @@ export default function DevTeamComparison({ data }: { data: DevReportData | null
   return <section className="ai-panel dev-comparison-summary">
     <div className="ai-orb" aria-hidden="true"><Sparkles size={23} /><span /></div>
     <div className="ai-content">
-      <div className="ai-heading"><div><div className="ai-label">GROQ AI · CLICKUP SNAPSHOT</div><h2>Сонгосон сар — гол дүгнэлт</h2><p className="dev-summary-subtitle">CX & Dev · Bug / IMP дүгнэлт</p></div><div className="dev-summary-controls"><label>Тайлант сар<select aria-label="CX Dev дүгнэлтийн сар" value={month} disabled={loading} onChange={event => setMonth(event.target.value)}>{Array.from({ length: 12 }, (_, index) => <option key={index} value={String(index + 1).padStart(2, "0")}>{year} · {index + 1}-р сар</option>)}</select></label><button className="summarize-button" type="button" disabled={loading || !data} onClick={() => void generate()}>{loading ? <RefreshCw size={15} className="spin" /> : <Sparkles size={15} />}{loading ? "Нэгтгэж байна" : "Дүгнэлт гаргах"}</button></div></div>
+      <div className="ai-heading"><div><div className="ai-label">GROQ AI · CLICKUP SNAPSHOT</div><h2>Сонгосон сар: гол дүгнэлт</h2><p className="dev-summary-subtitle">CX & Dev · Bug / IMP дүгнэлт</p></div><div className="dev-summary-controls"><label>Тайлант сар<select aria-label="CX Dev дүгнэлтийн сар" value={month} disabled={loading} onChange={event => setMonth(event.target.value)}>{Array.from({ length: 12 }, (_, index) => <option key={index} value={String(index + 1).padStart(2, "0")}>{year} · {index + 1}-р сар</option>)}</select></label><button className="summarize-button" type="button" disabled={loading || !data} onClick={() => void generate()}>{loading ? <RefreshCw size={15} className="spin" /> : <Sparkles size={15} />}{loading ? "Нэгтгэж байна" : "Дүгнэлт гаргах"}</button></div></div>
       <div className="dev-summary-content">
       {error && <p className="dev-summary-error" role="alert">{error}</p>}
       {!summary && <div className="dev-summary-empty"><Sparkles size={18} /><div><strong>Сарын дүгнэлт бэлэн болоогүй байна</strong><span>Сараа сонгоод ClickUp өгөгдлийг нэгтгэнэ үү.</span></div></div>}
@@ -77,7 +77,7 @@ export default function DevTeamComparison({ data }: { data: DevReportData | null
         <div className="dev-summary-overview">
           <div className="dev-summary-insight" aria-live="polite">
             <span><Sparkles size={14} /> AI НЭГТГЭЛ</span>
-            <p>{insight}</p>
+            <p>{insight.replace(/\s+—\s+/g, ", ")}</p>
           </div>
           <div className="dev-summary-stats" aria-label="CX Dev баталгаажуулсан тоонууд">
             <article><span>CX</span><strong>{facts.cx.bug + facts.cx.imp}</strong><small><b data-summary="cx-bug">{facts.cx.bug}</b> Bug · <b data-summary="cx-imp">{facts.cx.imp}</b> IMP</small></article>

@@ -569,7 +569,7 @@ export default function DevAllProjectDashboard() {
             <article>
               {projectRoots.length ? <>
                 {currentProjectSummaryError && <p className="all-project-summary-error" role="alert">{currentProjectSummaryError}</p>}
-                <p className="all-project-summary-intro" aria-live="polite">{currentProjectSummary?.summary.introduction && <>{currentProjectSummary.summary.introduction} </>}Тайлант хугацаанд нийт <strong>{projectRoots.length} төсөл</strong> төлөвлөгдөн хийгдсэнээс гүйцэтгэлийн явц <strong>{completion}%</strong>-ийн биелэлттэй байна. Доорх төлөв дээр дарж үндсэн таскуудыг харна уу.</p>
+                <p className="all-project-summary-intro" aria-live="polite">{currentProjectSummary?.summary.introduction && <>{currentProjectSummary.summary.introduction.replace(/\s+—\s+/g, ", ")} </>}Тайлант хугацаанд нийт <strong>{projectRoots.length} төсөл</strong> төлөвлөгдөн хийгдсэнээс гүйцэтгэлийн явц <strong>{completion}%</strong>-ийн биелэлттэй байна. Доорх төлөв дээр дарж үндсэн таскуудыг харна уу.</p>
                 {([
                   { key: "done", heading: "Дууссан төслүүд", description: `Нийт ${done} төсөл бүрэн дууссан.${doneEstimateMs > 0 ? ` Эдгээр төслийн шууд ажлуудад нийт ${formatNarrativeDuration(doneEstimateMs)} тооцоолсон байна.` : ""}` },
                   { key: "inProgress", heading: "Явцтай төслүүд", description: `${projectStatusCounts.inProgress} төсөл хуваарийн дагуу хэрэгжиж байна.` },
@@ -582,7 +582,7 @@ export default function DevAllProjectDashboard() {
                   const share = Math.round(tasks.length / projectRoots.length * 100);
                   return <details className="all-project-summary-status" data-status={section.key} name="project-summary-status" key={section.key}>
                     <summary>
-                      <span className="all-project-summary-status-copy"><i style={{ background: status.color }} /><span><b>{section.heading} ({status.label} — {share}%)</b><small>{section.description}</small></span></span>
+                      <span className="all-project-summary-status-copy"><i style={{ background: status.color }} /><span><b>{section.heading} ({status.label}, {share}%)</b><small>{section.description}</small></span></span>
                       <span className="all-project-summary-status-action"><b>{tasks.length} таск</b><ChevronDown size={15} /></span>
                     </summary>
                     <div className="all-project-summary-task-list">
