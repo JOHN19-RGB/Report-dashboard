@@ -27,6 +27,8 @@ test("server-renders the work report dashboard", async () => {
   assert.match(html, /href="\/"[^>]*>CX<\/a>/);
   assert.match(html, /Dev\.Master/);
   assert.match(html, /Dev\.All project/);
+  assert.match(html, /href="\/customer-file"[^>]*>Customer file<\/a>/);
+  assert.doesNotMatch(html, /customer-section-title|href="\/customer-file\/payments"/);
   assert.doesNotMatch(html, /CX\.Master|CX\.All project|B2C\.Master/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Building your site/i);
 });
@@ -279,4 +281,45 @@ test("removes starter preview and keeps API credentials server-side", async () =
   assert.match(layout, /openGraph/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.doesNotMatch(packageJson, /site-creator-vinext-starter/);
+});
+
+test("renders the Customer file overview, sites and payment pages", async () => {
+  const [overview, sites, filtered, payments] = await Promise.all([
+    render("/customer-file"), render("/customer-file/sites"), render("/customer-file/sites?specialist=%D0%9C%D0%B8%D1%88%D1%8D%D1%8D%D0%BB"), render("/customer-file/payments?provider=wallet%3Atoki"),
+  ]);
+  for (const response of [overview, sites, filtered, payments]) assert.equal(response.status, 200);
+  const [overviewHtml, sitesHtml, filteredHtml, paymentsHtml] = await Promise.all([overview.text(), sites.text(), filtered.text(), payments.text()]);
+
+  assert.match(overviewHtml, /<h1>Customer file<span>\.<\/span><\/h1>/);
+  assert.match(overviewHtml, /class="customer-tabs"[\s\S]*?href="\/customer-file"[^>]*aria-current="page"[^>]*>Тойм<\/a>/);
+  assert.match(overviewHtml, /class="sidebar-section active"[^>]*><a href="\/customer-file"/);
+  assert.match(overviewHtml, /Төлөвийн бүтэц/);
+  assert.match(overviewHtml, /class="customer-donut"/);
+  assert.match(overviewHtml, /class="customer-portfolio-stack"/);
+  assert.match(overviewHtml, /href="\/customer-file\/sites\?status=Active"/);
+  assert.doesNotMatch(overviewHtml, /customer-table/);
+
+  assert.match(sitesHtml, /href="\/customer-file\/sites"[^>]*aria-current="page"[^>]*>Сайтууд<\/a>/);
+  assert.doesNotMatch(sitesHtml, /href="\/customer-file\/sites\/new"/, "no database in tests, so the add button is hidden");
+  assert.equal((sitesHtml.match(/class="customer-row"/g) ?? []).length, 15);
+  assert.match(sitesHtml, /118(?:<!-- -->)? сайт/);
+  assert.match(filteredHtml, /34(?:<!-- -->)? сайт/);
+  assert.match(filteredHtml, /Хариуцагч(?:<!-- -->)?:<\/span><b>Мишээл<\/b>/);
+  assert.doesNotMatch(filteredHtml, />118(?:<!-- -->)? сайт</);
+
+  assert.match(paymentsHtml, /Төлбөрийн хэрэгсэл<span>\.<\/span>/);
+  assert.match(paymentsHtml, /Ангилал сонгох/);
+  assert.match(paymentsHtml, /<h2 id="customer-payment-sites-title">Toki(?:<!-- -->)? · /);
+  assert.match(paymentsHtml, /class="customer-donut"|Цахим хэтэвч/);
+});
+
+test("renders the add-site form and a not-found state for unknown edit ids", async () => {
+  const [created, missing] = await Promise.all([render("/customer-file/sites/new?domain=shop.mn"), render("/customer-file/sites/edit?id=d%3Anope.mn")]);
+  assert.equal(created.status, 200);
+  const html = await created.text();
+  assert.match(html, /<h1>Шинэ сайт<span>\.<\/span><\/h1>/);
+  assert.match(html, /value="shop\.mn"/);
+  assert.match(html, /Өгөгдлийн сан холбогдоогүй байна/);
+  assert.match(html, /Үндсэн мэдээлэл[\s\S]*Төлөв ба багц[\s\S]*Хариуцагч ба идэвх[\s\S]*Төлбөрийн хэрэгсэл[\s\S]*Google Analytics/);
+  assert.match(await missing.text(), /Сайт олдсонгүй/);
 });

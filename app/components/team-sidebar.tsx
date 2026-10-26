@@ -11,7 +11,7 @@ export default function TeamSidebar({
   open,
   onClose,
 }: {
-  section?: "cx" | "dev";
+  section?: "cx" | "dev" | "customers";
   page?: SidebarPage;
   open: boolean;
   onClose: () => void;
@@ -30,6 +30,10 @@ export default function TeamSidebar({
             <Link href="/dev/master" className={`nav-item ${section === "dev" && page === "master" ? "active" : ""}`} aria-current={section === "dev" && page === "master" ? "page" : undefined} onClick={onClose}>Dev.Master</Link>
             <Link href="/dev/all-project" className={`nav-item ${section === "dev" && page === "all-project" ? "active" : ""}`} aria-current={section === "dev" && page === "all-project" ? "page" : undefined} onClick={onClose}>Dev.All project</Link>
           </div>
+        </section>
+        <span className="team-nav-label sidebar-group-label">МЭДЭЭЛЭЛ</span>
+        <section className={`sidebar-section ${section === "customers" ? "active" : ""}`} aria-label="Customer file">
+          <Link href="/customer-file" className="sidebar-section-title sidebar-section-link" aria-current={section === "customers" ? "page" : undefined} onClick={onClose}>Customer file</Link>
         </section>
       </nav>
       <div className="sidebar-footer">Cody · B2C · Ажлын тайлан</div>
