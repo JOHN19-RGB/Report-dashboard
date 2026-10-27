@@ -3689,12 +3689,16 @@ button {
 
 .customer-hero { margin-bottom: 18px; }
 .customer-page-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 20px; margin-bottom: 26px; border-bottom: 1px solid var(--line); }
-.customer-tabs { display: flex; gap: 26px; }
+.customer-tabs { position: relative; display: flex; gap: 26px; }
 .customer-tabs a { position: relative; padding: 4px 0 13px; color: #7e8798; font-size: 13px; font-weight: 650; text-decoration: none; transition: color .15s ease; }
 .customer-tabs a::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px; background: transparent; content: ""; transition: background .2s ease; }
 .customer-tabs a:hover { color: var(--ink); }
 .customer-tabs a.active { color: var(--ink); }
-.customer-tabs a.active::after { background: var(--accent); }
+.customer-tabs-indicator { position: absolute; bottom: -1px; left: 0; width: 0; height: 2px; border-radius: 2px; background: var(--accent); pointer-events: none; transition: transform .34s cubic-bezier(.2,.8,.2,1), width .34s cubic-bezier(.2,.8,.2,1); }
+/* One short fade on the page body replaces the staggered CX entrance, which replayed on every tab switch. */
+.customer-file-dashboard :is(.customer-hero, .dev-dashboard-filters, .dev-kpi-card, .dev-panel, .customer-company-card) { animation: none; }
+.customer-page-body { animation: customerBodyIn .24s ease both; }
+@keyframes customerBodyIn { from { opacity: .35; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .customer-page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 10px; }
 .customer-button { display: inline-flex; height: 40px; align-items: center; justify-content: center; gap: 7px; padding: 0 16px; border: 1px solid transparent; border-radius: 10px; font-size: 12.5px; font-weight: 700; text-decoration: none; white-space: nowrap; cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
 .customer-button.primary { background: var(--navy); color: #fff; }
@@ -3920,6 +3924,18 @@ button {
 .customer-extras span.on { border-color: #cfeee2; background: #f1fbf7; color: #148a61; }
 .customer-extras.summary { flex-shrink: 0; margin-top: 0; }
 .customer-extras.summary b { color: var(--ink); font-size: 11px; }
+.customer-extras.summary button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: #9aa1ae; font-size: 10.5px; font-weight: 650; cursor: pointer; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.customer-extras.summary button.on { border-color: #cfeee2; background: #f1fbf7; color: #148a61; }
+.customer-extras.summary button.on:hover { border-color: #9edcc4; }
+.customer-extras.summary button.selected { border-color: #1fa978; box-shadow: 0 0 0 3px rgb(31 169 120 / 14%); }
+.customer-extras.summary button:disabled { cursor: default; opacity: .6; }
+.customer-category-grid button:disabled { cursor: default; opacity: .5; }
+.customer-category-grid button:disabled:hover { transform: none; border-color: var(--line); box-shadow: none; }
+.customer-provider-unused { margin: 4px 28px 22px; padding: 10px 12px; border-radius: 10px; background: #f7f8fa; color: #8a92a1; font-size: 11px; line-height: 1.55; }
+.customer-provider-unused b { color: #5f687a; font-weight: 650; }
+.customer-payment-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0 28px 12px; }
+.customer-payment-tools .customer-active-filters { margin: 0; }
+.customer-payment-search { width: min(300px, 100%); }
 .customer-drawer-warning { margin: 0; padding: 12px 14px; border: 1px solid #f6dfae; border-radius: 11px; background: #fff8e8; color: #8a5a00; font-size: 11.5px; line-height: 1.55; }
 
 .customer-scope-toggle { grid-template-columns: repeat(2, minmax(96px, 1fr)); background: #fff; }

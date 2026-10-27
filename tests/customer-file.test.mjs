@@ -120,6 +120,10 @@ test("site filters round-trip through the URL and ignore unknown keys", () => {
   assert.equal(query, "specialist=%D0%9C%D0%B8%D1%88%D1%8D%D1%8D%D0%BB&segment=Top");
   const parsed = parseCustomerFilters({ ...Object.fromEntries(new URLSearchParams(query)), evil: "x" });
   assert.deepEqual(parsed, { ...EMPTY_CUSTOMER_FILTERS, specialist: "Мишээл", segment: "Top" });
+  // The search box is controlled by the parsed value, so a just-typed space must survive the round trip.
+  assert.equal(parseCustomerFilters({ search: "Номин " }).search, "Номин ");
+  assert.equal(parseCustomerFilters({ search: "   " }).search, "");
+  assert.equal(parseCustomerFilters({ status: " Active " }).status, "Active");
 });
 
 const providerKeys = new Set(paymentData.categories.flatMap(category => category.providers.map(provider => provider.key)));

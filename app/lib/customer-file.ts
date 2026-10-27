@@ -280,7 +280,8 @@ export function parseCustomerFilters(params: Record<string, string | string[] | 
   for (const key of FILTER_KEYS) {
     const value = params[key];
     const text = Array.isArray(value) ? value[0] : value;
-    if (text?.trim()) filters[key] = text.trim().slice(0, 120);
+    // Search keeps its spaces: the box is controlled by this value, so trimming would eat the space someone just typed.
+    if (text?.trim()) filters[key] = (key === "search" ? text : text.trim()).slice(0, 120);
   }
   return filters;
 }
