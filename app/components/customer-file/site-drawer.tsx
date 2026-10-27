@@ -4,6 +4,7 @@ import { BarChart3, Check, ChevronRight, CreditCard, ExternalLink, Gift, Globe2,
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { GA_STATUSES, groupPaymentMethods, relatedCustomerSites, siteLabel, type CustomerSite, type EditedSite, type LinkedPayment } from "../../lib/customer-file";
 import { ActivityMeter, PAYMENT_DATA, StatusChip, editSiteHref, formatDate, initials, newSiteHref, paymentsHref, sitesHref, useCustomerData } from "./shared";
 
@@ -15,7 +16,9 @@ export function useSiteDrawer() {
   const close = useCallback(() => setTarget(null), []);
   const site = target && "siteId" in target ? sites.find(item => item.id === target.siteId) ?? null : target && "paymentId" in target ? payments.find(item => item.id === target.paymentId)?.site ?? null : null;
   const payment = site ? paymentsBySite.get(site.id) ?? null : target && "paymentId" in target ? payments.find(item => item.id === target.paymentId) ?? null : null;
-  const drawer = site || payment ? <SiteDrawer site={site} payment={payment} onClose={close} onOpenSite={siteId => setTarget({ siteId })} /> : null;
+  // Portaled to <body> so no animated or overflow-clipped ancestor can trap the fixed drawer (it only opens on click, so
+  // document is always available here).
+  const drawer = site || payment ? createPortal(<div className="dev-dashboard customer-file-dashboard customer-drawer-layer"><SiteDrawer site={site} payment={payment} onClose={close} onOpenSite={siteId => setTarget({ siteId })} /></div>, document.body) : null;
   return { drawer, openSite: (siteId: string) => setTarget({ siteId }), openPayment: (paymentId: string) => setTarget({ paymentId }) };
 }
 
@@ -116,7 +119,7 @@ function SiteSections({ site, payment, onOpenSite }: { site: CustomerSite; payme
   // Only show attributes the sheet actually fills in, so sparse rows stay short.
   const facts = ([
     ["Site version", site.siteVersion], ["Багц", site.package], ["Сегмент", site.segment], ["Plan", site.plan],
-    ["Бизнес модел", site.businessModel], ["Төрөл", site.type], ["Бүлэг", site.group], ["Салбар", site.industry],
+    ["Харилцагчийн төрөл", site.ownerType], ["Бизнес модел", site.businessModel], ["Төрөл", site.type], ["Бүлэг", site.group], ["Салбар", site.industry],
   ] as Array<[string, string | null]>).filter(([, value]) => value);
 
   return <>

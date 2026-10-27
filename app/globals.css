@@ -3697,8 +3697,10 @@ button {
 .customer-tabs-indicator { position: absolute; bottom: -1px; left: 0; width: 0; height: 2px; border-radius: 2px; background: var(--accent); pointer-events: none; transition: transform .34s cubic-bezier(.2,.8,.2,1), width .34s cubic-bezier(.2,.8,.2,1); }
 /* One short fade on the page body replaces the staggered CX entrance, which replayed on every tab switch. */
 .customer-file-dashboard :is(.customer-hero, .dev-dashboard-filters, .dev-kpi-card, .dev-panel, .customer-company-card) { animation: none; }
-.customer-page-body { animation: customerBodyIn .24s ease both; }
-@keyframes customerBodyIn { from { opacity: .35; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+/* Opacity only, and no fill afterwards: a transform (even a finished one kept by fill-mode) turns this box into the
+   containing block for the position:fixed drawer and clips it to the page body. */
+.customer-page-body { animation: customerBodyIn .24s ease backwards; }
+@keyframes customerBodyIn { from { opacity: .35; } to { opacity: 1; } }
 .customer-page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 10px; }
 .customer-button { display: inline-flex; height: 40px; align-items: center; justify-content: center; gap: 7px; padding: 0 16px; border: 1px solid transparent; border-radius: 10px; font-size: 12.5px; font-weight: 700; text-decoration: none; white-space: nowrap; cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
 .customer-button.primary { background: var(--navy); color: #fff; }
@@ -3800,6 +3802,8 @@ button {
 .customer-company-sites button > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .customer-company-card > footer { display: flex; align-items: center; gap: 6px; margin-top: auto; padding: 10px 16px; border-top: 1px solid #f0f1f5; color: #7e8491; font-size: 10.5px; }
 
+/* Wrapper of the portaled drawer: carries the dashboard's fonts and variables without adding a box. */
+.customer-drawer-layer { display: contents; }
 .customer-drawer-backdrop { position: fixed; z-index: 60; inset: 0; border: 0; background: rgb(23 35 61 / 32%); cursor: pointer; animation: devTypeBackdropIn .2s ease both; }
 .customer-drawer { position: fixed; z-index: 61; top: 0; right: 0; bottom: 0; display: flex; width: min(520px, 100%); flex-direction: column; background: var(--canvas); box-shadow: -20px 0 50px rgb(23 34 58 / 18%); animation: customerDrawerIn .28s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes customerDrawerIn { from { transform: translateX(32px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
