@@ -97,7 +97,7 @@ async function lockEditing(router: ReturnType<typeof useRouter>) {
 export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { sites, payments, paymentsBySite, editsAvailable, editLocked, passcodeLock } = useCustomerData();
+  const { sites, payments, paymentsBySite, editsAvailable, editLocked, passcodeLock, passcodeMissing } = useCustomerData();
   const id = mode === "edit" ? searchParams.get("id") : null;
   const original = id ? sites.find(site => site.id === id) ?? null : null;
 
@@ -171,7 +171,7 @@ export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
 
   return <CustomerFileShell page="sites" variant="form" title={title} description={mode === "new" ? "Customer file-д шинэ харилцагчийн сайт бүртгэх" : "Өөрчлөлт Site info-гийн импортыг дарж хадгалагдана · хүссэн үедээ анхны утга руу буцааж болно"}>
     {editLocked ? <EditUnlock /> : <>
-    {!editsAvailable && <p className="customer-form-banner" role="alert">Өгөгдлийн сан холбогдоогүй байна. Өөрчлөлтийг хадгалах боломжгүй.</p>}
+    {!editsAvailable && <p className="customer-form-banner" role="alert">{passcodeMissing ? "Засварлах passcode тохируулаагүй байна (Vercel-д CUSTOMER_FILE_EDIT_PASSCODE). Өөрчлөлтийг хадгалах боломжгүй." : "Өгөгдлийн сан холбогдоогүй байна. Өөрчлөлтийг хадгалах боломжгүй."}</p>}
     <form className="customer-form" onSubmit={event => void submit(event)} noValidate>
       <div className="customer-form-main">
         <FormSection title="Үндсэн мэдээлэл" description="Сайтын домэйн болон гэрээ байгуулсан этгээд">

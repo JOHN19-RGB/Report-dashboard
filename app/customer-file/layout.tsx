@@ -10,5 +10,5 @@ import { loadCustomerSiteEdits } from "../lib/customer-file-server";
 // One long-lived Suspense boundary (pages read the query string on the client) keeps the previous page on screen while the next one loads.
 export default async function CustomerFileLayout({ children }: { children: ReactNode }) {
   const [edits, access] = await Promise.all([loadCustomerSiteEdits(), editAccess((await cookies()).get(EDIT_COOKIE)?.value)]);
-  return <CustomerDataProvider edits={edits} editsAvailable={customerEditsAvailable() && access !== "disabled"} editAccess={access}><CustomerFileFrame><Suspense>{children}</Suspense></CustomerFileFrame></CustomerDataProvider>;
+  return <CustomerDataProvider edits={edits} editsAvailable={customerEditsAvailable() && access !== "disabled"} editAccess={customerEditsAvailable() ? access : "open"}><CustomerFileFrame><Suspense>{children}</Suspense></CustomerFileFrame></CustomerDataProvider>;
 }

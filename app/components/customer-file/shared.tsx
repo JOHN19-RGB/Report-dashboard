@@ -28,14 +28,14 @@ export const DATA = customerFile as CustomerFileData;
 export const PAYMENT_DATA = customerPayments as CustomerPaymentData;
 
 // editLocked: saving needs the team passcode first; passcodeLock: a passcode is in use, so the editor can lock again.
-export type CustomerData = { sites: EditedSite[]; payments: LinkedPayment[]; paymentsBySite: Map<string, LinkedPayment>; editsAvailable: boolean; editLocked: boolean; passcodeLock: boolean };
+export type CustomerData = { sites: EditedSite[]; payments: LinkedPayment[]; paymentsBySite: Map<string, LinkedPayment>; editsAvailable: boolean; editLocked: boolean; passcodeLock: boolean; passcodeMissing: boolean };
 
 const CustomerDataContext = createContext<CustomerData | null>(null);
 
 export function buildCustomerData(edits: SiteEditRecord[], editsAvailable: boolean, editAccess: EditAccess = "open"): CustomerData {
   const sites = applySiteEdits(DATA.sites, edits);
   const payments = applyPaymentEdits(linkPaymentRecords(sites, PAYMENT_DATA.records), sites, edits);
-  return { sites, payments, paymentsBySite: paymentsBySite(payments), editsAvailable, editLocked: editsAvailable && editAccess === "locked", passcodeLock: editsAvailable && editAccess === "unlocked" };
+  return { sites, payments, paymentsBySite: paymentsBySite(payments), editsAvailable, editLocked: editsAvailable && editAccess === "locked", passcodeLock: editsAvailable && editAccess === "unlocked", passcodeMissing: editAccess === "disabled" };
 }
 
 export function CustomerDataProvider({ edits, editsAvailable, editAccess, children }: { edits: SiteEditRecord[]; editsAvailable: boolean; editAccess: EditAccess; children: ReactNode }) {
