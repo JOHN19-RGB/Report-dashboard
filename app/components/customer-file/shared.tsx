@@ -21,23 +21,25 @@ import {
   type LinkedPayment,
   type SiteEditRecord,
 } from "../../lib/customer-file";
+import type { EditAccess } from "../../lib/customer-edit-access";
 import TeamSidebar from "../team-sidebar";
 
 export const DATA = customerFile as CustomerFileData;
 export const PAYMENT_DATA = customerPayments as CustomerPaymentData;
 
-export type CustomerData = { sites: EditedSite[]; payments: LinkedPayment[]; paymentsBySite: Map<string, LinkedPayment>; editsAvailable: boolean };
+// editLocked: saving needs the team passcode first; passcodeLock: a passcode is in use, so the editor can lock again.
+export type CustomerData = { sites: EditedSite[]; payments: LinkedPayment[]; paymentsBySite: Map<string, LinkedPayment>; editsAvailable: boolean; editLocked: boolean; passcodeLock: boolean };
 
 const CustomerDataContext = createContext<CustomerData | null>(null);
 
-export function buildCustomerData(edits: SiteEditRecord[], editsAvailable: boolean): CustomerData {
+export function buildCustomerData(edits: SiteEditRecord[], editsAvailable: boolean, editAccess: EditAccess = "open"): CustomerData {
   const sites = applySiteEdits(DATA.sites, edits);
   const payments = applyPaymentEdits(linkPaymentRecords(sites, PAYMENT_DATA.records), sites, edits);
-  return { sites, payments, paymentsBySite: paymentsBySite(payments), editsAvailable };
+  return { sites, payments, paymentsBySite: paymentsBySite(payments), editsAvailable, editLocked: editsAvailable && editAccess === "locked", passcodeLock: editsAvailable && editAccess === "unlocked" };
 }
 
-export function CustomerDataProvider({ edits, editsAvailable, children }: { edits: SiteEditRecord[]; editsAvailable: boolean; children: ReactNode }) {
-  const value = useMemo(() => buildCustomerData(edits, editsAvailable), [edits, editsAvailable]);
+export function CustomerDataProvider({ edits, editsAvailable, editAccess, children }: { edits: SiteEditRecord[]; editsAvailable: boolean; editAccess: EditAccess; children: ReactNode }) {
+  const value = useMemo(() => buildCustomerData(edits, editsAvailable, editAccess), [edits, editsAvailable, editAccess]);
   return <CustomerDataContext.Provider value={value}>{children}</CustomerDataContext.Provider>;
 }
 

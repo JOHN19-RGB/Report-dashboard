@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, Globe2, LoaderCircle } from "lucide-react";
+import { ArrowLeft, Check, Globe2, LoaderCircle, Lock } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -59,10 +59,45 @@ function FormSection({ title, description, children }: { title: string; descript
   </section>;
 }
 
+// Shown instead of the form until this browser has entered the team passcode.
+function EditUnlock() {
+  const router = useRouter();
+  const [passcode, setPasscode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function unlock(event: React.FormEvent) {
+    event.preventDefault();
+    if (!passcode.trim()) { setError("Passcode оруулна уу."); return; }
+    setBusy(true);
+    const response = await fetch("/api/customer-sites/unlock", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode }) }).catch(() => null);
+    const result = await response?.json().catch(() => null);
+    if (!response?.ok) { setBusy(false); setError(result?.error ?? "Холбогдож чадсангүй. Дахин оролдоно уу."); return; }
+    router.refresh();
+  }
+
+  return <form className="customer-unlock" onSubmit={event => void unlock(event)} noValidate>
+    <span className="customer-unlock-icon"><Lock size={20} /></span>
+    <h2>Засварлах эрх шаардлагатай</h2>
+    <p>Customer file-д сайт нэмэх, засах, устгахын тулд багийн passcode оруулна уу. Энэ хөтөч 30 хоног сануулна.</p>
+    <label className={`customer-field${error ? " invalid" : ""}`}>
+      <span className="customer-field-label">Passcode</span>
+      <input type="password" value={passcode} onChange={event => { setPasscode(event.target.value); setError(null); }} autoComplete="current-password" autoFocus />
+      {error && <small className="customer-field-error" role="alert">{error}</small>}
+    </label>
+    <button type="submit" className="customer-button primary" disabled={busy}>{busy ? <><LoaderCircle className="spin" size={15} />Шалгаж байна</> : "Нээх"}</button>
+  </form>;
+}
+
+async function lockEditing(router: ReturnType<typeof useRouter>) {
+  await fetch("/api/customer-sites/unlock", { method: "DELETE" }).catch(() => null);
+  router.refresh();
+}
+
 export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { sites, payments, paymentsBySite, editsAvailable } = useCustomerData();
+  const { sites, payments, paymentsBySite, editsAvailable, editLocked, passcodeLock } = useCustomerData();
   const id = mode === "edit" ? searchParams.get("id") : null;
   const original = id ? sites.find(site => site.id === id) ?? null : null;
 
@@ -118,9 +153,10 @@ export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
     if (!response?.ok) {
       setSaving(false);
       setErrors(result?.errors ?? { form: result?.error ?? "Хадгалж чадсангүй. Дахин оролдоно уу." });
+      if (result?.locked) router.refresh();
       return;
     }
-    // Navigating re-renders the server layout, which reloads the saved edits from D1.
+    // Navigating re-renders the server layout, which reloads the saved edits from the store.
     router.push(`${sitesHref({ search: local.value.site.domain ?? "" })}&saved=${encodeURIComponent(local.value.site.domain ?? "")}`);
   }
 
@@ -134,6 +170,7 @@ export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
   const title = mode === "new" ? "Шинэ сайт" : `${original!.domain ?? original!.company} засах`;
 
   return <CustomerFileShell page="sites" variant="form" title={title} description={mode === "new" ? "Customer file-д шинэ харилцагчийн сайт бүртгэх" : "Өөрчлөлт Site info-гийн импортыг дарж хадгалагдана · хүссэн үедээ анхны утга руу буцааж болно"}>
+    {editLocked ? <EditUnlock /> : <>
     {!editsAvailable && <p className="customer-form-banner" role="alert">Өгөгдлийн сан холбогдоогүй байна. Өөрчлөлтийг хадгалах боломжгүй.</p>}
     <form className="customer-form" onSubmit={event => void submit(event)} noValidate>
       <div className="customer-form-main">
@@ -227,6 +264,7 @@ export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
       <div className="customer-form-bar">
         {errors.form ? <span className="customer-field-error" role="alert">{errors.form}</span> : Object.keys(errors).length ? <span className="customer-field-error" role="alert">Улаанаар тэмдэглэсэн талбарыг засна уу</span> : <span>{dirty ? "Хадгалаагүй өөрчлөлт байна" : mode === "new" ? "Заавал бөглөх: домэйн, компани, төлөв" : "Өөрчлөлт алга"}</span>}
         <div>
+          {passcodeLock && <button type="button" className="customer-button ghost customer-lock-button" onClick={() => void lockEditing(router)} title="Энэ хөтөч дээр засварлах эрхийг хаах"><Lock size={14} />Түгжих</button>}
           <Link href="/customer-file/sites" className="customer-button ghost">Цуцлах</Link>
           <button type="submit" className="customer-button primary" disabled={saving || !editsAvailable || (mode === "edit" && !dirty)}>{saving ? <><LoaderCircle className="spin" size={15} />Хадгалж байна</> : mode === "new" ? "Сайт нэмэх" : "Хадгалах"}</button>
         </div>
@@ -239,5 +277,6 @@ export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
       <datalist id="customer-groups">{suggestions.groups.map(value => <option key={value} value={value} />)}</datalist>
       <datalist id="customer-industries">{suggestions.industries.map(value => <option key={value} value={value} />)}</datalist>
     </form>
+    </>}
   </CustomerFileShell>;
 }

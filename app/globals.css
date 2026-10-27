@@ -4157,3 +4157,11 @@ button {
     .customer-category-grid i em,
   .customer-provider-list i em { animation: none; }
 }
+
+/* Customer file edit passcode */
+.customer-unlock { display: grid; width: min(420px, 100%); gap: 14px; margin: 8px 0 40px; padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: #fff; animation: reveal .3s ease both; }
+.customer-unlock-icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 12px; background: #f3f1ff; color: #5b54d6; }
+.customer-unlock h2 { margin: 0; color: var(--ink); font-size: 18px; letter-spacing: -.02em; }
+.customer-unlock p { margin: 0; color: #6f788b; font-size: 12.5px; line-height: 1.6; }
+.customer-unlock .customer-button { justify-self: start; }
+.customer-lock-button { gap: 6px; }

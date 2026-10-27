@@ -85,6 +85,22 @@ or enforce explicit server-side membership or allowlist checks.
 Use SIWC for account pages, user-specific dashboards, saved records, and write
 actions tied to the current ChatGPT user. Leave public content anonymous.
 
+## Customer File Edits (Supabase)
+
+Sites added or edited under **Customer file** are saved to the Supabase table `customer_site_edits` and merged over the
+imported sheet in `app/data/customer-file.json`, so re-importing the CSV never loses them.
+
+1. Create the table: run `supabase/migrations/20261027000000_customer_site_edits.sql` in the Supabase SQL editor
+   (or `supabase db push`). RLS stays on with no policies; only the server's secret key can read or write.
+2. Set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` (see `.env.example`) in Vercel → Project → Settings → Environment
+   Variables, and in your local env file. The Vercel ↔ Supabase integration's `NEXT_PUBLIC_SUPABASE_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY` work too.
+3. Set `CUSTOMER_FILE_EDIT_PASSCODE` to a team passcode. Viewing stays open; saving asks for the passcode once per
+   browser (30 days). On Vercel, editing stays off until it is set. Changing it signs every browser out.
+4. Redeploy. The "+ Шинэ сайт" button appears once the store is configured.
+
+Without Supabase settings, local `npm run dev` falls back to the Cloudflare D1 binding; with neither, the section is read-only.
+
 ## Useful Commands
 
 - `npm run dev`: start local development

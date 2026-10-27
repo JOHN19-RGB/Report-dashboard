@@ -1,8 +1,12 @@
 import { eq } from "drizzle-orm";
 import { getDbOrNull } from ".";
 import { customerSiteEdits } from "./schema";
+import { deleteSupabaseSiteEdit, listSupabaseSiteEdits, saveSupabaseSiteEdit, supabaseConfig, type StoredSiteEdit } from "./supabase-site-edits";
 
-export type StoredSiteEdit = { id: string; payload: string; updatedAt: string; updatedBy: string | null };
+export type { StoredSiteEdit };
+
+// Supabase is the shared store (Vercel and local dev with SUPABASE_* set). Without it, the local
+// Cloudflare D1 binding keeps editing usable offline; with neither, the Customer file is read-only.
 
 // Local dev databases are not migrated automatically, so create the table on first use (no-op once it exists).
 const CREATE_TABLE = "CREATE TABLE IF NOT EXISTS `customer_site_edits` (`id` text PRIMARY KEY NOT NULL, `payload` text NOT NULL, `updated_at` text NOT NULL, `updated_by` text)";
@@ -15,12 +19,15 @@ function database() {
   return { db, ready: tableReady };
 }
 
-export const customerEditsAvailable = () => getDbOrNull() !== null;
+export const customerEditsBackend = () => supabaseConfig() ? "supabase" : getDbOrNull() ? "d1" : null;
+export const customerEditsAvailable = () => customerEditsBackend() !== null;
 
 export async function listCustomerSiteEdits(): Promise<StoredSiteEdit[]> {
-  const connection = database();
-  if (!connection) return [];
+  const supabase = supabaseConfig();
   try {
+    if (supabase) return await listSupabaseSiteEdits(supabase);
+    const connection = database();
+    if (!connection) return [];
     await connection.ready;
     return await connection.db.select().from(customerSiteEdits);
   } catch (error) {
@@ -30,8 +37,10 @@ export async function listCustomerSiteEdits(): Promise<StoredSiteEdit[]> {
 }
 
 export async function saveCustomerSiteEdit(edit: StoredSiteEdit) {
+  const supabase = supabaseConfig();
+  if (supabase) return saveSupabaseSiteEdit(supabase, edit);
   const connection = database();
-  if (!connection) throw new Error("D1 database is unavailable");
+  if (!connection) throw new Error("No customer edit store is configured");
   await connection.ready;
   await connection.db.insert(customerSiteEdits).values(edit).onConflictDoUpdate({
     target: customerSiteEdits.id,
@@ -40,8 +49,10 @@ export async function saveCustomerSiteEdit(edit: StoredSiteEdit) {
 }
 
 export async function deleteCustomerSiteEdit(id: string) {
+  const supabase = supabaseConfig();
+  if (supabase) return deleteSupabaseSiteEdit(supabase, id);
   const connection = database();
-  if (!connection) throw new Error("D1 database is unavailable");
+  if (!connection) throw new Error("No customer edit store is configured");
   await connection.ready;
   await connection.db.delete(customerSiteEdits).where(eq(customerSiteEdits.id, id));
 }

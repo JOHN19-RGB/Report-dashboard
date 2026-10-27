@@ -9,6 +9,7 @@ import {
   type CustomerFileData,
   type CustomerPaymentData,
 } from "../../lib/customer-file";
+import { EDIT_COOKIE, editAccess, requestCookie } from "../../lib/customer-edit-access";
 import { loadCustomerSiteEdits } from "../../lib/customer-file-server";
 
 const BASE_SITES = (customerFile as CustomerFileData).sites;
@@ -16,6 +17,16 @@ const PROVIDER_KEYS = new Set((customerPayments as CustomerPaymentData).categori
 const MAX_BODY_BYTES = 20_000;
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
+const STORE_FAILED = "Өгөгдлийн сантай холбогдож чадсангүй. Дахин оролдоно уу.";
+
+// Storage must be configured and, when a passcode is set, this browser must have unlocked editing.
+async function denied(request: Request) {
+  if (!customerEditsAvailable()) return json({ error: "Өгөгдлийн сан холбогдоогүй тул хадгалах боломжгүй." }, 503);
+  const access = await editAccess(requestCookie(request, EDIT_COOKIE));
+  if (access === "disabled") return json({ error: "Засварлах passcode тохируулаагүй байна." }, 503);
+  if (access === "locked") return json({ error: "Засварлахын тулд passcode оруулна уу.", locked: true }, 401);
+  return null;
+}
 
 // Reject cross-site form posts; the dashboard itself always sends same-origin requests.
 function crossOrigin(request: Request) {
@@ -25,7 +36,8 @@ function crossOrigin(request: Request) {
 
 export async function POST(request: Request) {
   if (crossOrigin(request)) return json({ error: "Forbidden" }, 403);
-  if (!customerEditsAvailable()) return json({ error: "Өгөгдлийн сан холбогдоогүй тул хадгалах боломжгүй." }, 503);
+  const blocked = await denied(request);
+  if (blocked) return blocked;
   const raw = await request.text();
   if (raw.length > MAX_BODY_BYTES) return json({ error: "Хүсэлт хэт том байна." }, 413);
   let body: unknown;
@@ -47,15 +59,26 @@ export async function POST(request: Request) {
 
   const updatedAt = new Date().toISOString();
   const updatedBy = request.headers.get("oai-authenticated-user-email");
-  await saveCustomerSiteEdit({ id, payload: JSON.stringify({ isNew: existing ? Boolean(existing.edit?.isNew) : true, ...parsed.value }), updatedAt, updatedBy });
+  try {
+    await saveCustomerSiteEdit({ id, payload: JSON.stringify({ isNew: existing ? Boolean(existing.edit?.isNew) : true, ...parsed.value }), updatedAt, updatedBy });
+  } catch (error) {
+    console.error("Customer site edit save failed", error);
+    return json({ error: STORE_FAILED }, 502);
+  }
   return json({ id, updatedAt });
 }
 
 export async function DELETE(request: Request) {
   if (crossOrigin(request)) return json({ error: "Forbidden" }, 403);
-  if (!customerEditsAvailable()) return json({ error: "Өгөгдлийн сан холбогдоогүй." }, 503);
+  const blocked = await denied(request);
+  if (blocked) return blocked;
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return json({ error: "id шаардлагатай." }, 400);
-  await deleteCustomerSiteEdit(id);
+  try {
+    await deleteCustomerSiteEdit(id);
+  } catch (error) {
+    console.error("Customer site edit delete failed", error);
+    return json({ error: STORE_FAILED }, 502);
+  }
   return json({ id });
 }

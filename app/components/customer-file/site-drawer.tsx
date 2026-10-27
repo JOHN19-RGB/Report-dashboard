@@ -75,7 +75,7 @@ function SiteDrawer({ site, payment, onClose, onOpenSite }: { site: EditedSite |
 
 function EditNotice({ site, onDone }: { site: EditedSite; onDone: () => void }) {
   const router = useRouter();
-  const { editsAvailable } = useCustomerData();
+  const { editsAvailable, editLocked } = useCustomerData();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,14 +86,19 @@ function EditNotice({ site, onDone }: { site: EditedSite; onDone: () => void }) 
     setError(null);
     const response = await fetch(`/api/customer-sites?id=${encodeURIComponent(site.id)}`, { method: "DELETE" }).catch(() => null);
     setBusy(false);
-    if (!response?.ok) { setError("Үйлдэл амжилтгүй боллоо. Дахин оролдоно уу."); return; }
+    if (!response?.ok) {
+      const result = await response?.json().catch(() => null);
+      setError(result?.error ?? "Үйлдэл амжилтгүй боллоо. Дахин оролдоно уу.");
+      if (result?.locked) router.refresh();
+      return;
+    }
     onDone();
     router.refresh();
   }
 
   return <div className={`customer-edit-notice${edit.isNew ? " new" : ""}`}>
     <span><Pencil size={13} />{edit.isNew ? "Гараар нэмсэн сайт" : "Гараар засварласан"} · {formatDate(edit.updatedAt.slice(0, 10))}{edit.updatedBy ? ` · ${edit.updatedBy}` : ""}</span>
-    {editsAvailable && (confirming ? <span className="customer-confirm">
+    {editsAvailable && !editLocked && (confirming ? <span className="customer-confirm">
       {edit.isNew ? "Устгах уу?" : "Анхны утга руу буцаах уу?"}
       <button type="button" className="danger" disabled={busy} onClick={() => void discard()}>{busy ? "..." : "Тийм"}</button>
       <button type="button" disabled={busy} onClick={() => setConfirming(false)}>Үгүй</button>
