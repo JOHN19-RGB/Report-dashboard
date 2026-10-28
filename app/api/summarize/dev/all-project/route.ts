@@ -1,3 +1,4 @@
+import { aiCacheKey, readAiText, saveAiText } from "../../../../../db/ai-summaries";
 import {
   ALL_PROJECT_SUMMARY_INTRO,
   buildAllProjectSummary,
@@ -40,6 +41,12 @@ export async function POST(request: Request) {
 Зөвхөн {"introduction":"..."} JSON буцаа.
 Fallback өгүүлбэр: ${ALL_PROJECT_SUMMARY_INTRO}`;
 
+  const cacheKey = await aiCacheKey("all-project-intro", [models.join(","), prompt]);
+  const cached = await readAiText(cacheKey);
+  if (cached && verifiedAllProjectIntroduction(cached) === cached) {
+    return Response.json({ summary: buildAllProjectSummary(input, cached), source: "groq", cached: true }, { headers: { "Cache-Control": "private, no-store" } });
+  }
+
   try {
     for (const model of models) {
       const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -63,6 +70,7 @@ Fallback өгүүлбэр: ${ALL_PROJECT_SUMMARY_INTRO}`;
       try { candidate = (JSON.parse(content) as { introduction?: unknown }).introduction; } catch { candidate = null; }
       const introduction = verifiedAllProjectIntroduction(candidate);
       const accepted = typeof candidate === "string" && introduction === candidate.trim().replace(/\s+/g, " ");
+      if (accepted) await saveAiText(cacheKey, "all-project-intro", model, introduction);
       return Response.json(
         { summary: buildAllProjectSummary(input, introduction), source: accepted ? "groq" : "local" },
         { headers: { "Cache-Control": "private, no-store" } },

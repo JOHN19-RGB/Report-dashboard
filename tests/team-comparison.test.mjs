@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import ts from "typescript";
+import { importTs } from "./helpers/load-ts.mjs";
 
-const transpile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(transpile(source)).toString("base64")}`;
-const helperUrl = moduleUrl(await readFile(new URL("../app/lib/team-comparison.ts", import.meta.url), "utf8"));
-const { buildTeamComparison, comparisonTaskType, comparisonSummary, verifiedComparisonIntroduction, COMPARISON_INTRO } = await import(helperUrl);
-const routeSource = await readFile(new URL("../app/api/summarize/comparison/route.ts", import.meta.url), "utf8");
-const { POST } = await import(moduleUrl(routeSource.replace('"../../../lib/team-comparison"', JSON.stringify(helperUrl))));
+const { buildTeamComparison, comparisonTaskType, comparisonSummary, verifiedComparisonIntroduction, COMPARISON_INTRO } = await importTs("app/lib/team-comparison.ts");
+const { POST } = await importTs("app/api/summarize/comparison/route.ts");
 
 const cxTask = (id, type, month = 4, extra = {}) => ({ id, dueDate: String(Date.UTC(2026, month, 10)), type: { name: type }, status: { name: "complete", type: "closed" }, ...extra });
 const devTask = (id, type, date = "2026-05-10", extra = {}) => ({ id, dueDate: date, type, status: { done: true }, sprintIds: [], ...extra });

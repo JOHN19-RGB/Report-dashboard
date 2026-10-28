@@ -1,4 +1,4 @@
-import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../db/clickup-snapshot";
+import { readClickUpSnapshot, recordClickUpSyncFailure, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../db/clickup-snapshot";
 import { proxyClickUpForLocalDevelopment } from "../../lib/clickup-local-proxy";
 import { requestClickUp } from "../../lib/clickup-request";
 import { mapWithConcurrency, readClickUpTaskPages, shareInFlightResponse } from "../../lib/clickup-pagination";
@@ -48,8 +48,9 @@ async function readSnapshot() {
   return readClickUpSnapshot(SNAPSHOT_ID);
 }
 
-async function saveSnapshot(payload: ClickUpSnapshot) {
-  return saveClickUpSnapshot(SNAPSHOT_ID, payload);
+// `trigger` (the request's query string) is kept in the Supabase sync log.
+async function saveSnapshot(payload: ClickUpSnapshot, trigger: string) {
+  return saveClickUpSnapshot(SNAPSHOT_ID, payload, trigger || null);
 }
 
 function safeColor(value: unknown, fallback = "#64748b") {
@@ -340,7 +341,7 @@ async function sync(request: Request) {
     const payload = (params.get("full") !== "1" && snapshot && shouldRunCxDeltaSync(snapshot) && await deltaSync(token, snapshot)) || await fullSync(token);
 
     // Never replace the last complete report with a truncated refresh.
-    if (!payload.partial) await saveSnapshot(payload);
+    if (!payload.partial) await saveSnapshot(payload, new URL(request.url).search);
 
     return Response.json({ ...payload, cacheSource: "clickup" }, {
       headers: {
@@ -349,6 +350,7 @@ async function sync(request: Request) {
     });
   } catch (error) {
     console.error("CX ClickUp sync failed", error);
+    await recordClickUpSyncFailure(SNAPSHOT_ID, new URL(request.url).search || null, error);
     const detail = process.env.NODE_ENV === "development" && error instanceof Error ? { detail: error.message } : {};
     return Response.json({ error: "ClickUp API-тай холбогдоход алдаа гарлаа.", ...detail }, { status: 502 });
   }

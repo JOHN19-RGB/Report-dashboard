@@ -85,13 +85,32 @@ or enforce explicit server-side membership or allowlist checks.
 Use SIWC for account pages, user-specific dashboards, saved records, and write
 actions tied to the current ChatGPT user. Leave public content anonymous.
 
-## Customer File Edits (Supabase)
+## Data Storage (Supabase)
 
-Sites added or edited under **Customer file** are saved to the Supabase table `customer_site_edits` and merged over the
-imported sheet in `app/data/customer-file.json`, so re-importing the CSV never loses them.
+All saved data lives in one Supabase Postgres project, reached only from server code through `db/supabase.ts`
+(PostgREST with the secret key). Every table has RLS on with no policies and no `anon`/`authenticated` grants.
 
-1. Create the table: run `supabase/migrations/20261027000000_customer_site_edits.sql` in the Supabase SQL editor
-   (or `supabase db push`). RLS stays on with no policies; only the server's secret key can read or write.
+| Table | Written by | Holds |
+| --- | --- | --- |
+| `customer_site_edits` | `db/supabase-site-edits.ts` | Customer file sites added/edited in the app, merged over `app/data/customer-file.json` |
+| `clickup_snapshots` | `db/clickup-snapshot.ts` | Latest ClickUp report per menu (1 = CX, 2 = Dev), gzip+base64 JSON |
+| `clickup_sync_runs` | `db/clickup-snapshot.ts` | One row per ClickUp refresh: trigger, mode, task counts, size, or the error |
+| `ai_summaries` | `db/ai-summaries.ts` | Groq summary text that passed verification, keyed by sha256(kind, models, prompt) |
+
+ClickUp snapshots are shared by every Vercel region and survive deploys; each server instance keeps the decoded copy in
+memory and only re-downloads it when `synced_at` changes. If Supabase is down, reads and saves fall back to the local D1
+binding (dev) or the Vercel Runtime Cache. AI summaries reuse cached text for an unchanged report instead of calling the
+model again; changing a prompt or model starts a new entry. Local fallback summaries are never cached.
+
+Without Supabase settings, local `npm run dev` uses the Cloudflare D1 binding for snapshots and site edits.
+
+## Customer File Edits
+
+Sites added or edited under **Customer file** are saved to `customer_site_edits` (see above), so re-importing the CSV
+never loses them.
+
+1. Create the tables: run the files in `supabase/migrations/` in order in the Supabase SQL editor
+   (or `supabase db push`).
 2. Set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` (see `.env.example`) in Vercel → Project → Settings → Environment
    Variables, and in your local env file. The Vercel ↔ Supabase integration's `NEXT_PUBLIC_SUPABASE_URL` and
    `SUPABASE_SERVICE_ROLE_KEY` work too.

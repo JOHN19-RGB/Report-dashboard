@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import ts from "typescript";
+import { importTs } from "./helpers/load-ts.mjs";
 
-const source = await readFile(new URL("../db/supabase-site-edits.ts", import.meta.url), "utf8");
-const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } });
-const { supabaseConfig, listSupabaseSiteEdits, saveSupabaseSiteEdit, deleteSupabaseSiteEdit } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+const { supabaseConfig, listSupabaseSiteEdits, saveSupabaseSiteEdit, deleteSupabaseSiteEdit } = await importTs("db/supabase-site-edits.ts");
 
 const config = { url: "https://example.supabase.co", key: "sb_secret_test" };
 

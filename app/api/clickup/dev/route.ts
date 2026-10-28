@@ -1,4 +1,4 @@
-import { readClickUpSnapshot, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../../db/clickup-snapshot";
+import { readClickUpSnapshot, recordClickUpSyncFailure, saveClickUpSnapshot, type ClickUpSnapshot } from "../../../../db/clickup-snapshot";
 import { proxyClickUpForLocalDevelopment } from "../../../lib/clickup-local-proxy";
 import { connectDevAllProjectSprints, DEV_REPORT_END_YEAR, DEV_REPORT_START_YEAR, scopeDevReportTasks, selectDevAllProjectList, type DevSprint, type DevTask } from "../../../lib/dev-report";
 import { requestClickUp } from "../../../lib/clickup-request";
@@ -78,8 +78,9 @@ async function readSnapshot() {
   return readClickUpSnapshot(SNAPSHOT_ID);
 }
 
-async function saveSnapshot(payload: ClickUpSnapshot) {
-  return saveClickUpSnapshot(SNAPSHOT_ID, payload);
+// `trigger` (the request's query string) is kept in the Supabase sync log.
+async function saveSnapshot(payload: ClickUpSnapshot, trigger: string) {
+  return saveClickUpSnapshot(SNAPSHOT_ID, payload, trigger || null);
 }
 
 function safeText(value: unknown, fallback = "") {
@@ -451,7 +452,7 @@ async function sync(request: Request) {
         taskSyncedAt: syncedAt,
         syncedAt,
       } satisfies ClickUpSnapshot;
-      await saveSnapshot(payload);
+      await saveSnapshot(payload, requestUrl.search);
       return Response.json(responsePayload(payload, "clickup"), { headers: { "Cache-Control": "private, no-store" } });
     }
 
@@ -489,7 +490,7 @@ async function sync(request: Request) {
         allProjectTaskSyncedAt,
         partial: Boolean(snapshot.taskPartial || result.partial || discovery.partial || snapshot.sprintDiscoveryPartial || snapshot.sprintNeedsFullRefresh || Number(snapshot.sprintSyncErrors)),
       } satisfies ClickUpSnapshot;
-      await saveSnapshot(payload);
+      await saveSnapshot(payload, requestUrl.search);
       return Response.json(responsePayload(payload, "clickup"), { headers: { "Cache-Control": "private, no-store" } });
     }
 
@@ -537,7 +538,7 @@ async function sync(request: Request) {
         sprintSyncedAt: new Date().toISOString(),
         syncedAt: snapshot.taskSyncedAt as string || snapshot.syncedAt,
       } satisfies ClickUpSnapshot;
-      await saveSnapshot(payload);
+      await saveSnapshot(payload, requestUrl.search);
       return Response.json({ ...payload, cacheSource: "clickup" }, { headers: { "Cache-Control": "private, no-store" } });
     }
 
@@ -607,10 +608,11 @@ async function sync(request: Request) {
       syncedAt,
     } satisfies ClickUpSnapshot;
 
-    await saveSnapshot(payload);
+    await saveSnapshot(payload, requestUrl.search);
     return Response.json(responsePayload(payload, "clickup"), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("Dev ClickUp refresh failed", error);
+    await recordClickUpSyncFailure(SNAPSHOT_ID, new URL(request.url).search || null, error);
     const message = error instanceof Error && error.message === "B2C Master list олдсонгүй." ? error.message : "ClickUp-ийн Dev мэдээллийг татаж чадсангүй.";
     return Response.json({ error: message }, { status: 502 });
   }

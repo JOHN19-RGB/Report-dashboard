@@ -1,3 +1,4 @@
+import { aiCacheKey, readAiText, saveAiText } from "../../../../db/ai-summaries";
 import { COMPARISON_INTRO, comparisonSummary, verifiedComparisonIntroduction, type TeamComparison } from "../../../lib/team-comparison";
 
 function validCounts(value: unknown): value is { bug: number; imp: number } {
@@ -20,16 +21,20 @@ export async function POST(request: Request) {
   const local = () => Response.json({ summary: comparisonSummary(facts), source: "local" });
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return local();
+  const defaultModel = "openai/gpt-oss-120b";
+  const models = Array.from(new Set([process.env.GROQ_MODEL || defaultModel, defaultModel]));
+  const prompt = `Монгол хэлний тайлангийн редакторын хувьд зөвхөн энэ оршлыг нэг өгүүлбэрээр найруул. Шинэ баримт, тоо, шалтгаан, зөрүү, зөвлөмж бүү нэм. CX, Технологийн, IMP, гүйцэтгэсэн, харьцуул гэсэн утгыг хадгал. Зөвхөн {"introduction":"..."} JSON буцаа.\n${COMPARISON_INTRO}`;
+  const cacheKey = await aiCacheKey("comparison-intro", [models.join(","), prompt]);
+  const cached = await readAiText(cacheKey);
+  if (cached && verifiedComparisonIntroduction(cached) === cached) return Response.json({ summary: comparisonSummary(facts, cached), source: "groq", cached: true });
   try {
-    const defaultModel = "openai/gpt-oss-120b";
-    const models = Array.from(new Set([process.env.GROQ_MODEL || defaultModel, defaultModel]));
     const baseUrl = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/$/, "");
     const signal = AbortSignal.timeout(20_000);
     for (const model of models) {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST", signal,
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, temperature: 0.1, max_completion_tokens: 900, ...(model.startsWith("qwen/") ? { reasoning_effort: "none" } : model.startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}), response_format: { type: "json_object" }, messages: [{ role: "user", content: `Монгол хэлний тайлангийн редакторын хувьд зөвхөн энэ оршлыг нэг өгүүлбэрээр найруул. Шинэ баримт, тоо, шалтгаан, зөрүү, зөвлөмж бүү нэм. CX, Технологийн, IMP, гүйцэтгэсэн, харьцуул гэсэн утгыг хадгал. Зөвхөн {"introduction":"..."} JSON буцаа.\n${COMPARISON_INTRO}` }] }),
+        body: JSON.stringify({ model, temperature: 0.1, max_completion_tokens: 900, ...(model.startsWith("qwen/") ? { reasoning_effort: "none" } : model.startsWith("openai/gpt-oss") ? { reasoning_effort: "low" } : {}), response_format: { type: "json_object" }, messages: [{ role: "user", content: prompt }] }),
       });
       // A retired configured model must not silently disable AI forever.
       if (response.status === 404) continue;
@@ -39,6 +44,7 @@ export async function POST(request: Request) {
       const candidate = (JSON.parse(text) as { introduction?: unknown }).introduction;
       const introduction = verifiedComparisonIntroduction(candidate);
       const accepted = typeof candidate === "string" && introduction === candidate.trim();
+      if (accepted) await saveAiText(cacheKey, "comparison-intro", model, introduction);
       return Response.json({ summary: comparisonSummary(facts, introduction), source: accepted ? "groq" : "local" });
     }
     return local();

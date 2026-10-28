@@ -1,3 +1,4 @@
+import { aiCacheKey, readAiText, saveAiText } from "../../../db/ai-summaries";
 type SummaryRequest = {
   period?: string;
   current?: { tasks?: number; minutes?: number; averageMinutes?: number };
@@ -138,9 +139,14 @@ export async function POST(request: Request) {
 ШАЛГАСАН БАРИМТ:
 ${verifiedFacts.text}`;
 
+  const baseUrl = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/$/, "");
+  const model = process.env.GROQ_MODEL || "qwen/qwen3.6-27b";
+  const acceptable = (summary: string) => summary.length >= 80 && verifiedFacts.requiredTokens.every((token) => summary.includes(token));
+  const cacheKey = await aiCacheKey("cx-summary", [model, prompt]);
+  const cached = await readAiText(cacheKey);
+  if (cached && acceptable(cached)) return Response.json({ summary: cached, source: "groq", cached: true });
+
   try {
-    const baseUrl = (process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1").replace(/\/$/, "");
-    const model = process.env.GROQ_MODEL || "qwen/qwen3.6-27b";
     const groqResponse = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -172,11 +178,11 @@ ${verifiedFacts.text}`;
     const summary = Array.isArray(paragraphs) && paragraphs.length === 3 && paragraphs.every((item) => typeof item === "string")
       ? paragraphs.join("\n\n")
       : "";
-    const hasVerifiedNumbers = verifiedFacts.requiredTokens.every((token) => summary.includes(token));
-    if (summary.length < 80 || !hasVerifiedNumbers) {
+    if (!acceptable(summary)) {
       return Response.json({ summary: buildLocalSummary(payload), source: "local" });
     }
 
+    await saveAiText(cacheKey, "cx-summary", model, summary);
     return Response.json({ summary, source: "groq" });
   } catch {
     return Response.json({ summary: buildLocalSummary(payload), source: "local" });

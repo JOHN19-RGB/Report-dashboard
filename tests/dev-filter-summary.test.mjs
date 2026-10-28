@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import ts from "typescript";
+import { importTs } from "./helpers/load-ts.mjs";
 
-const transpile = source => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(transpile(source)).toString("base64")}`;
-const helperUrl = moduleUrl(await readFile(new URL("../app/lib/dev-filter-summary.ts", import.meta.url), "utf8"));
-const { buildDevFilterSummary, DEV_FILTER_SUMMARY_INTRO, parseDevFilterSummaryInput, summaryPercentChange, verifiedDevFilterIntroduction } = await import(helperUrl);
-const routeSource = await readFile(new URL("../app/api/summarize/dev/route.ts", import.meta.url), "utf8");
-const { POST } = await import(moduleUrl(routeSource.replace('"../../../lib/dev-filter-summary"', JSON.stringify(helperUrl))));
+const { buildDevFilterSummary, DEV_FILTER_SUMMARY_INTRO, parseDevFilterSummaryInput, summaryPercentChange, verifiedDevFilterIntroduction } = await importTs("app/lib/dev-filter-summary.ts");
+const { POST } = await importTs("app/api/summarize/dev/route.ts");
 
 const input = {
   period: "Sprint 47–48",
@@ -120,4 +115,46 @@ test("Dev summary API uses Groq safely and preserves server-calculated template 
     if (originalKey === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = originalKey;
     if (originalModel === undefined) delete process.env.GROQ_MODEL; else process.env.GROQ_MODEL = originalModel;
   }
+});
+
+test("Dev filter summary reuses verified AI text cached in Supabase and stores new Groq text", async t => {
+  const saved = { ...process.env };
+  t.after(() => { process.env = saved; });
+  Object.assign(process.env, { GROQ_API_KEY: "test-key-not-a-secret", SUPABASE_URL: "https://example.supabase.co", SUPABASE_SECRET_KEY: "sb_secret_test" });
+  delete process.env.GROQ_MODEL;
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const request = () => new Request("http://localhost/api/summarize/dev", { method: "POST", body: JSON.stringify(input) });
+  const safe = "Imp болон Bug таскийн шүүсэн бүртгэлийг priority, time estimate болон өмнөх sprint-ийн хүрээнд нэгтгэн харуулав.";
+
+  const store = new Map();
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    url = String(url);
+    if (url.startsWith("https://example.supabase.co/rest/v1/ai_summaries")) {
+      calls.push(`supabase ${options.method ?? "GET"}`);
+      if (options.method === "POST") { const row = JSON.parse(options.body); store.set(row.key, row); return new Response(null, { status: 201 }); }
+      const key = new URL(url).searchParams.get("key").replace(/^eq\./, "");
+      return Response.json(store.has(key) ? [{ text: store.get(key).text }] : []);
+    }
+    calls.push("groq");
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ introduction: safe }) } }] });
+  };
+
+  const first = await (await POST(request())).json();
+  assert.equal(first.source, "groq");
+  assert.deepEqual(calls, ["supabase GET", "groq", "supabase POST"]);
+  assert.deepEqual([...store.values()].map(row => [row.kind, row.text]), [["dev-filter-intro", safe]]);
+
+  calls.length = 0;
+  const second = await (await POST(request())).json();
+  assert.deepEqual(calls, ["supabase GET"]);
+  assert.equal(second.cached, true);
+  assert.deepEqual(second.summary, first.summary);
+
+  // A cached entry that no longer passes verification is ignored and the model is asked again.
+  for (const row of store.values()) row.text = `${safe} 999`;
+  calls.length = 0;
+  assert.equal((await (await POST(request())).json()).summary.introduction, safe);
+  assert.deepEqual(calls, ["supabase GET", "groq", "supabase POST"]);
 });

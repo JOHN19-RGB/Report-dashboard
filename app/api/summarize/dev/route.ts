@@ -1,3 +1,4 @@
+import { aiCacheKey, readAiText, saveAiText } from "../../../../db/ai-summaries";
 import {
   buildDevFilterSummary,
   DEV_FILTER_SUMMARY_INTRO,
@@ -29,6 +30,11 @@ Priority нэр, ангиллыг оршилд бүү оруул. Үндсэн �
 Зөвхөн {"introduction":"..."} JSON буцаа.
 Fallback өгүүлбэр: ${DEV_FILTER_SUMMARY_INTRO}`;
 
+  const respond = (introduction: string, source: "groq" | "local", cached = false) => Response.json({ summary: buildDevFilterSummary(input, introduction), source, ...(cached ? { cached } : {}) }, { headers: { "Cache-Control": "private, no-store" } });
+  const cacheKey = await aiCacheKey("dev-filter-intro", [models.join(","), prompt]);
+  const cached = await readAiText(cacheKey);
+  if (cached && verifiedDevFilterIntroduction(cached) === cached) return respond(cached, "groq", true);
+
   try {
     for (const model of models) {
       const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -52,7 +58,8 @@ Fallback өгүүлбэр: ${DEV_FILTER_SUMMARY_INTRO}`;
       try { candidate = (JSON.parse(content) as { introduction?: unknown }).introduction; } catch { candidate = null; }
       const introduction = verifiedDevFilterIntroduction(candidate);
       const accepted = typeof candidate === "string" && introduction === candidate.trim().replace(/\s+/g, " ");
-      return Response.json({ summary: buildDevFilterSummary(input, introduction), source: accepted ? "groq" : "local" }, { headers: { "Cache-Control": "private, no-store" } });
+      if (accepted) await saveAiText(cacheKey, "dev-filter-intro", model, introduction);
+      return respond(introduction, accepted ? "groq" : "local");
     }
     return local();
   } catch {
