@@ -4,20 +4,25 @@ import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Menu, Plus } from "lu
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import customerContacts from "../../data/customer-contacts.json";
 import customerFile from "../../data/customer-file.json";
 import customerPayments from "../../data/customer-payments.json";
 import {
   ACTIVITY_MAX,
   applyPaymentEdits,
   applySiteEdits,
+  contactsBySite,
   customerFiltersQuery,
   customerStatus,
+  linkContactRecords,
   linkPaymentRecords,
   paymentsBySite,
+  type CustomerContactData,
   type CustomerFileData,
   type CustomerFilters,
   type CustomerPaymentData,
   type EditedSite,
+  type LinkedContact,
   type LinkedPayment,
   type SiteEditRecord,
 } from "../../lib/customer-file";
@@ -26,16 +31,19 @@ import TeamSidebar from "../team-sidebar";
 
 export const DATA = customerFile as CustomerFileData;
 export const PAYMENT_DATA = customerPayments as CustomerPaymentData;
+export const CONTACT_DATA = customerContacts as CustomerContactData;
 
 // editLocked: saving needs the team passcode first; passcodeLock: a passcode is in use, so the editor can lock again.
-export type CustomerData = { sites: EditedSite[]; payments: LinkedPayment[]; paymentsBySite: Map<string, LinkedPayment>; editsAvailable: boolean; editLocked: boolean; passcodeLock: boolean; passcodeMissing: boolean };
+export type CustomerData = { sites: EditedSite[]; payments: LinkedPayment[]; paymentsBySite: Map<string, LinkedPayment>; contacts: LinkedContact[]; contactsBySite: Map<string, LinkedContact[]>; editsAvailable: boolean; editLocked: boolean; passcodeLock: boolean; passcodeMissing: boolean };
 
 const CustomerDataContext = createContext<CustomerData | null>(null);
 
 export function buildCustomerData(edits: SiteEditRecord[], editsAvailable: boolean, editAccess: EditAccess = "open"): CustomerData {
   const sites = applySiteEdits(DATA.sites, edits);
   const payments = applyPaymentEdits(linkPaymentRecords(sites, PAYMENT_DATA.records), sites, edits);
-  return { sites, payments, paymentsBySite: paymentsBySite(payments), editsAvailable, editLocked: editsAvailable && editAccess === "locked", passcodeLock: editsAvailable && editAccess === "unlocked", passcodeMissing: editAccess === "disabled" };
+  // Contacts link to the edited sites, so a renamed domain or a manually added site picks up its people too.
+  const contacts = linkContactRecords(sites, CONTACT_DATA.contacts);
+  return { sites, payments, paymentsBySite: paymentsBySite(payments), contacts, contactsBySite: contactsBySite(contacts), editsAvailable, editLocked: editsAvailable && editAccess === "locked", passcodeLock: editsAvailable && editAccess === "unlocked", passcodeMissing: editAccess === "disabled" };
 }
 
 export function CustomerDataProvider({ edits, editsAvailable, editAccess, children }: { edits: SiteEditRecord[]; editsAvailable: boolean; editAccess: EditAccess; children: ReactNode }) {
@@ -49,12 +57,13 @@ export function useCustomerData() {
   return value;
 }
 
-export type CustomerFilePage = "overview" | "sites" | "payments";
+export type CustomerFilePage = "overview" | "sites" | "payments" | "contacts";
 
 const PAGES: Array<{ key: CustomerFilePage; href: string; label: string }> = [
   { key: "overview", href: "/customer-file", label: "Тойм" },
   { key: "sites", href: "/customer-file/sites", label: "Сайтууд" },
   { key: "payments", href: "/customer-file/payments", label: "Төлбөр" },
+  { key: "contacts", href: "/customer-file/contacts", label: "Холбоо барих" },
 ];
 
 export const sitesHref = (patch: Partial<CustomerFilters> = {}) => {
@@ -66,6 +75,7 @@ export const newSiteHref = (prefill: Record<string, string> = {}) => {
   const query = new URLSearchParams(prefill).toString();
   return query ? `/customer-file/sites/new?${query}` : "/customer-file/sites/new";
 };
+export const contactsHref = (search?: string) => search ? `/customer-file/contacts?q=${encodeURIComponent(search)}` : "/customer-file/contacts";
 export const paymentsHref = (provider?: string) => provider ? `/customer-file/payments?provider=${encodeURIComponent(provider)}` : "/customer-file/payments";
 
 // Page filters live in the query string so links, refreshes and shared URLs reproduce the same view.

@@ -104,6 +104,20 @@ model again; changing a prompt or model starts a new entry. Local fallback summa
 
 Without Supabase settings, local `npm run dev` uses the Cloudflare D1 binding for snapshots and site edits.
 
+## Customer File Data
+
+The Customer file menu is built from the team's Google Sheet exports. Re-import a tab after downloading it as CSV:
+
+| Sheet tab | Command | Output |
+| --- | --- | --- |
+| Site info | `node scripts/import-customer-file.mjs "<csv>"` | `app/data/customer-file.json` |
+| Payment type | `node scripts/import-customer-payments.mjs "<csv>"` | `app/data/customer-payments.json` |
+| Contacts info | `node scripts/import-customer-contacts.mjs "<csv>"` | `app/data/customer-contacts.json` |
+
+Payments and contacts are linked to sites when the page loads (by domain, the `*.cody.mn` preview domain, and for
+contacts a unique company name), so they follow later site edits. The contacts import splits cells holding several
+emails or phone numbers and flags malformed ones; the **Холбоо барих** tab lists them under "Шалгах шаардлагатай".
+
 ## Customer File Edits
 
 Sites added or edited under **Customer file** are saved to `customer_site_edits` (see above), so re-importing the CSV

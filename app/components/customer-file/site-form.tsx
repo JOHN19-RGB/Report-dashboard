@@ -6,11 +6,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ACTIVITY_MAX,
+  BUSINESS_MODELS,
   CUSTOMER_STATUSES,
   EDITABLE_STATUSES,
   GA_STATUSES,
   PACKAGES,
   SEGMENTS,
+  SITE_VERSIONS,
   distinctValues,
   parseSiteEditInput,
   type EditedSite,
@@ -50,6 +52,27 @@ function Segmented<T extends string>({ label, value, options, onChange, allowEmp
   return <div className="customer-segmented" role="radiogroup" aria-label={label}>
     {options.map(([option, text]) => <button type="button" role="radio" key={option} aria-checked={value === option} onClick={() => onChange(allowEmpty && value === option ? null : option)}>{text}</button>)}
   </div>;
+}
+
+const NEW_CHOICE = "__new";
+
+// A dropdown for a fixed or known list. A value outside the list (an older row, or one typed earlier) stays selectable so
+// saving never drops it; with allowNew, the last option switches to a text box for a value nobody has used yet.
+function ChoiceSelect({ label, value, options, onChange, allowNew, placeholder }: { label: string; value: string | null; options: string[]; onChange: (value: string | null) => void; allowNew?: boolean; placeholder?: string }) {
+  const [typing, setTyping] = useState(false);
+  if (typing) return <span className="customer-choice-new">
+    <input autoFocus value={value ?? ""} onChange={event => onChange(event.target.value || null)} placeholder={placeholder ?? "Шинэ утга бичих"} aria-label={label} />
+    <button type="button" onClick={() => setTyping(false)}>Жагсаалт</button>
+  </span>;
+  const outside = value && !options.includes(value) ? value : null;
+  return <select value={value ?? ""} aria-label={label} onChange={event => {
+    if (event.target.value === NEW_CHOICE) { setTyping(true); onChange(null); } else onChange(event.target.value || null);
+  }}>
+    <option value="">Сонгоогүй</option>
+    {options.map(option => <option key={option} value={option}>{option}</option>)}
+    {outside && <option value={outside}>{outside}{allowNew ? "" : " (жагсаалтад байхгүй)"}</option>}
+    {allowNew && <option value={NEW_CHOICE}>＋ Шинэ утга нэмэх…</option>}
+  </select>;
 }
 
 function FormSection({ title, description, children }: { title: string; description: string; children: ReactNode }) {
@@ -122,8 +145,6 @@ export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
 
   const suggestions = useMemo(() => ({
     specialists: distinctValues(sites, item => item.specialist),
-    versions: distinctValues(sites, item => item.siteVersion),
-    models: distinctValues(sites, item => item.businessModel),
     types: distinctValues(sites, item => item.type),
     groups: distinctValues(sites, item => item.group),
     industries: distinctValues(sites, item => item.industry),
@@ -198,11 +219,11 @@ export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
           </Field>
           <Field label="Багц"><Segmented label="Багц" value={site.package} options={PACKAGES.map(value => [value, value])} onChange={value => update({ package: value })} allowEmpty /></Field>
           <Field label="Сегмент"><Segmented label="Сегмент" value={site.segment} options={SEGMENTS.map(value => [value, value])} onChange={segment => update({ segment })} allowEmpty /></Field>
-          <Field label="Site version"><input list="customer-versions" value={site.siteVersion ?? ""} onChange={event => update({ siteVersion: event.target.value || null })} /></Field>
-          <Field label="Бизнес модел"><input list="customer-models" value={site.businessModel ?? ""} onChange={event => update({ businessModel: event.target.value || null })} /></Field>
-          <Field label="Төрөл"><input list="customer-types" value={site.type ?? ""} onChange={event => update({ type: event.target.value || null })} /></Field>
-          <Field label="Бүлэг"><input list="customer-groups" value={site.group ?? ""} onChange={event => update({ group: event.target.value || null })} placeholder="Fashion" /></Field>
-          <Field label="Салбар"><input list="customer-industries" value={site.industry ?? ""} onChange={event => update({ industry: event.target.value || null })} placeholder="Beauty" /></Field>
+          <Field label="Site version"><ChoiceSelect label="Site version" value={site.siteVersion} options={SITE_VERSIONS} onChange={siteVersion => update({ siteVersion })} /></Field>
+          <Field label="Бизнес модел"><ChoiceSelect label="Бизнес модел" value={site.businessModel} options={BUSINESS_MODELS} onChange={businessModel => update({ businessModel })} /></Field>
+          <Field label="Төрөл"><ChoiceSelect label="Төрөл" value={site.type} options={suggestions.types} onChange={type => update({ type })} allowNew placeholder="Online Store" /></Field>
+          <Field label="Бүлэг"><ChoiceSelect label="Бүлэг" value={site.group} options={suggestions.groups} onChange={group => update({ group })} allowNew placeholder="Fashion" /></Field>
+          <Field label="Салбар"><ChoiceSelect label="Салбар" value={site.industry} options={suggestions.industries} onChange={industry => update({ industry })} allowNew placeholder="Beauty" /></Field>
           {CLOSING_STATUSES.has(site.status) && <Field label="Түр зогсоох / хаах санал" wide><input value={site.closeReason ?? ""} onChange={event => update({ closeReason: event.target.value || null })} placeholder="Харилцагчийн санаачлагаар" /></Field>}
         </FormSection>
 
@@ -271,11 +292,6 @@ export default function CustomerSiteForm({ mode }: { mode: "new" | "edit" }) {
       </div>
 
       <datalist id="customer-specialists">{suggestions.specialists.map(value => <option key={value} value={value} />)}</datalist>
-      <datalist id="customer-versions">{suggestions.versions.map(value => <option key={value} value={value} />)}</datalist>
-      <datalist id="customer-models">{suggestions.models.map(value => <option key={value} value={value} />)}</datalist>
-      <datalist id="customer-types">{suggestions.types.map(value => <option key={value} value={value} />)}</datalist>
-      <datalist id="customer-groups">{suggestions.groups.map(value => <option key={value} value={value} />)}</datalist>
-      <datalist id="customer-industries">{suggestions.industries.map(value => <option key={value} value={value} />)}</datalist>
     </form>
     </>}
   </CustomerFileShell>;

@@ -1,12 +1,13 @@
 "use client";
 
-import { BarChart3, Check, ChevronRight, CreditCard, ExternalLink, Gift, Globe2, Layers, Pencil, Plus, Trash2, Undo2, Wallet, X } from "lucide-react";
+import { BarChart3, Check, ChevronRight, Copy, CreditCard, ExternalLink, Gift, Globe2, Layers, Pencil, Plus, Trash2, Undo2, UsersRound, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { GA_STATUSES, groupPaymentMethods, relatedCustomerSites, siteLabel, type CustomerSite, type EditedSite, type LinkedPayment } from "../../lib/customer-file";
-import { ActivityMeter, PAYMENT_DATA, StatusChip, editSiteHref, formatDate, initials, newSiteHref, paymentsHref, sitesHref, useCustomerData } from "./shared";
+import { GA_STATUSES, groupPaymentMethods, relatedCustomerSites, siteLabel, uniqueContactEmails, type CustomerSite, type EditedSite, type LinkedPayment } from "../../lib/customer-file";
+import { ContactRow, useCopy } from "./contact-row";
+import { ActivityMeter, PAYMENT_DATA, StatusChip, contactsHref, editSiteHref, formatDate, initials, newSiteHref, paymentsHref, sitesHref, useCustomerData } from "./shared";
 
 export type DrawerTarget = { siteId: string } | { paymentId: string } | null;
 
@@ -110,6 +111,28 @@ function EditNotice({ site, onDone }: { site: EditedSite; onDone: () => void }) 
   </div>;
 }
 
+const DRAWER_CONTACTS = 4;
+
+function ContactsSection({ site }: { site: CustomerSite }) {
+  const { contactsBySite } = useCustomerData();
+  const [copied, copy] = useCopy();
+  const [expanded, setExpanded] = useState(false);
+  const contacts = contactsBySite.get(site.id) ?? [];
+  const emails = uniqueContactEmails(contacts);
+  const visible = expanded ? contacts : contacts.slice(0, DRAWER_CONTACTS);
+  return <section className="customer-drawer-section">
+    <div className="customer-drawer-section-head">
+      <h3>Холбоо барих{contacts.length > 0 && ` · ${contacts.length}`}</h3>
+      {emails.length > 0 && <button type="button" className={`customer-copy-chip${copied === "drawer" ? " done" : ""}`} onClick={() => void copy(emails.join(", "), "drawer")} title="Энэ сайтын бүх имэйлийг хуулах">{copied === "drawer" ? <Check size={12} /> : <Copy size={12} />}{copied === "drawer" ? "Хуулсан" : `${emails.length} имэйл хуулах`}</button>}
+    </div>
+    {contacts.length ? <ul className="customer-contact-list">{visible.map(contact => <ContactRow key={contact.id} contact={contact} copied={copied} onCopy={(text, key) => void copy(text, key)} compact />)}</ul>
+      : <p className="customer-muted">Contacts info хүснэгтэд энэ сайтын харилцагч бүртгэгдээгүй.</p>}
+    {contacts.length > DRAWER_CONTACTS && <button type="button" className="customer-contact-more" aria-expanded={expanded} onClick={() => setExpanded(open => !open)}>{expanded ? "Хураах" : `Бүгдийг харах (${contacts.length})`}<ChevronRight size={13} style={{ transform: `rotate(${expanded ? -90 : 90}deg)` }} /></button>}
+    {contacts.some(contact => contact.matchedBy === "company") && <p className="customer-note">Хүснэгтэд <b>{contacts.find(contact => contact.matchedBy === "company")!.domain}</b> гэж бичигдсэн тул компанийн нэрээр холбосон.</p>}
+    {contacts.length > 0 && site.domain && <div className="customer-related-links"><Link href={contactsHref(site.domain)}><UsersRound size={14} />Холбоо барих хуудсанд харах</Link></div>}
+  </section>;
+}
+
 function SiteSections({ site, payment, onOpenSite }: { site: CustomerSite; payment: LinkedPayment | null; onOpenSite: (id: string) => void }) {
   const { sites } = useCustomerData();
   const related = relatedCustomerSites(site, sites);
@@ -137,6 +160,8 @@ function SiteSections({ site, payment, onOpenSite }: { site: CustomerSite; payme
         <div className={`customer-invoice ${site.invoiceSent ? "yes" : "no"}`}>{site.invoiceSent ? <Check size={13} /> : <X size={13} />}{site.invoiceSent ? "Нэхэмжлэх илгээгдэж байна" : "Нэхэмжлэх илгээгдээгүй"}</div>
       </div>
     </section>
+
+    <ContactsSection site={site} />
 
     <PaymentSection payment={payment} />
 

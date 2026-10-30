@@ -77,6 +77,9 @@ export const GA_STATUSES: Record<GaStatus, { label: string; tone: string }> = {
 export const ACTIVITY_MAX = 4;
 export const SEGMENTS = ["Top", "Medium", "Small"];
 export const PACKAGES = ["Enterprise", "Turbo"];
+// Choices offered in the site form. Older rows may hold other values (Both, UR, Intro Web); those are kept as they are.
+export const SITE_VERSIONS = ["Business Cody", "Backoffice", "BC2"];
+export const BUSINESS_MODELS = ["B2C", "B2B"];
 
 export function customerStatus(key: string) {
   return CUSTOMER_STATUSES.find(status => status.key === key) ?? CUSTOMER_STATUSES.at(-1)!;
@@ -400,4 +403,154 @@ export function applyPaymentEdits(payments: LinkedPayment[], sites: CustomerSite
     if (site) result.push({ id: `pay-${siteId}`, domain: site.domain ?? site.company, company: site.company, status: site.status, site, ...override });
   }
   return result;
+}
+
+// ---- Contacts ------------------------------------------------------------------------------------
+
+export type ContactEmail = { address: string; valid: boolean };
+export type ContactPhone = { number: string; valid: boolean; note: string | null };
+export type ContactRecord = { id: string; domain: string; company: string; name: string | null; position: string | null; emails: ContactEmail[]; phones: ContactPhone[] };
+export type CustomerContactData = { source: string; importedAt: string; contacts: ContactRecord[] };
+// matchedBy "company": the sheet's domain is a typo or old name (urmine.mn → urmini.mn), so the site was found by company.
+export type LinkedContact = ContactRecord & { site: CustomerSite | null; matchedBy: "domain" | "company" | null };
+
+export type ContactRole = "leadership" | "marketing" | "finance" | "sales" | "web" | "operations" | "other" | "unknown";
+export const CONTACT_ROLES: Array<{ key: ContactRole; label: string; color: string }> = [
+  { key: "leadership", label: "Удирдлага", color: "#7c5cff" },
+  { key: "marketing", label: "Маркетинг", color: "#ec5f9b" },
+  { key: "finance", label: "Санхүү", color: "#1fa978" },
+  { key: "sales", label: "Борлуулалт", color: "#2676e8" },
+  { key: "web", label: "Онлайн & веб", color: "#14a3b8" },
+  { key: "operations", label: "Үйл ажиллагаа", color: "#f0a820" },
+  { key: "other", label: "Бусад", color: "#64748b" },
+  { key: "unknown", label: "Тодорхойгүй", color: "#b4bac6" },
+];
+// First match wins: a director is Leadership whatever they direct, a department head ("Маркетингийн албаны дарга") goes
+// by department, and "дарга" alone only counts as Leadership when nothing more specific matched.
+const ROLE_PATTERNS: Array<[ContactRole, RegExp]> = [
+  ["leadership", /захирал|ceo|coo|director|head of|founder|owner|эзэмшигч|үүсгэн/i],
+  ["marketing", /маркетинг|marketing|брэнд|бренд|brand|контент|content|сошиал|social|ссм|smm|digital|дижитал|эвэнт|event|\bpr\b/i],
+  ["finance", /ягтлан|санхүү|сахүү|finance|account|кассир|cashier/i],
+  ["web", /веб|вэб|web|дизайн|design|ui\/ux|\bit\b|cto|технологи|хөгжүүлэгч|developer|программ|систем|онлайн|online|коммерс|commerce/i],
+  ["sales", /борлуулалт|захиалг|худалдаа|sales|export|харилцагч|хэрэглэгч|үйлчилгээ|order|зөвлөх|бизнес хөгжл/i],
+  ["operations", /үйл ажиллагаа|operation|ерөнхий менежер|салбар|дэлгүүр|агуулах|нярав|логистик|ложистик|хангамж|supply|захиргаа|админ|хүний нөөц|бараа|мерчин/i],
+  ["leadership", /дарга|тэргүүн|удирдлага/i],
+];
+
+export function contactRole(position: string | null): ContactRole {
+  if (!position) return "unknown";
+  return ROLE_PATTERNS.find(([, pattern]) => pattern.test(position))?.[0] ?? "other";
+}
+
+export const contactRoleMeta = (key: ContactRole) => CONTACT_ROLES.find(role => role.key === key)!;
+
+const companyNameKey = (name: string) => name.toLocaleUpperCase("mn-MN").replace(/\b(ХХК|ХК|LLC)\b/gu, "").replace(/[^\p{L}\p{N}]+/gu, "");
+
+// Same domain rules as payments, in both directions (the sheet may hold the *.cody.mn preview or the live .mn domain),
+// then a company-name match when exactly one site has that name.
+export function linkContactRecords(sites: CustomerSite[], records: ContactRecord[]): LinkedContact[] {
+  const byDomain = new Map<string, CustomerSite>();
+  for (const site of sites) {
+    if (!site.domain) continue;
+    const key = domainKey(site.domain);
+    byDomain.set(key, site);
+    if (key.endsWith(".cody.mn") && !byDomain.has(key.replace(/\.cody\.mn$/, ".mn"))) byDomain.set(key.replace(/\.cody\.mn$/, ".mn"), site);
+  }
+  const byCompany = new Map<string, CustomerSite | null>();
+  for (const site of sites) {
+    const key = site.company ? companyNameKey(site.company) : "";
+    if (key) byCompany.set(key, byCompany.has(key) && byCompany.get(key)?.id !== site.id ? null : site);
+  }
+  return records.map(record => {
+    const key = domainKey(record.domain);
+    const site = byDomain.get(key) ?? byDomain.get(key.replace(/\.cody\.mn$/, ".mn")) ?? null;
+    if (site) return { ...record, site, matchedBy: "domain" };
+    const companySite = record.company ? byCompany.get(companyNameKey(record.company)) ?? null : null;
+    return { ...record, site: companySite, matchedBy: companySite ? "company" : null };
+  });
+}
+
+export function contactsBySite(contacts: LinkedContact[]) {
+  const result = new Map<string, LinkedContact[]>();
+  for (const contact of contacts) {
+    if (!contact.site) continue;
+    result.set(contact.site.id, [...(result.get(contact.site.id) ?? []), contact]);
+  }
+  return result;
+}
+
+export const contactIssues = (contact: ContactRecord) => [
+  ...contact.emails.filter(email => !email.valid).map(email => `Имэйл буруу: ${email.address}`),
+  ...contact.phones.filter(phone => !phone.valid).map(phone => `Утас ${phone.number.length} оронтой: ${phone.number}`),
+  ...contact.phones.filter(phone => phone.note).map(phone => `${phone.number}: ${phone.note}`),
+  ...(contact.emails.length ? [] : ["Имэйлгүй"]),
+];
+
+export type ContactFilters = { search: string; role: string; specialist: string; status: string; version: string; issues: boolean };
+
+export function filterContacts(contacts: LinkedContact[], filters: ContactFilters) {
+  const words = filters.search.toLocaleLowerCase("mn-MN").split(/\s+/).filter(Boolean);
+  return contacts.filter(contact => {
+    const site = contact.site;
+    if (filters.role !== "all" && contactRole(contact.position) !== filters.role) return false;
+    if (filters.specialist !== "all" && (filters.specialist === UNASSIGNED ? site?.specialist : site?.specialist !== filters.specialist)) return false;
+    if (filters.status !== "all" && (site?.status ?? "Unknown") !== filters.status) return false;
+    if (filters.version !== "all" && site?.siteVersion !== filters.version) return false;
+    if (filters.issues && !contactIssues(contact).length) return false;
+    if (!words.length) return true;
+    const haystack = [contact.name, contact.position, contact.domain, contact.company, site?.domain, site?.company, site?.specialist, ...contact.emails.map(email => email.address), ...contact.phones.map(phone => phone.number)]
+      .filter(Boolean).join(" ").toLocaleLowerCase("mn-MN");
+    return words.every(word => haystack.includes(word) || haystack.replace(/-/g, "").includes(word));
+  });
+}
+
+/** Valid addresses, each once (case-insensitive), in list order: what "copy emails" puts on the clipboard. */
+export function uniqueContactEmails(contacts: ContactRecord[]) {
+  const seen = new Map<string, string>();
+  for (const contact of contacts) for (const email of contact.emails) {
+    if (email.valid && !seen.has(email.address.toLowerCase())) seen.set(email.address.toLowerCase(), email.address);
+  }
+  return [...seen.values()];
+}
+
+/** One row per valid email address with everyone and every site it belongs to (shared inboxes cover several sites). */
+export function contactEmailDirectory(contacts: LinkedContact[]) {
+  const rows = new Map<string, { address: string; contacts: LinkedContact[]; sites: CustomerSite[] }>();
+  for (const contact of contacts) for (const email of contact.emails) {
+    if (!email.valid) continue;
+    const key = email.address.toLowerCase();
+    const row = rows.get(key) ?? { address: email.address, contacts: [], sites: [] };
+    row.contacts.push(contact);
+    if (contact.site && !row.sites.some(site => site.id === contact.site!.id)) row.sites.push(contact.site);
+    rows.set(key, row);
+  }
+  return [...rows.values()];
+}
+
+export function groupContactsBySite(contacts: LinkedContact[]) {
+  const groups = new Map<string, { key: string; site: CustomerSite | null; domain: string; company: string; contacts: LinkedContact[] }>();
+  for (const contact of contacts) {
+    const key = contact.site?.id ?? `sheet:${domainKey(contact.domain)}`;
+    const group = groups.get(key) ?? { key, site: contact.site, domain: contact.site ? siteLabel(contact.site) : contact.domain, company: contact.site?.company || contact.company, contacts: [] };
+    group.contacts.push(contact);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => (STATUS_ORDER.get(a.site?.status ?? "Unknown") ?? 99) - (STATUS_ORDER.get(b.site?.status ?? "Unknown") ?? 99) || collator.compare(a.domain, b.domain));
+}
+
+const CONTACT_CSV_COLUMNS: Array<[string, (contact: LinkedContact) => string | null]> = [
+  ["Domain", contact => contact.site?.domain ?? contact.domain], ["Company", contact => contact.site?.company || contact.company],
+  ["Status", contact => contact.site?.status ?? null], ["Site version", contact => contact.site?.siteVersion ?? null], ["Account specialist", contact => contact.site?.specialist ?? null],
+  ["Name", contact => contact.name], ["Position", contact => contact.position], ["Role", contact => contactRoleMeta(contactRole(contact.position)).label],
+  ["Email", contact => contact.emails.map(email => email.address).join("; ")], ["Phone", contact => contact.phones.map(phone => phone.number).join("; ")],
+  ["Issues", contact => contactIssues(contact).join("; ")],
+];
+
+export function customerContactsCsv(contacts: LinkedContact[]) {
+  const escape = (value: string | null) => {
+    const text = value ?? "";
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  return [CONTACT_CSV_COLUMNS.map(([label]) => label), ...contacts.map(contact => CONTACT_CSV_COLUMNS.map(([, read]) => read(contact)))]
+    .map(row => row.map(escape).join(",")).join("\n");
 }
