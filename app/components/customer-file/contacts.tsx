@@ -1,7 +1,7 @@
 "use client";
 
-import { AtSign, Check, ChevronRight, Copy, Download, FileCheck2, Globe2, Layers, List, Mail, Search, ShieldAlert, UserRound, Users, X } from "lucide-react";
-import { useMemo } from "react";
+import { AtSign, Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, Download, FileCheck2, Globe2, Layers, List, Mail, PanelRightOpen, Search, ShieldAlert, UserRound, Users, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import {
   CONTACT_ROLES,
   CUSTOMER_STATUSES,
@@ -20,7 +20,7 @@ import {
   type ContactRole,
   type CustomerSite,
 } from "../../lib/customer-file";
-import { CONTACT_DATA, CustomerFileShell, SelectFilter, StatusChip, initials, percent, useCustomerData, useQueryState } from "./shared";
+import { CONTACT_DATA, CustomerFileShell, SelectFilter, StatusChip, percent, useCustomerData, useQueryState } from "./shared";
 import { ContactRow, useCopy } from "./contact-row";
 import { useSiteDrawer } from "./site-drawer";
 
@@ -70,6 +70,20 @@ export default function CustomerFileContacts() {
   const filtered = Boolean(filters.search.trim()) || activeChips.length > 0 || filters.issues;
   const resetFilters = () => updateQuery({ q: null, role: null, specialist: null, status: null, version: null, issues: null });
 
+  // Sites start collapsed; a search, role or issues filter narrows to specific people, so their sites start open.
+  // `toggled` holds the sites flipped from that default and is dropped whenever the default changes.
+  const openByDefault = Boolean(filters.search.trim()) || filters.role !== "all" || filters.issues;
+  const [expansion, setExpansion] = useState({ openByDefault, toggled: new Set<string>() });
+  const toggled = expansion.openByDefault === openByDefault ? expansion.toggled : new Set<string>();
+  const isOpen = (key: string) => openByDefault !== toggled.has(key);
+  const allOpen = groups.length > 0 && groups.every(group => isOpen(group.key));
+  const toggleGroup = (key: string) => {
+    const next = new Set(toggled);
+    if (!next.delete(key)) next.add(key);
+    setExpansion({ openByDefault, toggled: next });
+  };
+  const setAllOpen = (open: boolean) => setExpansion({ openByDefault, toggled: open === openByDefault ? new Set() : new Set(groups.map(group => group.key)) });
+
   function download() {
     const blob = new Blob([`﻿${customerContactsCsv(contacts)}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -107,9 +121,10 @@ export default function CustomerFileContacts() {
     </div>}
 
     <section className="dev-panel customer-directory-panel customer-contacts-panel" aria-labelledby="customer-contacts-title">
-      <header><div><span className="all-project-section-kicker">CONTACT DIRECTORY</span><h2 id="customer-contacts-title">{view === "sites" ? `${contacts.length} харилцагч · ${groups.length} сайт` : `${directory.length} имэйл хаяг`}</h2><p>{filtered ? `Нийт ${allContacts.length} харилцагчаас шүүсэн` : "Бүх харилцагч"} · {view === "sites" ? "сайтын нэр дээр дарж дэлгэрэнгүйг харна" : "имэйл бүр нэг удаа, хамаарах ажилтан, сайтын хамт"}</p></div>
+      <header><div><h2 id="customer-contacts-title">{view === "sites" ? `${contacts.length} харилцагч · ${groups.length} сайт` : `${directory.length} имэйл хаяг`}</h2>{filtered && <p>Нийт {allContacts.length} харилцагчаас шүүсэн</p>}</div>
         <div className="customer-contact-actions">
           <button type="button" className={`customer-button primary customer-copy-all${copied === "all" ? " done" : ""}`} disabled={!emails.length} onClick={() => void copy(emails.join(", "), "all")} title="Шүүсэн жагсаалтын имэйлүүдийг таслалаар тусгаарлан хуулна (To/BCC талбарт шууд буулгана)">{copied === "all" ? <Check size={15} /> : <Copy size={15} />}{copyLabel("all", "Имэйл хуулах")}<b>{emails.length}</b></button>
+          {view === "sites" && <button type="button" className="icon-button customer-expand-all" disabled={!groups.length} onClick={() => setAllOpen(!allOpen)} aria-label={allOpen ? "Бүх сайтыг хураах" : "Бүх сайтыг дэлгэх"} title={allOpen ? "Бүгдийг хураах" : "Бүгдийг дэлгэх"}>{allOpen ? <ChevronsDownUp size={17} /> : <ChevronsUpDown size={17} />}</button>}
           <button className="icon-button dev-download-filter" type="button" onClick={download} disabled={!contacts.length} aria-label="Шүүсэн жагсаалтыг CSV-ээр татах" title="Шүүсэн жагсаалтыг CSV-ээр татах"><Download size={18} /></button>
           <div className="dev-view-toggle" data-view={view === "sites" ? "list" : "card"} role="group" aria-label="Жагсаалтын харагдац"><button type="button" aria-pressed={view === "sites"} onClick={() => updateQuery({ view: null })}><Globe2 size={14} />Сайтаар</button><button type="button" aria-pressed={view === "emails"} onClick={() => updateQuery({ view: "emails" })}><List size={14} />Имэйлүүд</button></div>
         </div>
@@ -117,17 +132,22 @@ export default function CustomerFileContacts() {
 
       {view === "sites" ? <div className="customer-contact-groups">{groups.map(group => {
         const groupEmails = uniqueContactEmails(group.contacts);
-        return <article className="customer-contact-group" key={group.key}>
+        const open = isOpen(group.key);
+        return <article className={`customer-contact-group${open ? " open" : ""}`} key={group.key}>
           <header>
-            <button type="button" className="customer-contact-site" disabled={!group.site} onClick={() => group.site && openSite(group.site.id)} title={group.site ? `${group.domain} дэлгэрэнгүй` : "Site info-д бүртгэлгүй"}>
-              <span className="customer-site-icon"><Globe2 size={15} /></span>
-              <span><strong>{group.domain}{group.site?.siteVersion && <em className="customer-version-tag">{group.site.siteVersion}</em>}</strong><small>{group.company}</small></span>
+            <button type="button" className="customer-contact-toggle" aria-expanded={open} aria-controls={`contacts-${group.key}`} onClick={() => toggleGroup(group.key)}>
+              <ChevronRight size={16} className="customer-contact-chevron" />
+              <span className="customer-contact-site"><strong>{group.domain}{group.site?.siteVersion && <em className="customer-version-tag">{group.site.siteVersion}</em>}{group.site && group.site.status !== "Active" && <StatusChip status={group.site.status} />}</strong><small>{group.company}</small></span>
+              <span className="customer-contact-count">{group.contacts.length} харилцагч</span>
+              <span className="customer-contact-owner">{group.site?.specialist ?? <em>Хариуцагчгүй</em>}</span>
             </button>
-            {group.site && <StatusChip status={group.site.status} />}
-            <span className="customer-cell-owner">{group.site?.specialist ? <><i>{initials(group.site.specialist)}</i>{group.site.specialist}</> : <em>Хариуцагчгүй</em>}</span>
-            {groupEmails.length > 0 && <button type="button" className={`customer-copy-chip${copied === group.key ? " done" : ""}`} onClick={() => void copy(groupEmails.join(", "), group.key)} title={`${group.domain}-ийн ${groupEmails.length} имэйлийг хуулах`}>{copied === group.key ? <Check size={12} /> : <Copy size={12} />}{copyLabel(group.key, `${groupEmails.length} имэйл`)}</button>}
+            <span className="customer-contact-group-actions">
+              <button type="button" className={`customer-group-action${copied === group.key ? " done" : ""}`} disabled={!groupEmails.length} onClick={() => void copy(groupEmails.join(", "), group.key)} aria-label={`${group.domain}-ийн ${groupEmails.length} имэйлийг хуулах`} title={copied === `error:${group.key}` ? "Хуулж чадсангүй" : `${groupEmails.length} имэйл хуулах`}>{copied === group.key ? <Check size={15} /> : <Copy size={15} />}</button>
+              <button type="button" className="customer-group-action" disabled={!group.site} onClick={() => group.site && openSite(group.site.id)} aria-label={`${group.domain} дэлгэрэнгүй`} title={group.site ? "Сайтын дэлгэрэнгүй" : "Site info-д бүртгэлгүй"}><PanelRightOpen size={15} /></button>
+            </span>
           </header>
-          <ul>{group.contacts.map(contact => <ContactRow key={contact.id} contact={contact} copied={copied} onCopy={copy} />)}</ul>
+          {/* Always rendered so it can slide open/closed; `inert` keeps the closed rows out of tab order and screen readers. */}
+          <div className="customer-contact-drop" inert={!open}><ul id={`contacts-${group.key}`}>{group.contacts.map(contact => <ContactRow key={contact.id} contact={contact} copied={copied} onCopy={copy} />)}</ul></div>
         </article>;
       })}</div> : <div className="customer-email-table" role="table" aria-label="Имэйл хаягууд">
         <div className="customer-email-head" role="row"><span role="columnheader">Имэйл</span><span role="columnheader">Ажилтан</span><span role="columnheader">Сайт</span></div>

@@ -30,15 +30,15 @@ export function useCopy() {
   return [copied, copy] as const;
 }
 
+// The avatar colour carries the role (its label is the tooltip); the position text under the name says the rest.
 export function ContactRow({ contact, copied, onCopy, compact = false }: { contact: LinkedContact; copied: string | null; onCopy: (text: string, key: string) => void; compact?: boolean }) {
   const role = contactRoleMeta(contactRole(contact.position));
   const issues = contactIssues(contact);
   return <li className={`customer-contact-row${compact ? " compact" : ""}`}>
     <span className="customer-contact-person">
-      <i style={{ "--role-color": role.color } as CSSProperties}>{personInitial(contact.name)}</i>
-      <span><b>{contact.name ?? <em>Нэр бүртгээгүй</em>}</b><small>{contact.position ?? "Албан тушаал тодорхойгүй"}</small></span>
+      <i style={{ "--role-color": role.color } as CSSProperties} title={role.label}>{personInitial(contact.name)}</i>
+      <span><b>{contact.name ?? <em>Нэр бүртгээгүй</em>}</b>{contact.position && <small>{contact.position}</small>}</span>
     </span>
-    {!compact && <span className="customer-contact-role" style={{ "--role-color": role.color } as CSSProperties}>{role.label}</span>}
     <span className="customer-contact-emails">{contact.emails.length ? contact.emails.map(email => email.valid
       ? <span key={email.address} className="customer-contact-email"><a href={`mailto:${email.address}`}><Mail size={13} />{email.address}</a><button type="button" className={`customer-copy-icon${copied === `${contact.id}:${email.address}` ? " done" : ""}`} onClick={() => onCopy(email.address, `${contact.id}:${email.address}`)} aria-label={`${email.address} хуулах`} title="Хуулах">{copied === `${contact.id}:${email.address}` ? <Check size={12} /> : <Copy size={12} />}</button></span>
       : <span key={email.address} className="customer-contact-email invalid" title="Имэйлийн хэлбэр буруу — хүснэгтэд засах шаардлагатай"><AlertTriangle size={13} />{email.address}</span>)
